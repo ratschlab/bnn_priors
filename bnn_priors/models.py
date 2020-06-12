@@ -1,17 +1,31 @@
-from torch.distributions import Normal, Distribution
+from torch.distributions import Distribution
+from pyro.distributions import Normal
 import torch
 from torch import nn
 import torch.nn.functional as F
 from typing import Callable, Any
+import pyro
+
+from pyro.nn.module import to_pyro_module_, PyroSample
 
 
 class PriorMixin:
     def get_potential_fn(self, X, y):
         def potential_fn(params):
-            self.load_state_dict(params)  # Copy params
-            loss = self(X).log_prob(y)
+            for n, p in self.named_parameters():
+                p.data = params[n]
+                if n == 'lin3.bias':
+                    print(n, p, params[n])
+            for n, p in self.named_parameters():
+                if n == 'lin3.bias':
+                    print(n, p, params[n])
+
+            # self.load_state_dict(params)  # Copy params
+            loss = self(X).log_prob(y).sum()
+            # loss = torch.zeros((), dtype=X.dtype, device=X.device)
             for _, prior, parameter in self.named_priors():
                 loss.add_(prior.log_prob(parameter).sum())
+                # loss.add_(prior.log_prob(params[prior_name[:-6]]).sum())
             return loss
         return potential_fn
 
@@ -33,7 +47,7 @@ class PriorMixin:
         parameter = self.path_getattr(name)
         self._sample_from_prior(prior, parameter)
 
-    def sample_from_all_priors(self):
+    def sample_all_priors(self):
         for _, prior, parameter in self.named_priors():
             self._sample_from_prior(prior, parameter)
 
@@ -76,11 +90,28 @@ class DenseNet(nn.Module, PriorMixin):
     def __init__(self, in_dim, out_dim, width):
         super().__init__()
         self.lin1 = Linear(in_dim, width, bias=True)
-        self.lin2 = Linear(width, width, bias=True)
+        # self.lin2 = Linear(width, width, bias=True)
         self.lin3 = Linear(width, out_dim, bias=True)
 
-    def forward(self, x):
+    def forward(self, x, y):
         x = F.relu(self.lin1(x))
-        x = F.relu(self.lin2(x))
+        # x = F.relu(self.lin2(x))
         x = self.lin3(x)
-        return Normal(x, torch.ones_like(x))
+        # return Normal(x, torch.ones_like(x))
+        return pyro.sample('y', Normal(x, torch.ones_like(x)), obs=y)
+
+    def forward_normal(self, x):
+        x = F.relu(self.lin1(x))
+        # x = F.relu(self.lin2(x))
+        return self.lin3(x)
+
+
+
+def make_dense(*args, **kwargs):
+    model = DenseNet(*args, **kwargs)
+    to_pyro_module_(model)
+
+    for m in model.modules():
+        for name, prior, value in list(m.named_priors(recurse=False)):
+            setattr(m, name[:-6], PyroSample(prior=Normal(0, 1).expand(value.shape).to_event(value.dim())))
+    return model
