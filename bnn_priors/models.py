@@ -13,9 +13,13 @@ class PriorMixin:
 
     def prior_logprob(self):
         "log p(self.params)"
-        logprob = torch.tensor(0.)
+        logprob = None
         for _, prior, parameter in self.named_priors():
-            logprob.add_(prior(parameter).log_prob(parameter).sum())
+            lp = prior(parameter).log_prob(parameter).sum()
+            if logprob is None:
+                logprob = lp
+            else:
+                logprob.add_(lp)
         return logprob
 
     def log_likelihood(self, x, y):
@@ -24,7 +28,7 @@ class PriorMixin:
 
     def potential(self, x, y):
         "-log p(y, self.params | x)"
-        return -self.log_likelihood() - self.prior_logprob()
+        return -self.log_likelihood(x, y) - self.prior_logprob()
 
     def get_potential(self, x, y):
         def potential_with_params(params):
@@ -73,7 +77,7 @@ class PriorMixin:
         return out
 
     def _sample_from_prior(self, prior, parameter):
-        parameter.data.copy_(prior.sample())
+        parameter.data.copy_(prior(parameter).sample())
 
     def sample_from_prior(self, prior_name):
         """Samples from the prior `prior_name`, and sets the value of the corresponding
@@ -91,7 +95,7 @@ class PriorMixin:
         for _, prior, parameter in self.named_priors():
             self._sample_from_prior(prior, parameter)
 
-    def register_prior(self, name: str, prior_dist: Callable[[], Distribution]):
+    def register_prior(self, name: str, prior: Callable[[], Distribution]):
         path = name.split('.')
         if len(path) > 1:
             return PriorMixin.register_prior(getattr(self, path[0]), ".".join(path[1:]), prior)
