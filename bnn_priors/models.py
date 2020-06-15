@@ -107,6 +107,11 @@ class DenseNet(nn.Module, PriorMixin):
             return pyro.sample('y', Normal(x, torch.ones_like(x)), obs=y)
         else:
             return x
+        
+    def log_likelihood(self, x, y):
+        pred = self.forward(x)
+        out_dist = Normal(pred, torch.ones_like(pred))
+        return out_dist.log_prob(y).sum()
 
 
 
