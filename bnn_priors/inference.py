@@ -15,14 +15,10 @@ class SGLD:
                                          lr=learning_rate)
 
     def run(self, x, y):
-        for i in range(self.warmup_steps):
-            loss = self.step(x,y)
-            if i%100 == 0:
-                print(f"It. {i}, loss={loss:.4f}")
+        for _ in range(self.warmup_steps):
+            self.step(x, y)
         for i in range(self.num_samples):
-            loss = self.step(x,y)
-            if i%100 == 0:
-                print(f"It. {i}, loss={loss:.4f}")
+            self.step(x, y)
             for param, value in self.model.state_dict().items():
                 self._samples[param][i] = value
 
