@@ -31,15 +31,10 @@ class SGLD:
         loss = self.model.potential(x, y)
         loss.backward()
         for param in self.model.parameters():
-            param.grad += Normal(loc=torch.zeros_like(param.grad),
-                                scale=torch.ones_like(param.grad)*np.sqrt(2*self.learning_rate)).sample()
-            # param.grad.add_(
-            #     torch.randn(param.grad.size(), dtype=param.dtype,
-            #                 device=param.device)
-            #     .mul_(np.sqrt(2*self.learning_rate)))
-            # param.grad.clamp_(-1e14, 1e14)
-            # if not torch.isfinite(param.grad).all():
-            #     import pdb; pdb.set_trace()
+            param.grad.add_(
+                torch.randn(param.grad.size(), dtype=param.dtype,
+                            device=param.device)
+                .mul_(np.sqrt(2*self.learning_rate)))
         self.optimizer.step()
         return loss.item()
 

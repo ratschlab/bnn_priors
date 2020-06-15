@@ -139,14 +139,16 @@ class PriorMixin:
 
 
 class Linear(nn.Linear, PriorMixin):
-    def __init__(self, in_features, out_features, bias=True, prior=None):
+    def __init__(self, in_features, out_features, bias=True, weight_prior=None, bias_prior=None):
         super().__init__(in_features, out_features, bias=bias)
-        if prior is None:
-            def prior(p): return Normal(torch.zeros((), dtype=p.dtype, device=p.device).expand(p.size()),
-                                        torch.ones ((), dtype=p.dtype, device=p.device).expand(p.size()))
-
-        for n, _ in self.named_parameters(recurse=False):
-            self.register_prior(n, prior)
+        if weight_prior is None:
+            def weight_prior(p): return Normal(
+                    torch.zeros_like(p), torch.ones_like(p))
+        if bias_prior is None:
+            def bias_prior(p): return Normal(
+                    torch.zeros_like(p), torch.ones_like(p))
+        self.register_prior("weight", weight_prior)
+        self.register_prior("bias", bias_prior)
 
 
 class DenseNet(nn.Module, PriorMixin):
