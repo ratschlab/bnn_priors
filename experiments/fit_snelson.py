@@ -25,15 +25,15 @@ def main():
 
     with torch.no_grad():
         # model.sample_all_priors()
-        y = model.forward_normal(x_test)
+        y = model.predict(x_test)
         plt.plot(x_test, y)
 
         # model.sample_all_priors()
-        y = model.forward_normal(x_test)
+        y = model.predict(x_test)
         plt.plot(x_test, y)
 
         # model.sample_all_priors()
-        y = model.forward_normal(x_test)
+        y = model.predict(x_test)
         plt.plot(x_test, y)
 
         plt.show()
@@ -49,7 +49,7 @@ def main():
             path = k.split('.')
             setattr(getattr(model, path[0]), path[1], samples[k][i])
         with torch.no_grad():
-            plt.plot(x_test, model.forward_normal(x_test), color="C2", alpha=0.7)
+            plt.plot(x_test, model.predict(x_test), color="C2", alpha=0.7)
     plt.scatter(x_train, y_train)
     plt.show()
 
