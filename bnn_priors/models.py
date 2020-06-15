@@ -11,16 +11,24 @@ from collections import OrderedDict
 class PriorMixin:
     "Common to all of our BNN priors, which should also be `torch.nn.Module`s"
 
-    def potential(self, x, y):
-        "log p(y, params in the module | x)"
-        lik = self(x).log_prob(y).sum()
+    def prior_logprob(self):
+        "log p(self.params)"
+        logprob = torch.tensor(0.)
         for _, prior, parameter in self.named_priors():
-            lik.add_(prior.log_prob(parameter).sum())
-        return -lik
+            logprob.add_(prior(parameter).log_prob(parameter).sum())
+        return logprob
+
+    def log_likelihood(self, x, y):
+        "log p(y | self.params, x)"
+        return self(x).log_prob(y).sum()
+
+    def potential(self, x, y):
+        "-log p(y, self.params | x)"
+        return -self.log_likelihood() - self.prior_logprob()
 
     def get_potential(self, x, y):
         def potential_with_params(params):
-            "log p(y, nested_params | x)"
+            "-log p(y, params | x)"
             with self.using_params(params):
                 return self.potential(x, y)
         return potential_with_params
@@ -93,7 +101,7 @@ class PriorMixin:
                 f"Cannot add prior {prior} to parameter {parameter}: not a "
                 "`torch.nn.Parameter`")
         prior_name = f"{name}_prior"
-        prior_dist = prior()
+        prior_dist = prior(parameter)
         sample_shape = prior_dist.batch_shape + prior_dist.event_shape
         if sample_shape != parameter.size():
             raise TypeError(
@@ -127,18 +135,14 @@ class PriorMixin:
 
 
 class Linear(nn.Linear, PriorMixin):
-    def __init__(self, in_features, out_features, bias=True):
+    def __init__(self, in_features, out_features, bias=True, prior=None):
         super().__init__(in_features, out_features, bias=bias)
-        for n, p in list(self.named_parameters(recurse=False)):
-            loc_name = n+"_prior_loc"
-            scale_name = n+"_prior_scale"
-            self.register_buffer(
-                loc_name, torch.tensor(0.).expand(p.size()))
-            self.register_buffer(
-                scale_name, torch.tensor(1.).expand(p.size()))
-            self.register_prior(
-                n,
-                lambda: Normal(getattr(self, loc_name), getattr(self, scale_name)))
+        if prior is None:
+            def prior(p): return Normal(torch.zeros((), dtype=p.dtype, device=p.device).expand(p.size()),
+                                        torch.ones ((), dtype=p.dtype, device=p.device).expand(p.size()))
+
+        for n, _ in self.named_parameters(recurse=False):
+            self.register_prior(n, prior)
 
 
 class DenseNet(nn.Module, PriorMixin):
