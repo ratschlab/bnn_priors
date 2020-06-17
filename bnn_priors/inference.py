@@ -5,7 +5,7 @@ from pyro.distributions import Normal
 
 
 class SGLD:
-    def __init__(self, model, num_samples, warmup_steps, learning_rate=5e-4):
+    def __init__(self, model, num_samples, warmup_steps, learning_rate=5e-4, decay_rate=1.0):
         self.model = model
         self.num_samples = num_samples
         self.warmup_steps = warmup_steps
@@ -14,6 +14,8 @@ class SGLD:
                          for name, param in self.model.params_with_prior()}
         self.optimizer = torch.optim.SGD(params=self.model.parameters(),
                                          lr=learning_rate)
+        self.scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer=self.optimizer,
+                                                                    gamma=decay_rate)
 
         
     def run(self, x, y, progressbar=False):
@@ -24,19 +26,21 @@ class SGLD:
             warmup_iter = range(self.warmup_steps)
             sampling_iter = range(self.num_samples)
         for _ in warmup_iter:
-            self.step(x, y)
+            self.step(x, y, lr_decay=True)
         for i in sampling_iter:
-            self.step(x, y)
+            self.step(x, y, lr_decay=False)
             for param, value in self.model.state_dict().items():
                 self._samples[param][i] = value
 
                 
-    def step(self, x, y):
+    def step(self, x, y, lr_decay=False):
         self.optimizer.zero_grad()
         # TODO: this only works when the full data is used, otherwise the log_likelihood should be rescaled according to the batch size
         loss = self.model.potential(x, y)
         loss.backward()
         self.optimizer.step()
+        if lr_decay:
+            self.scheduler.step()
         with torch.no_grad():
             for param in self.model.parameters():
                 param.add_(
