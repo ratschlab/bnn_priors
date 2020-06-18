@@ -32,6 +32,7 @@ class SGLD:
         self.cycles = cycles
         self._samples = {name : torch.zeros(torch.Size([num_samples*cycles])+param.shape)
                          for name, param in self.model.params_with_prior()}
+        self._samples["lr"] = torch.zeros(torch.Size([num_samples*cycles]))
         self.optimizer = torch.optim.SGD(params=self.model.parameters(),
                                          lr=learning_rate)
         samples_per_cycle = warmup_steps + (skip * num_samples)
@@ -51,8 +52,10 @@ class SGLD:
         """
         for cycle in range(self.cycles):
             if progressbar:
-                warmup_iter = tqdm(range(self.warmup_steps), position=0, leave=False, desc="Warmup")
-                sampling_iter = tqdm(range(self.num_samples * self.skip), position=0, leave=True, desc="Sampling")
+                warmup_iter = tqdm(range(self.warmup_steps), position=0,
+                                   leave=False, desc=f"Cycle {cycle}, Warmup")
+                sampling_iter = tqdm(range(self.num_samples * self.skip), position=0,
+                                     leave=True, desc=f"Cycle {cycle}, Sampling")
             else:
                 warmup_iter = range(self.warmup_steps)
                 sampling_iter = range(self.num_samples * self.skip)
@@ -63,6 +66,7 @@ class SGLD:
                 if i % self.skip == 0:
                     for param, value in self.model.state_dict().items():
                         self._samples[param][(self.num_samples*cycle)+(i//self.skip)] = value
+                    self._samples["lr"][(self.num_samples*cycle)+(i//self.skip)] = self.optimizer.param_groups[0]["lr"]
 
                 
     def step(self, x, y, lr_decay=True, noise_injection=True):
