@@ -6,7 +6,7 @@ from bnn_priors.utils import get_cosine_schedule
 
 class SGLD:
     def __init__(self, model, num_samples, warmup_steps,
-                 learning_rate=5e-4, skip=1,
+                 learning_rate=5e-4, skip=1, temperature=1.,
                  sampling_decay=True, cycles=1):
         self.model = model
         self.num_samples = num_samples
@@ -14,6 +14,7 @@ class SGLD:
         self.learning_rate = learning_rate
         self.skip = skip
         self.sampling_decay = sampling_decay
+        self.temperature = temperature
         self.cycles = cycles
         self._samples = {name : torch.zeros(torch.Size([num_samples*cycles])+param.shape)
                          for name, param in self.model.params_with_prior()}
@@ -52,12 +53,13 @@ class SGLD:
         if lr_decay:
             self.scheduler.step()
         if noise_injection:
+            current_lr = self.optimizer.param_groups[0]["lr"]
             with torch.no_grad():
                 for param in self.model.parameters():
                     param.add_(
                         torch.randn(param.size(), dtype=param.dtype,
                                     device=param.device)
-                        .mul_(np.sqrt(2*self.learning_rate)))
+                        .mul_(np.sqrt(2*current_lr*self.temperature)))
         return loss.item()
 
     
