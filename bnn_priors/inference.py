@@ -4,10 +4,24 @@ import torch
 from pyro.distributions import Normal
 from bnn_priors.utils import get_cosine_schedule
 
+
 class SGLD:
     def __init__(self, model, num_samples, warmup_steps,
                  learning_rate=5e-4, skip=1, temperature=1.,
                  sampling_decay=True, cycles=1):
+        """
+        Stochastic Gradient Langevin Dynamics for posterior sampling.
+        
+        Args:
+            model (torch.Module, PriorMixin): BNN model to sample from
+            num_samples (int): Number of samples to draw per cycle
+            warmup_steps (int): Number of steps per cycle for warming up the Markov chain
+            learning_rate (float): Initial learning rate
+            skip (int): Number of samples to skip between saved samples during the sampling phase
+            temperature (float): Temperature for tempering the posterior
+            sampling_decay (bool): Flag to control whether the learning rate should decay during sampling
+            cycles (int): Number of warmup and sampling cycles to perform
+        """
         self.model = model
         self.num_samples = num_samples
         self.warmup_steps = warmup_steps
@@ -27,6 +41,14 @@ class SGLD:
 
         
     def run(self, x, y, progressbar=False):
+        """
+        Runs the sampling on the model.
+        
+        Args:
+            x (torch.tensor): Training input data
+            y (torch.tensor): Training labels
+            progressbar (bool): Flag that controls whether a progressbar is printed
+        """
         for cycle in range(self.cycles):
             if progressbar:
                 warmup_iter = tqdm(range(self.warmup_steps), position=0, leave=False, desc="Warmup")
@@ -44,6 +66,18 @@ class SGLD:
 
                 
     def step(self, x, y, lr_decay=True, noise_injection=True):
+        """
+        Perform one step of SGLD on the model.
+        
+        Args:
+            x (torch.tensor): Training input data
+            y (torch.tensor): Training labels
+            lr_decay (bool): Flag that controls whether the learning rate should decay after this step
+            noise_injection (bool): Flag that controls whether noise should be injected (False yields SGD, True SGLD)
+            
+        Returns:
+            loss (float): The current loss of the model for x and y
+        """
         self.optimizer.zero_grad()
         # TODO: this only works when the full data is used,
         # otherwise the log_likelihood should be rescaled according to the batch size
@@ -64,4 +98,10 @@ class SGLD:
 
     
     def get_samples(self):
+        """
+        Returns the acquired SGLD samples from the last run.
+        
+        Returns:
+            samples (dict): Dictionary of torch.tensors with num_samples*cycles samples for each parameter of the model
+        """
         return self._samples
