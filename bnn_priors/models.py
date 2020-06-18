@@ -152,14 +152,22 @@ class Linear(nn.Linear, PriorMixin):
 
 
 class DenseNet(nn.Module, PriorMixin):
-    def __init__(self, in_dim, out_dim, width):
+    def __init__(self, in_dim, out_dim, width, output_std=1.,
+                 weight_prior=None, bias_prior=None):
         super().__init__()
-        self.lin1 = Linear(in_dim, width, bias=True)
-        self.lin2 = Linear(width, width, bias=True)
-        self.lin3 = Linear(width, out_dim, bias=True)
+        self.output_std = output_std
+        self.lin1 = Linear(in_dim, width, bias=True,
+                           weight_prior=weight_prior,
+                           bias_prior=bias_prior)
+        self.lin2 = Linear(width, width, bias=True,
+                           weight_prior=weight_prior,
+                           bias_prior=bias_prior)
+        self.lin3 = Linear(width, out_dim, bias=True,
+                           weight_prior=weight_prior,
+                           bias_prior=bias_prior)
 
     def forward(self, x):
         x = F.relu(self.lin1(x))
         x = F.relu(self.lin2(x))
         x = self.lin3(x)
-        return Normal(x, torch.ones_like(x))
+        return Normal(x, torch.ones_like(x) * self.output_std)
