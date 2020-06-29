@@ -1,11 +1,12 @@
 import numpy as np
 from tqdm import tqdm
 import torch
-from pyro.distributions import Normal
-from bnn_priors.utils import get_cosine_schedule
+from .utils import get_cosine_schedule
+from .sgld import SGLD
+import math
 
 
-class SGLD:
+class SGLDRunner:
     def __init__(self, model, num_samples, warmup_steps,
                  learning_rate=5e-4, skip=1, temperature=1.,
                  sampling_decay=True, cycles=1):
@@ -33,23 +34,26 @@ class SGLD:
         self._samples = {name : torch.zeros(torch.Size([num_samples*cycles])+param.shape)
                          for name, param in self.model.params_with_prior()}
         self._samples["lr"] = torch.zeros(torch.Size([num_samples*cycles]))
-        self.optimizer = torch.optim.SGD(params=self.model.parameters(),
-                                         lr=learning_rate)
-        samples_per_cycle = warmup_steps + (skip * num_samples)
-        schedule = get_cosine_schedule(samples_per_cycle)
-        self.scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer=self.optimizer,
-                                                                    lr_lambda=schedule)
+        self.samples_per_cycle = warmup_steps + (skip * num_samples)
 
-        
+
     def run(self, x, y, progressbar=False):
         """
         Runs the sampling on the model.
-        
+
         Args:
             x (torch.tensor): Training input data
             y (torch.tensor): Training labels
             progressbar (bool): Flag that controls whether a progressbar is printed
         """
+        self.optimizer = SGLD(
+            params=[v for _, v in self.model.params_with_prior()],
+            lr=self.learning_rate, num_data=len(x),
+            momentum=self.momentum, temperature=self.temperature)
+        schedule = get_cosine_schedule(self.samples_per_cycle)
+        self.scheduler = torch.optim.lr_scheduler.LambdaLR(
+            optimizer=self.optimizer, lr_lambda=schedule)
+
         for cycle in range(self.cycles):
             if progressbar:
                 warmup_iter = tqdm(range(self.warmup_steps), position=0,
@@ -59,13 +63,18 @@ class SGLD:
             else:
                 warmup_iter = range(self.warmup_steps)
                 sampling_iter = range(self.num_samples * self.skip)
+
+            self.optimizer.param_groups['temperature'] = 0
             for _ in warmup_iter:
                 self.step(x, y, noise_injection=False)
+            for g in self.optimizer.param_groups:
+                g['temperature'] = self.temperature
+
             for i in sampling_iter:
                 self.step(x, y, lr_decay=self.sampling_decay)
                 if i % self.skip == 0:
-                    for param, value in self.model.state_dict().items():
-                        self._samples[param][(self.num_samples*cycle)+(i//self.skip)] = value
+                    for name, param in self.model.params_with_prior():
+                        self._samples[name][(self.num_samples*cycle)+(i//self.skip)] = value
                     self._samples["lr"][(self.num_samples*cycle)+(i//self.skip)] = self.optimizer.param_groups[0]["lr"]
 
                 
@@ -74,8 +83,8 @@ class SGLD:
         Perform one step of SGLD on the model.
         
         Args:
-            x (torch.tensor): Training input data
-            y (torch.tensor): Training labels
+            x (torch.Tensor): Training input data
+            y (torch.Tensor): Training labels
             lr_decay (bool): Flag that controls whether the learning rate should decay after this step
             noise_injection (bool): Flag that controls whether noise should be injected (False yields SGD, True SGLD)
             
@@ -87,6 +96,8 @@ class SGLD:
         # otherwise the log_likelihood should be rescaled according to the batch size
         loss = self.model.potential(x, y)
         loss.backward()
+        # for param in self.model.parameters():
+        #     param.grad.mul_(self.temperature)  Or something like this
         self.optimizer.step()
         if lr_decay:
             self.scheduler.step()
