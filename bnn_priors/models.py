@@ -6,6 +6,7 @@ from typing import Callable
 import contextlib
 import collections
 from collections import OrderedDict
+import math
 
 
 class PriorMixin:
@@ -171,3 +172,95 @@ class DenseNet(nn.Module, PriorMixin):
         x = F.relu(self.lin2(x))
         x = self.lin3(x)
         return Normal(x, torch.ones_like(x) * self.output_std)
+
+
+
+class IntegratedDenseNet(nn.Module, PriorMixin):
+    def __init__(self, in_dim, out_dim, width, output_std=1.,
+                 weight_prior=None, bias_prior=None):
+        super().__init__()
+        self.output_std = output_std
+        self.lin1 = Linear(in_dim, width, bias=True,
+                           weight_prior=weight_prior,
+                           bias_prior=bias_prior)
+        self.lin2 = Linear(width, width, bias=True,
+                           weight_prior=weight_prior,
+                           bias_prior=bias_prior)
+
+    def nn_eval(self, x):
+        x = F.relu(self.lin1(x))
+        x = F.relu(self.lin2(x))
+        return x
+
+    def _log_likelihood_precomp(self, f, y):
+        "N log(2π) + (N-F) log(σ²) + tr_YY/(D σ²)"
+        N, D = y.shape
+        N_, n_feat = f.shape
+        assert N == N_
+
+        sig = self.output_std**2
+        log_sig = 2*math.log(self.output_std)
+
+        tr_YY__Ds = (y.view(-1) @ y.view(-1)).item() / (D*sig)
+        const = N*math.log(2*math.pi)
+        a = (N-n_feat) * log_sig + tr_YY__Ds
+        const_a = const+a
+        assert type(const_a) == float
+        return const_a
+
+    def log_likelihood(self, x, y, precomp=None):
+        """Evaluate the Bayesian linear regression likelihood conditional on
+        self.nn_eval(x). The prior over weights is:
+            p(w_ij) = Normal(0, 1)
+
+        Thus the distribution of outputs is (remember, x is a matrix)
+            p(y | x) = Normal(y | 0, xᵀx + σ²)
+
+        Using the Woodbury lemma, this can be evaluated as
+        -D/2 [N log(2π) + (N-F) log(σ²) + tr_YY/(D σ²)
+              + log det(xxᵀ + σ²I) - yᵀxᵀ(xxᵀ + σ²I)⁻¹xy / σ²]
+        where tr_YY = tr{YᵀY} = (∑_j y_jᵀy_j).
+
+        The first line of the above expression is precomputed in `precomp`
+
+        (the terms with logs come from applying Woodbury to the log
+        determinant, the trace(YYᵀ) and quadratic form come from applying
+        Woodbury to the inverse quadratic form of the Gaussian)
+        """
+        f = self.nn_eval(x)
+        if precomp is None:
+            precomp = self._log_likelihood_precomp(f, y)
+
+        N, D = y.shape
+        N_, n_feat = f.shape
+        assert N == N_
+        sig = self.output_std**2
+
+        FF = (f.t() @ f)
+        # Switch to float64 for the cholesky bit
+        FF_sig = FF.to(torch.float64) + sig*torch.eye(n_feat, dtype=torch.float64, device=f.device)
+        L = torch.cholesky(FF_sig)
+        logdet = 2*L.diag().log().sum()
+
+        Lfy = (f.t() @ y).to(torch.float64).triangular_solve(L, upper=False)
+        Lfy_flat = Lfy.solution.t().view(-1)
+        quad = (Lfy_flat @ Lfy_flat) / (D*sig)
+        likelihood = (-D/2) * (precomp + logdet - quad)
+        # Round likelihood down to the original dtype
+        likelihood = likelihood.to(f.dtype)
+        return likelihood
+
+    def get_potential(self, x, y):
+        # TODO implement predictive distribution. Run HMC on Snelson. Check predictive log-likleihood and RMSE vs. temperature on Snelson.
+        precomp = self._log_likelihood_precomp(self.nn_eval(x), y)
+        def potential_with_params(params):
+            "-log p(y, params | x)"
+            with self.using_params(params):
+                return -self.log_likelihood(x, y, precomp) - self.prior_logprob()
+        return potential_with_params
+
+
+
+    def forward(self, x):
+        x = self.nn_eval(x)
+        return x
