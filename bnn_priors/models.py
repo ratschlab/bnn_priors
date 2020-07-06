@@ -126,15 +126,14 @@ class PriorMixin:
                 for it in PriorMixin.named_priors(module_, prefix=submodule_prefix, recurse=True):
                     yield it
 
-    def params_with_prior(self, clone=True, recurse=True):
+    def params_with_prior(self, clone=False, recurse=True):
         "returns nested dict of the params with priors"
         for n, _, param in self.named_priors(recurse=recurse):
-            p = param.data.detach()
             if clone:
-                p = p.clone()
-            yield n[:-6], p
+                param = param.data.detach().clone()
+            yield n[:-6], param
 
-    def params_with_prior_dict(self, clone=True, recurse=True):
+    def params_with_prior_dict(self, clone=False, recurse=True):
         return OrderedDict(self.params_with_prior(clone, recurse))
 
 

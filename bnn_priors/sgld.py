@@ -1,5 +1,4 @@
 import torch
-from .sgld import SGLD
 import math
 from scipy.stats import chi2
 from collections import OrderedDict
@@ -21,12 +20,13 @@ class SGLD(torch.optim.Optimizer):
 
     """
     def __init__(self, params, lr, num_data, momentum=0, temperature=1.,
-                 raise_on_no_grad=True):
+                 raise_on_no_grad=True, raise_on_nan=True):
         assert lr >= 0 and num_data >= 0 and momentum >= 0 and temperature >= 0
         defaults = dict(lr=lr, num_data=num_data, momentum=momentum,
                         temperature=temperature)
         super(SGLD, self).__init__(params, defaults)
         self.raise_on_no_grad = raise_on_no_grad
+        self.raise_on_nan = raise_on_nan
 
     @torch.no_grad()
     def step(self, closure=None):
@@ -48,6 +48,10 @@ class SGLD(torch.optim.Optimizer):
                             f"No gradient for parameter with shape {p.shape}")
                     continue
 
+                if self.raise_on_nan and not torch.isfinite(p.grad).all():
+                    raise ValueError(
+                        f"Gradient of shape {p.shape} is not finite: {p.grad}")
+
                 state = self.state[p]
                 if mom_decay > 0:
                     if 'momentum_buffer' in state:
@@ -66,7 +70,7 @@ class SGLD(torch.optim.Optimizer):
 
                 if temperature > 0:
                     c = math.sqrt(2*(1 - mom_decay) * temperature * M)
-                    momentum.add_(torch.randn(momentum.size()), alpha=c)
+                    momentum.add_(torch.randn_like(momentum), alpha=c)
 
                 _m = momentum.view(-1)
                 state['est_temperature'] = (_m @ _m).item() / M
