@@ -9,10 +9,10 @@ import math
 class SGLDRunner:
     def __init__(self, model, num_samples, warmup_steps,
                  learning_rate=5e-4, skip=1, temperature=1.,
-                 sampling_decay=True, cycles=1):
+                 sampling_decay=True, cycles=1, summary_writer=None):
         """
         Stochastic Gradient Langevin Dynamics for posterior sampling.
-        
+
         Args:
             model (torch.Module, PriorMixin): BNN model to sample from
             num_samples (int): Number of samples to draw per cycle
@@ -22,6 +22,7 @@ class SGLDRunner:
             temperature (float): Temperature for tempering the posterior
             sampling_decay (bool): Flag to control whether the learning rate should decay during sampling
             cycles (int): Number of warmup and sampling cycles to perform
+            summary_writer (optional, tensorboardX.SummaryWriter): where to write the self.metrics
         """
         self.model = model
         self.num_samples = num_samples
@@ -36,6 +37,8 @@ class SGLDRunner:
         self._samples["lr"] = torch.zeros(torch.Size([num_samples*cycles]))
         self.samples_per_cycle = warmup_steps + (skip * num_samples)
 
+        self.metrics = {}
+        self.summary_writer = summary_writer
 
     def run(self, x, y, progressbar=False):
         """
@@ -46,10 +49,12 @@ class SGLDRunner:
             y (torch.tensor): Training labels
             progressbar (bool): Flag that controls whether a progressbar is printed
         """
+        self.param_names, params = zip(*self.model.params_with_prior())
         self.optimizer = SGLD(
-            params=[v for _, v in self.model.params_with_prior()],
+            params=params,
             lr=self.learning_rate, num_data=len(x),
             momentum=self.momentum, temperature=self.temperature)
+
         schedule = get_cosine_schedule(self.samples_per_cycle)
         self.scheduler = torch.optim.lr_scheduler.LambdaLR(
             optimizer=self.optimizer, lr_lambda=schedule)
@@ -65,29 +70,39 @@ class SGLDRunner:
                 sampling_iter = range(self.num_samples * self.skip)
 
             self.optimizer.param_groups['temperature'] = 0
-            for _ in warmup_iter:
-                self.step(x, y, noise_injection=False)
+            for warmup_i in warmup_iter:
+                self.step(warmup_i, x, y, noise_injection=False)
+            warmup_i += 1
+
             for g in self.optimizer.param_groups:
                 g['temperature'] = self.temperature
 
             for i in sampling_iter:
-                self.step(x, y, lr_decay=self.sampling_decay)
+                self.step(warmup_i+i, x, y, lr_decay=self.sampling_decay)
                 if i % self.skip == 0:
                     for name, param in self.model.params_with_prior():
                         self._samples[name][(self.num_samples*cycle)+(i//self.skip)] = value
                     self._samples["lr"][(self.num_samples*cycle)+(i//self.skip)] = self.optimizer.param_groups[0]["lr"]
 
-                
-    def step(self, x, y, lr_decay=True, noise_injection=True):
+    def add_scalar(self, name, value, step):
+        try:
+            self.metrics[name].append(value)
+        except KeyError:
+            self.metrics[name] = []
+            self.metrics[name].append(value)
+        if self.summary_writer is not None:
+            self.summary_writer.add_scalar(name, value, step)
+
+    def step(self, x, y, lr_decay=True):
         """
         Perform one step of SGLD on the model.
-        
+
         Args:
             x (torch.Tensor): Training input data
             y (torch.Tensor): Training labels
             lr_decay (bool): Flag that controls whether the learning rate should decay after this step
             noise_injection (bool): Flag that controls whether noise should be injected (False yields SGD, True SGLD)
-            
+
         Returns:
             loss (float): The current loss of the model for x and y
         """
@@ -96,26 +111,28 @@ class SGLDRunner:
         # otherwise the log_likelihood should be rescaled according to the batch size
         loss = self.model.potential(x, y)
         loss.backward()
-        # for param in self.model.parameters():
-        #     param.grad.mul_(self.temperature)  Or something like this
         self.optimizer.step()
         if lr_decay:
             self.scheduler.step()
-        if noise_injection:
-            current_lr = self.optimizer.param_groups[0]["lr"]
-            with torch.no_grad():
-                for param in self.model.parameters():
-                    param.add_(
-                        torch.randn(param.size(), dtype=param.dtype,
-                                    device=param.device)
-                        .mul_(np.sqrt(2*current_lr*self.temperature)))
-        return loss.item()
 
-    
+        for n, p in zip(self.param_names, self.optimizer.param_groups[0]["params"]):
+            state = self.optimizer.state[p]
+            self.add_scalar("preconditioner/"+n, state["preconditioner"], i)
+            self.add_scalar("est_temperature/"+n, state["est_temperature"], i)
+
+        loss_ = loss.item()
+        self.add_scalar("loss", loss_, i)
+        if i > 0:
+            self.add_scalar("log_prob_accept", self.prev_loss - loss_, i-1)
+
+        self.prev_loss = loss_
+        return loss_
+
+
     def get_samples(self):
         """
         Returns the acquired SGLD samples from the last run.
-        
+
         Returns:
             samples (dict): Dictionary of torch.tensors with num_samples*cycles samples for each parameter of the model
         """
