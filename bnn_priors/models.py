@@ -140,8 +140,10 @@ class PriorMixin:
 
 
 class Linear(nn.Linear, PriorMixin):
-    def __init__(self, in_features, out_features, bias=True, weight_prior=None, bias_prior=None):
+    def __init__(self, in_features, out_features, bias=True, weight_prior=None, bias_prior=None, weight_mul=1., bias_mul=1.):
         super().__init__(in_features, out_features, bias=bias)
+        self.weight_mul=weight_mul
+        self.bias_mul=bias_mul
         if weight_prior is None:
             def weight_prior(p): return Normal(
                     torch.zeros_like(p), torch.ones_like(p))
@@ -151,6 +153,9 @@ class Linear(nn.Linear, PriorMixin):
         self.register_prior("weight", weight_prior)
         self.register_prior("bias", bias_prior)
 
+    def forward(self, x):
+        return F.linear(x, self.weight*self.weight_mul, self.bias*self.bias_mul)
+
 
 class DenseNet(nn.Module, PriorMixin):
     def __init__(self, in_dim, out_dim, width, output_std=1.,
@@ -159,13 +164,16 @@ class DenseNet(nn.Module, PriorMixin):
         self.output_std = output_std
         self.lin1 = Linear(in_dim, width, bias=True,
                            weight_prior=weight_prior,
-                           bias_prior=bias_prior)
+                           bias_prior=bias_prior,
+                           weight_mul=math.sqrt(2/in_dim))
         self.lin2 = Linear(width, width, bias=True,
                            weight_prior=weight_prior,
-                           bias_prior=bias_prior)
+                           bias_prior=bias_prior,
+                           weight_mul=math.sqrt(2/width))
         self.lin3 = Linear(width, out_dim, bias=True,
                            weight_prior=weight_prior,
-                           bias_prior=bias_prior)
+                           bias_prior=bias_prior,
+                           weight_mul=math.sqrt(2/width))
 
     def forward(self, x):
         x = F.relu(self.lin1(x))
@@ -175,22 +183,35 @@ class DenseNet(nn.Module, PriorMixin):
 
 
 
-class IntegratedDenseNet(nn.Module, PriorMixin):
+class RaoBDenseNet(nn.Module, PriorMixin):
+    """Rao-Blackwellised version of the normal DenseNet. It integrates out the
+    weights of the last layer analytically during inference.
+
+    To evaluate it, you need to give it the training data again, so it can
+    calculate the conditional posterior, also analytically.
+
+    This class is also useful to calculate the marginal likelihood of a small
+    data set.
+    """
     def __init__(self, in_dim, out_dim, width, output_std=1.,
                  weight_prior=None, bias_prior=None):
         super().__init__()
         self.output_std = output_std
+
         self.lin1 = Linear(in_dim, width, bias=True,
                            weight_prior=weight_prior,
-                           bias_prior=bias_prior)
+                           bias_prior=bias_prior,
+                           weight_mul=math.sqrt(2/in_dim))
         self.lin2 = Linear(width, width, bias=True,
                            weight_prior=weight_prior,
-                           bias_prior=bias_prior)
+                           bias_prior=bias_prior,
+                           weight_mul=math.sqrt(2/width))
+        self.last_layer_std = math.sqrt(2/width)
 
     def nn_eval(self, x):
         x = F.relu(self.lin1(x))
         x = F.relu(self.lin2(x))
-        return x
+        return x * self.last_layer_std
 
     def _log_likelihood_precomp(self, f, y):
         "N log(2π) + (N-F) log(σ²) + tr_YY/(D σ²)"
@@ -251,7 +272,6 @@ class IntegratedDenseNet(nn.Module, PriorMixin):
         return likelihood
 
     def get_potential(self, x, y):
-        # TODO implement predictive distribution. Run HMC on Snelson. Check predictive log-likleihood and RMSE vs. temperature on Snelson.
         precomp = self._log_likelihood_precomp(self.nn_eval(x), y)
         def potential_with_params(params):
             "-log p(y, params | x)"
@@ -259,8 +279,23 @@ class IntegratedDenseNet(nn.Module, PriorMixin):
                 return -self.log_likelihood(x, y, precomp) - self.prior_logprob()
         return potential_with_params
 
+    def _posterior_w(self, x, y):
+        "returns mean and lower triangular precision of p(w | x,y)"
+        f = self.nn_eval(x)
+        sig = self.output_std**2
+        # Precision matrix
+        A = (f.t()@f)/sig + torch.eye(f.size(-1), dtype=f.dtype, device=f.device)
+        # switch to float64
+        L = torch.cholesky(A.to(torch.float64))
+        FY = (f.t()@y).to(torch.float64)
+        white_mean = FY.triangular_solve(L, upper=False).solution
+        return white_mean/sig, L
 
-
-    def forward(self, x):
-        x = self.nn_eval(x)
-        return x
+    def forward(self, x, x_train, y_train):
+        white_w_mean, L_w = self._posterior_w(x_train, y_train)
+        f = self.nn_eval(x)
+        Lf = f.t().to(torch.float64).triangular_solve(L_w, upper=False).solution
+        mean = Lf.t() @ white_w_mean
+        var = torch.einsum("in,in->n", Lf, Lf)
+        # Switch back to float32
+        return Normal(mean.to(x), var.sqrt().to(x).unsqueeze(-1))

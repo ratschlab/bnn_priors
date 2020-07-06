@@ -3,17 +3,17 @@ import torch
 import unittest
 from gpytorch.distributions import MultivariateNormal
 
-from bnn_priors.models import IntegratedDenseNet
+from bnn_priors.models import RaoBDenseNet
 
 
-class TestIntegratedDenseNet(unittest.TestCase):
+class TestRaoBDenseNet(unittest.TestCase):
     def test_likelihood(self):
         torch.set_default_dtype(torch.float64)
 
-        x = torch.randn(10, 3)
-        y = torch.randn(10, 2)
+        x = torch.randn(10, 3)*2
+        y = torch.randn(10, 2)*2
 
-        model = IntegratedDenseNet(x.size(-1), y.size(-1), 40)
+        model = RaoBDenseNet(x.size(-1), y.size(-1), 40, output_std=0.8)
 
         lik1 = model.log_likelihood(x, y)
 
