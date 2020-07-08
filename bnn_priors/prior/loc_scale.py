@@ -12,9 +12,9 @@ class LocScale(Prior):
     version of loc=0 and scale=1.
 
     Arguments:
-       shape: (torch.Size): shape of the parameter
-       loc: ()
-
+       shape (torch.Size): shape of the parameter
+       loc (float, torch.Tensor, prior.Prior): location
+       scale (float, torch.Tensor, prior.Prior): scale
     """
     def __init__(self, shape, loc, scale):
         super().__init__(shape, 0., 1.)
@@ -42,6 +42,22 @@ class StudentT(LocScale):
 
 
 class Uniform(LocScale):
-    _dist = td.Uniform
+    """Uniform prior. Implemented as a Gaussian R.V., that is transformed through
+    its own CDF.
+
+    Arguments:
+       shape: (torch.Size): shape of the parameter
+       low (float, torch.Tensor, prior.Prior): lower bound of the Uniform
+       high (float, torch.Tensor, prior.Prior): upper bound of the Uniform
+    """
+    _dist = td.Normal
     def __init__(self, shape, low, high):
-        super().__init__(self, low, high-low)
+        super().__init__(shape, 0., 1.)
+        self.low = low
+        self.high = high
+
+    def forward(self):
+        dist = self.dist()
+        uniform = dist.cdf(self.p)
+        # uniform = torch.nn.functional.sigmoid(self.p)
+        return self.low + (self.high-self.low) * uniform
