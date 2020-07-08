@@ -36,5 +36,5 @@ class PriorTest(unittest.TestCase):
         If the distribution is slightly wrong (e.g. use the Sigmoid function as
         transformation instead of the Gaussian CDF) the p-value is very small.
         """
-        assert p.sum().item() > 20.
+        assert p.sum().item() > bins/3
 
