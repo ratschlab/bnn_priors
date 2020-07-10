@@ -149,6 +149,7 @@ class SGLDRunner:
             state = self.optimizer.state[p]
             self.add_scalar("preconditioner/"+n, state["preconditioner"], i)
             self.add_scalar("est_temperature/"+n, state["est_temperature"], i)
+            self.add_scalar("est_config_temp/"+n, state["est_config_temp"], i)
 
         self.add_scalar("lr", self.optimizer.param_groups[0]["lr"], i)
         loss_ = loss.item()
