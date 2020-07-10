@@ -8,7 +8,7 @@ from bnn_priors import prior
 
 
 class SGLDRunner:
-    def __init__(self, model, num_samples, warmup_steps, learning_rate=5e-4,
+    def __init__(self, model, num_samples, warmup_steps, burnin_steps=None, learning_rate=5e-4,
                  skip=1, temperature=1., momentum=0., sampling_decay=True,
                  grad_max=1e6, cycles=1, precond_update=None, summary_writer=None):
         """
@@ -18,6 +18,7 @@ class SGLDRunner:
             model (torch.Module, PriorMixin): BNN model to sample from
             num_samples (int): Number of samples to draw per cycle
             warmup_steps (int): Number of steps per cycle for warming up the Markov chain
+            burnin_steps (int): Number of steps per cycle between warmup and sampling. When None, uses the same as warmup_steps.
             learning_rate (float): Initial learning rate
             skip (int): Number of samples to skip between saved samples during the sampling phase
             temperature (float): Temperature for tempering the posterior
@@ -31,6 +32,7 @@ class SGLDRunner:
         self.model = model
         self.num_samples = num_samples
         self.warmup_steps = warmup_steps
+        self.burnin_steps = warmup_steps if burnin_steps is None else burnin_steps
         self.learning_rate = learning_rate
         self.skip = skip
         self.temperature = temperature
@@ -44,7 +46,7 @@ class SGLDRunner:
         self._samples = {name+".p" : torch.zeros(torch.Size([num_samples*cycles])+param.shape)
                          for name, param in self.model.params_with_prior_dict().items()}
         self._samples["lr"] = torch.zeros(torch.Size([num_samples*cycles]))
-        self.samples_per_cycle = warmup_steps + (skip * num_samples)
+        self.samples_per_cycle = self.warmup_steps + self.burnin_steps + (self.skip * self.num_samples)
 
         self.metrics = {}
 
@@ -71,10 +73,13 @@ class SGLDRunner:
             if progressbar:
                 warmup_iter = tqdm(range(self.warmup_steps), position=0,
                                    leave=False, desc=f"Cycle {cycle}, Warmup")
+                burnin_iter = tqdm(range(self.burnin_steps), position=0,
+                                   leave=False, desc=f"Cycle {cycle}, Burn-in")
                 sampling_iter = tqdm(range(self.num_samples * self.skip), position=0,
                                      leave=True, desc=f"Cycle {cycle}, Sampling")
             else:
                 warmup_iter = range(self.warmup_steps)
+                burnin_iter = range(self.burnin_steps)
                 sampling_iter = range(self.num_samples * self.skip)
 
             for g in self.optimizer.param_groups:
@@ -89,9 +94,18 @@ class SGLDRunner:
 
             for g in self.optimizer.param_groups:
                 g['temperature'] = self.temperature
+                
+            for burnin_i in burnin_iter:
+                self.step(warmup_i+burnin_i, x, y)
+                # TODO: should we also do this during sampling?
+                if self.precond_update is not None and burnin_i % self.precond_update == 0:
+                    # TODO: how do we actually handle minibatches here?
+                    self.optimizer.estimate_preconditioner(closure=lambda x: x, K=1)
+            burnin_i += 1
 
+            # TODO: should it be possible to change the learning rate before sampling?
             for i in sampling_iter:
-                self.step(warmup_i+i, x, y, lr_decay=self.sampling_decay)
+                self.step(warmup_i+burnin_i+i, x, y, lr_decay=self.sampling_decay)
                 if i % self.skip == 0:
                     for name, param in self.model.params_with_prior_dict().items():
                         # TODO: is there a more elegant way than adding this ".p" here?
