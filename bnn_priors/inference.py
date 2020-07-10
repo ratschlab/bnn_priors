@@ -4,6 +4,7 @@ import torch
 from .utils import get_cosine_schedule
 from .sgld import SGLD
 import math
+from bnn_priors import prior
 
 
 class SGLDRunner:
@@ -37,9 +38,9 @@ class SGLDRunner:
         self.grad_max = grad_max
         self.cycles = cycles
         self.summary_writer = summary_writer
-
-        self._samples = {name : torch.zeros(torch.Size([num_samples*cycles])+param.shape)
-                         for name, param in self.model.params_with_prior()}
+        # TODO: is there a nicer way than adding this ".p" here?
+        self._samples = {name+".p" : torch.zeros(torch.Size([num_samples*cycles])+param.shape)
+                         for name, param in self.model.params_with_prior_dict().items()}
         self._samples["lr"] = torch.zeros(torch.Size([num_samples*cycles]))
         self.samples_per_cycle = warmup_steps + (skip * num_samples)
 
@@ -54,7 +55,7 @@ class SGLDRunner:
             y (torch.tensor): Training labels
             progressbar (bool): Flag that controls whether a progressbar is printed
         """
-        self.param_names, params = zip(*self.model.params_with_prior())
+        self.param_names, params = zip(*prior.named_params_with_prior(self.model))
         self.optimizer = SGLD(
             params=params,
             lr=self.learning_rate, num_data=len(x),
@@ -86,8 +87,9 @@ class SGLDRunner:
             for i in sampling_iter:
                 self.step(warmup_i+i, x, y, lr_decay=self.sampling_decay)
                 if i % self.skip == 0:
-                    for name, param in self.model.params_with_prior():
-                        self._samples[name][(self.num_samples*cycle)+(i//self.skip)] = param
+                    for name, param in self.model.params_with_prior_dict().items():
+                        # TODO: is there a more elegant way than adding this ".p" here?
+                        self._samples[name+".p"][(self.num_samples*cycle)+(i//self.skip)] = param
                     self._samples["lr"][(self.num_samples*cycle)+(i//self.skip)] = self.optimizer.param_groups[0]["lr"]
 
     def add_scalar(self, name, value, step):
@@ -114,7 +116,8 @@ class SGLDRunner:
         self.optimizer.zero_grad()
         # TODO: this only works when the full data is used,
         # otherwise the log_likelihood should be rescaled according to the batch size
-        loss = self.model.potential(x, y)
+        # TODO: should we multiply this by the batch size somehow?
+        loss = self.model.potential(x, y) / len(x)
         loss.backward()
         for p in self.optimizer.param_groups[0]["params"]:
             p.grad.clamp_(min=-self.grad_max, max=self.grad_max)
