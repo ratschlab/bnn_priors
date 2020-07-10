@@ -102,6 +102,7 @@ class SGLD(torch.optim.Optimizer):
 
         for k in range(K):
             with torch.enable_grad():
+                # TODO: what is closure supposed to do exactly? Because we don't use its output actually
                 closure(k)
 
             for group in self.param_groups:

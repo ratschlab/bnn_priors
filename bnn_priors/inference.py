@@ -10,7 +10,7 @@ from bnn_priors import prior
 class SGLDRunner:
     def __init__(self, model, num_samples, warmup_steps, learning_rate=5e-4,
                  skip=1, temperature=1., momentum=0., sampling_decay=True,
-                 grad_max=1e6, cycles=1, summary_writer=None):
+                 grad_max=1e6, cycles=1, precond_update=None, summary_writer=None):
         """
         Stochastic Gradient Langevin Dynamics for posterior sampling.
 
@@ -25,6 +25,7 @@ class SGLDRunner:
             sampling_decay (bool): Flag to control whether the learning rate should decay during sampling
             grad_max (float): maximum absolute magnitude of an element of the gradient
             cycles (int): Number of warmup and sampling cycles to perform
+            precond_update (int): Number of steps after which the preconditioner should be updated. None disables the preconditioner.
             summary_writer (optional, tensorboardX.SummaryWriter): where to write the self.metrics
         """
         self.model = model
@@ -37,6 +38,7 @@ class SGLDRunner:
         self.sampling_decay = sampling_decay
         self.grad_max = grad_max
         self.cycles = cycles
+        self.precond_update = precond_update
         self.summary_writer = summary_writer
         # TODO: is there a nicer way than adding this ".p" here?
         self._samples = {name+".p" : torch.zeros(torch.Size([num_samples*cycles])+param.shape)
@@ -79,6 +81,10 @@ class SGLDRunner:
                 g['temperature'] = 0
             for warmup_i in warmup_iter:
                 self.step(warmup_i, x, y)
+                # TODO: should we also do this during sampling?
+                if self.precond_update is not None and warmup_i % self.precond_update == 0:
+                    # TODO: how do we actually handle minibatches here?
+                    self.optimizer.estimate_preconditioner(closure=lambda x: x, K=1)
             warmup_i += 1
 
             for g in self.optimizer.param_groups:
