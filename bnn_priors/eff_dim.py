@@ -16,13 +16,8 @@ limitations under the License.
 """
 
 import torch
-import time
 import numpy as np
-import hess
-from torch import nn
-import torch.nn.functional as F
-from torch.autograd import Variable
-from typing import Sequence, Optional, List
+from typing import Sequence, Optional, List, Callable, Any, Tuple
 from torch import Tensor
 
 from gpytorch.utils.lanczos import lanczos_tridiag, lanczos_tridiag_to_diag
@@ -37,12 +32,12 @@ def unflatten_like(vector: Tensor, seq: Sequence[Tensor]):
     i = 0
     for t in seq:
         n = t.numel()
-        outList.append(vector[i:i+n].view(tensor.shape))
+        out.append(vector[i:i+n].view(t.shape))
         i += n
     return out
 
 
-def flatten(seq: Sequence[Tensor], out=None: Optional[Tensor]):
+def flatten(seq: Sequence[Tensor], out: Optional[Tensor]=None):
     "Concatenate `Tensor`s in `seq` into a flat vector"
     seq = list(seq)
     numel = sum(t.numel() for t in seq)
@@ -65,7 +60,7 @@ def flatten_grads(seq: Sequence[Tensor], out=None):
 
 
 def hess_vec_prod(vec: Sequence[Tensor], parameters: List[Tensor],
-                  fn: Callable[Any, Tensor], dataloader: Sequence[Any]):
+                  fn: Callable[..., Tensor], dataloader: Sequence[Tuple]):
     """Evaluate product of the Hessian of the loss function with a direction
     vector `vec`. (Hessian-vector product, HVP)
 
@@ -80,6 +75,7 @@ def hess_vec_prod(vec: Sequence[Tensor], parameters: List[Tensor],
           == sum(fn(*d) for d in dataloader)`
           This is true when len(dataloader) == 1, and for most losses in machine learning.
     """
+    parameters = list(parameters)
     # Clear gradients
     for p in parameters:
         if p.grad is not None:
@@ -96,12 +92,11 @@ def hess_vec_prod(vec: Sequence[Tensor], parameters: List[Tensor],
         prod.backward()  # Store HVP in the `p.grad`s
 
 
-def hessian(vec: Tensor, parameters: Sequence[Tensor],
-            fn: Callable[Any, Tensor], dataloader: Sequence[Any]) -> Tensor:
+def hessian(parameters: Sequence[Tensor], fn: Callable[..., Tensor],
+            dataloader: Sequence[Tuple]) -> Tensor:
     """Evaluate the Hessian of `fn` with respect to `parameters`.
 
     Arguments:
-        vec: a list of tensor with the same dimensions as `parameters`.
         parameters: the parameters for the Hessian.
         fn: the function for the Hessian
         dataloader: an iterator that gives the arguments to `fn` at every iteration. It is assumed that
@@ -113,7 +108,7 @@ def hessian(vec: Tensor, parameters: Sequence[Tensor],
     numel = sum(p.numel() for p in parameters)
     hessian = torch.zeros((numel, numel), dtype=parameters[0].dtype, device='cpu')
 
-    base_vec = torch.zeros(n_par, device=parameters[0].device, dtype=parameters[0].dtype)
+    base_vec = torch.zeros(numel, device=parameters[0].device, dtype=parameters[0].dtype)
 
     for i in range(numel):
         base_vec.zero_()
@@ -137,12 +132,20 @@ def _eig_lanczos(mvmul_closure, n_eigs, vecs, dtype, device, numel):
     return vals, (qmat @ t_vals if vecs else None)
 
 
-def hessian_eigs_lanczos(parameters: Sequence[Tensor],
-                         fn: Callable[Any, Tensor], dataloader: Sequence[Any],
-                         n_eigs=-1: int, vecs=True: bool) -> Tuple[Tensor, Optional[Tensor]]:
+def hessian_eigs_positive_lanczos(parameters: Sequence[Tensor],
+                                  fn: Callable[..., Tensor], dataloader: Sequence[Tuple],
+                                  n_eigs: int=-1, vecs: bool=True) -> Tuple[Tensor, Optional[Tensor]]:
 
-    """Evaluate the largest `n_eigs` eigenvalues and eigenvectors of the Hessian of
-    `fn` with respect to `parameters`, without evaluating the full Hessian.
+    """Returns the leading `n_eigs` approximate eigenvalues and eigenvectors of
+    the Hessian of `fn` with respect to `parameters`, without evaluating the
+    full Hessian. If `n_eigs` is -1, the eigenvalues and eigenvectors are
+    exact.
+
+    If any of these eigenvalues is negative, it is returned as 1.0. Its
+    corresponding eigenvector is all zeros.
+
+    The output of this function is quite sensitive to floating point precision.
+    For best results, use `float64`.
 
     Arguments:
         parameters: the parameters for the Hessian.
@@ -155,7 +158,10 @@ def hessian_eigs_lanczos(parameters: Sequence[Tensor],
           `-1` to calculate all of them.
         vecs: whether to calculate the eigenvectors
 
-    Returns: an (eigenvalues, Q) tuple. The columns of `Q` are the eigenvectors.
+    Returns:
+        An (eigenvalues, Q) tuple. The columns of `Q` are the eigenvectors.
+        The eigenvalues are in ascending order.
+
     """
     parameters = list(parameters)
     numel = sum(p.numel() for p in parameters)
@@ -164,22 +170,34 @@ def hessian_eigs_lanczos(parameters: Sequence[Tensor],
         assert vector.dim() == 2 and vector.size(1) == 1
         hess_vec_prod(unflatten_like(vector.view(-1), parameters),
                       parameters, fn, dataloader)
-        return flatten_grads(parameters)
+        return flatten_grads(parameters).unsqueeze(1)
     return _eig_lanczos(hvp, n_eigs, vecs, parameters[0].dtype,
                         parameters[0].device, numel)
 
 
-def symeig_lanczos(mat: Tensor, n_eigs=-1: int, vecs=True: bool
-                   ) -> Tuple[Tensor, Optional[Tensor]]:
+def symeig_positive_lanczos(mat: Tensor, n_eigs: int=-1, vecs: bool=True
+                            ) -> Tuple[Tensor, Optional[Tensor]]:
 
-    """Returns the leading `n_eigs` values and vectors of symmetrical matrix
-    `mat`.
+    """Returns the leading `n_eigs` approximate eigenvalues and eigenvectors of
+    symmetrical matrix `mat`. If `n_eigs` is -1, the eigenvalues and
+    eigenvectors are exact.
+
+    If any of these eigenvalues is negative, it is returned as 1.0. Its
+    corresponding eigenvector is all zeros.
+
+    The output of this function is quite sensitive to floating point precision.
+    For best results, use `float64`.
 
     Arguments:
         mat: the symmetric matrix for which to calculate the eigendecomposition
         n_eigs (int): the number of eigenvalues and vectors to calculate. Use
           `-1` to calculate all of them.
         vecs: whether to calculate the eigenvectors
+
+    Returns:
+        An (eigenvalues, Q) tuple. The columns of `Q` are the eigenvectors.
+        The eigenvalues are in ascending order.
+
     """
     assert mat.dim() == 2 and mat.size(0) == mat.size(1)
     def mvmul_closure(vector):
