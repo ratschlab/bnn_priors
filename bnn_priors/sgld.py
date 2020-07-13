@@ -38,8 +38,9 @@ class SGLD(torch.optim.Optimizer):
         for group in self.param_groups:
             mom_decay = group['momentum']
             temperature = group['temperature']
-            hn = math.sqrt(group['lr'] * group['num_data'])
-            h = math.sqrt(group['lr'] / group['num_data'])
+            num_data = group['num_data']
+            hn = math.sqrt(group['lr'] * num_data)
+            h = math.sqrt(group['lr'] / num_data)
 
             for p in group['params']:
                 if p.grad is None:
@@ -52,6 +53,7 @@ class SGLD(torch.optim.Optimizer):
                     raise ValueError(
                         f"Gradient of shape {p.shape} is not finite: {p.grad}")
 
+                # Update the momentum
                 state = self.state[p]
                 if mom_decay > 0:
                     if 'momentum_buffer' in state:
@@ -68,14 +70,20 @@ class SGLD(torch.optim.Optimizer):
                 else:
                     M = state['preconditioner'] = 1.
 
+                # Add noise to momentum
                 if temperature > 0:
                     c = math.sqrt(2*(1 - mom_decay) * temperature * M)
                     momentum.add_(torch.randn_like(momentum), alpha=c)
 
-                _m = momentum.view(-1)
-                state['est_temperature'] = (_m @ _m).item() / M
-
+                # Take the gradient step
                 p.add_(momentum, alpha=h/M)
+
+                # Temperature diagnostics
+                _m = momentum.view(-1)
+                d = _m.size(0)
+                state['est_temperature'] = (_m @ _m).item() / (M*d)
+                state['est_config_temp'] = (
+                    (p.view(-1) @ p.grad.view(-1)).item() * (num_data/d))
 
         return loss
 
@@ -102,6 +110,7 @@ class SGLD(torch.optim.Optimizer):
 
         for k in range(K):
             with torch.enable_grad():
+                # TODO: what is closure supposed to do exactly? Because we don't use its output actually
                 closure(k)
 
             for group in self.param_groups:

@@ -4,12 +4,13 @@ import torch
 from .utils import get_cosine_schedule
 from .sgld import SGLD
 import math
+from bnn_priors import prior
 
 
 class SGLDRunner:
-    def __init__(self, model, num_samples, warmup_steps, learning_rate=5e-4,
+    def __init__(self, model, num_samples, warmup_steps, burnin_steps=None, learning_rate=5e-4,
                  skip=1, temperature=1., momentum=0., sampling_decay=True,
-                 grad_max=1e6, cycles=1, summary_writer=None):
+                 grad_max=1e6, cycles=1, precond_update=None, summary_writer=None):
         """
         Stochastic Gradient Langevin Dynamics for posterior sampling.
 
@@ -17,6 +18,7 @@ class SGLDRunner:
             model (torch.Module, PriorMixin): BNN model to sample from
             num_samples (int): Number of samples to draw per cycle
             warmup_steps (int): Number of steps per cycle for warming up the Markov chain
+            burnin_steps (int): Number of steps per cycle between warmup and sampling. When None, uses the same as warmup_steps.
             learning_rate (float): Initial learning rate
             skip (int): Number of samples to skip between saved samples during the sampling phase
             temperature (float): Temperature for tempering the posterior
@@ -24,11 +26,13 @@ class SGLDRunner:
             sampling_decay (bool): Flag to control whether the learning rate should decay during sampling
             grad_max (float): maximum absolute magnitude of an element of the gradient
             cycles (int): Number of warmup and sampling cycles to perform
+            precond_update (int): Number of steps after which the preconditioner should be updated. None disables the preconditioner.
             summary_writer (optional, tensorboardX.SummaryWriter): where to write the self.metrics
         """
         self.model = model
         self.num_samples = num_samples
         self.warmup_steps = warmup_steps
+        self.burnin_steps = warmup_steps if burnin_steps is None else burnin_steps
         self.learning_rate = learning_rate
         self.skip = skip
         self.temperature = temperature
@@ -36,12 +40,13 @@ class SGLDRunner:
         self.sampling_decay = sampling_decay
         self.grad_max = grad_max
         self.cycles = cycles
+        self.precond_update = precond_update
         self.summary_writer = summary_writer
-
-        self._samples = {name : torch.zeros(torch.Size([num_samples*cycles])+param.shape)
-                         for name, param in self.model.params_with_prior()}
+        # TODO: is there a nicer way than adding this ".p" here?
+        self._samples = {name+".p" : torch.zeros(torch.Size([num_samples*cycles])+param.shape)
+                         for name, param in self.model.params_with_prior_dict().items()}
         self._samples["lr"] = torch.zeros(torch.Size([num_samples*cycles]))
-        self.samples_per_cycle = warmup_steps + (skip * num_samples)
+        self.samples_per_cycle = self.warmup_steps + self.burnin_steps + (self.skip * self.num_samples)
 
         self.metrics = {}
 
@@ -54,7 +59,7 @@ class SGLDRunner:
             y (torch.tensor): Training labels
             progressbar (bool): Flag that controls whether a progressbar is printed
         """
-        self.param_names, params = zip(*self.model.params_with_prior())
+        self.param_names, params = zip(*prior.named_params_with_prior(self.model))
         self.optimizer = SGLD(
             params=params,
             lr=self.learning_rate, num_data=len(x),
@@ -68,26 +73,43 @@ class SGLDRunner:
             if progressbar:
                 warmup_iter = tqdm(range(self.warmup_steps), position=0,
                                    leave=False, desc=f"Cycle {cycle}, Warmup")
+                burnin_iter = tqdm(range(self.burnin_steps), position=0,
+                                   leave=False, desc=f"Cycle {cycle}, Burn-in")
                 sampling_iter = tqdm(range(self.num_samples * self.skip), position=0,
                                      leave=True, desc=f"Cycle {cycle}, Sampling")
             else:
                 warmup_iter = range(self.warmup_steps)
+                burnin_iter = range(self.burnin_steps)
                 sampling_iter = range(self.num_samples * self.skip)
 
             for g in self.optimizer.param_groups:
                 g['temperature'] = 0
             for warmup_i in warmup_iter:
                 self.step(warmup_i, x, y)
+                # TODO: should we also do this during sampling?
+                if self.precond_update is not None and warmup_i % self.precond_update == 0:
+                    # TODO: how do we actually handle minibatches here?
+                    self.optimizer.estimate_preconditioner(closure=lambda x: x, K=1)
             warmup_i += 1
 
             for g in self.optimizer.param_groups:
                 g['temperature'] = self.temperature
+                
+            for burnin_i in burnin_iter:
+                self.step(warmup_i+burnin_i, x, y)
+                # TODO: should we also do this during sampling?
+                if self.precond_update is not None and burnin_i % self.precond_update == 0:
+                    # TODO: how do we actually handle minibatches here?
+                    self.optimizer.estimate_preconditioner(closure=lambda x: x, K=1)
+            burnin_i += 1
 
+            # TODO: should it be possible to change the learning rate before sampling?
             for i in sampling_iter:
-                self.step(warmup_i+i, x, y, lr_decay=self.sampling_decay)
+                self.step(warmup_i+burnin_i+i, x, y, lr_decay=self.sampling_decay)
                 if i % self.skip == 0:
-                    for name, param in self.model.params_with_prior():
-                        self._samples[name][(self.num_samples*cycle)+(i//self.skip)] = param
+                    for name, param in self.model.params_with_prior_dict().items():
+                        # TODO: is there a more elegant way than adding this ".p" here?
+                        self._samples[name+".p"][(self.num_samples*cycle)+(i//self.skip)] = param
                     self._samples["lr"][(self.num_samples*cycle)+(i//self.skip)] = self.optimizer.param_groups[0]["lr"]
 
     def add_scalar(self, name, value, step):
@@ -114,7 +136,8 @@ class SGLDRunner:
         self.optimizer.zero_grad()
         # TODO: this only works when the full data is used,
         # otherwise the log_likelihood should be rescaled according to the batch size
-        loss = self.model.potential(x, y)
+        # TODO: should we multiply this by the batch size somehow?
+        loss = self.model.potential(x, y) / len(x)
         loss.backward()
         for p in self.optimizer.param_groups[0]["params"]:
             p.grad.clamp_(min=-self.grad_max, max=self.grad_max)
@@ -126,6 +149,7 @@ class SGLDRunner:
             state = self.optimizer.state[p]
             self.add_scalar("preconditioner/"+n, state["preconditioner"], i)
             self.add_scalar("est_temperature/"+n, state["est_temperature"], i)
+            self.add_scalar("est_config_temp/"+n, state["est_config_temp"], i)
 
         self.add_scalar("lr", self.optimizer.param_groups[0]["lr"], i)
         loss_ = loss.item()
