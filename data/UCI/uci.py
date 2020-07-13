@@ -2,6 +2,8 @@ import torch as t
 import numpy as np
 from torch.utils.data import TensorDataset
 
+__all__ = ('UCI',)
+
 class Dataset:
     """
     Represents the full dataset.  We will have two copies: one normalised, one unnormalized.

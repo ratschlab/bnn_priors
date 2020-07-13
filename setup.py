@@ -9,7 +9,7 @@ setup(
     author_email="adria.garriga@gmail.com",
     url="https://github.com/ratschlab/projects2020_BNN-priors/",
     license="MIT license",
-    packages=["bnn_priors"],
+    packages=["bnn_priors", "data"],
     install_requires=[
         "torch>=1.5.0<1.6",
         "tensorboardX>=2.0<2.1",
