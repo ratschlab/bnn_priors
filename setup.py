@@ -14,6 +14,7 @@ setup(
         "torch>=1.5.0<1.6",
         "tensorboardX>=2.0<2.1",
         "sacred>=0.8<0.9",
+        "pyro-ppl>=1.3.0<1.4",
     ],
     test_suite="testing",
 )
