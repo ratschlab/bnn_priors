@@ -17,17 +17,13 @@ class AbstractModel(nn.Module, abc.ABC):
        num_data: the total number of data points, for minibatching
        net: neural net to evaluate to get the latent function
     """
-    def __init__(self, num_data: int, net: nn.Module):
+    def __init__(self, net: nn.Module):
         super().__init__()
-        self.num_data = num_data
         self.net = net
 
     def log_prior(self):
         "log p(params)"
         return sum(p.log_prob() for _, p in prior.named_priors(self))
-
-    def log_prior_avg(self):
-        return self.log_prior() / self.num_data
 
     @abc.abstractmethod
     def likelihood_dist(self, f: torch.Tensor):
@@ -39,29 +35,33 @@ class AbstractModel(nn.Module, abc.ABC):
         f = self.net(x)
         return self.likelihood_dist(f)
 
-    def log_likelihood(self, x: torch.Tensor, y: torch.Tensor):
-        "log p(y | x, self.parameters)"
+    def log_likelihood(self, x: torch.Tensor, y: torch.Tensor, eff_num_data):
+        """
+        unbiased minibatch estimate of log-likelihood
+        log p(y | x, self.parameters)
+        """
         # compute batch size using zeroth dim of inputs (log_prob_batch doesn't work with RaoB).
         assert x.shape[0] == y.shape[0]
         batch_size = x.shape[0]
+        return self(x).log_prob(y).sum() * (eff_num_data/batch_size)
 
-        log_prob_batch = self(x).log_prob(y).sum()
-        return log_prob_batch.sum(0) * (self.num_data/batch_size)
+    def log_likelihood_avg(self, x: torch.Tensor, y: torch.Tensor, eff_num_data):
+        """
+        unbiased minibatch estimate of log-likelihood per datapoint
+        """
+        return self.log_likelihood(x, y, eff_num_data)/eff_num_data
 
-    def log_likelihood_avg(self, x: torch.Tensor, y: torch.Tensor):
-        return self.log_likelihood_avg(x, y) / self.num_data
-
-    def potential(self, x, y, temperature=1., data_mult=1.):
+    def potential(self, x, y, eff_num_data, temperature=1.):
         """
         There are two subtly different ways of altering the "temperature".
         The Wenzel et al. approach is to apply a temperature (here, T) to both the prior and likelihood together.
         However, the VI approach is to in effect replicate each datapoint multiple times (data_mult)
         """
-        return - (self.log_likelihood(x, y)*data_mult + self.log_prior())/temperature
+        return - (self.log_likelihood(x, y, eff_num_data) + self.log_prior())/temperature
 
-    def potential_avg(self, x, y, temperature=1., data_mult=1.):
+    def potential_avg(self, x, y, eff_num_data, temperature=1.):
         "-log p(y, params | x)"
-        return self.potential(x, y, temperature=temperature, data_mult=data_mult) / (self.num_data*data_mult)
+        return self.potential(x, y, eff_num_data, temperature=temperature) / eff_num_data
 
     def params_with_prior_dict(self):
         return OrderedDict(
@@ -73,12 +73,15 @@ class AbstractModel(nn.Module, abc.ABC):
 
     # Following methods necessary for HMC but not SGLD
 
-    def get_potential(self, x: torch.Tensor, y: torch.Tensor, temperature=1., data_mult=1.):
+    def get_potential(self, x: torch.Tensor, y: torch.Tensor, eff_num_data = None, temperature=1.):
+        if eff_num_data is None:
+            eff_num_data = x.shape[0]
+
         "returns (potential(param_dict) -> torch.Tensor)"
         def potential_fn(param_dict):
             "-log p(y, params | x)"
             with self.using_params(param_dict):
-                return self.potential(x, y, temperature=temperature, data_mult=data_mult)
+                return self.potential(x, y, eff_num_data, temperature=temperature)
         return potential_fn
 
     @contextlib.contextmanager
@@ -114,10 +117,9 @@ class RegressionModel(AbstractModel):
                  likelihood
        net: modules to evaluate to get the latent function
     """
-    def __init__(self, num_data: int,
-                 noise_std: Union[float, torch.Tensor, prior.Prior],
-                 net: nn.Module):
-        super().__init__(num_data, net)
+    def __init__(self, net: nn.Module,
+                 noise_std: Union[float, torch.Tensor, prior.Prior]):
+        super().__init__(net)
         self.noise_std = noise_std
 
     def likelihood_dist(self, f: torch.Tensor):
@@ -139,7 +141,7 @@ class RaoBRegressionModel(AbstractModel):
         assert x_train.dim() == 2
         assert x_train.size(0) == y_train.size(0)
         assert y_train.size(1) == 1
-        super().__init__(x_train.size(0), net)
+        super().__init__(net)
         self.x_train = x_train
         self.y_train = y_train
         self.noise_std = noise_std
@@ -162,7 +164,7 @@ class RaoBRegressionModel(AbstractModel):
         assert type(const_a) == float
         return const_a
 
-    def log_likelihood(self, x, y):
+    def log_likelihood(self, x, y, eff_num_data):
         """Evaluate the Bayesian linear regression likelihood conditional on
         self.net(x). The prior over weights is:
             p(w_ij) = Normal(0, 1)

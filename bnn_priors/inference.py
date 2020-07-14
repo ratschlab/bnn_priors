@@ -42,7 +42,7 @@ class SGLDRunner:
         self.num_samples = sample_epochs // skip
         self.learning_rate = learning_rate
         self.temperature = temperature
-        self.data_mult = data_mult
+        self.eff_num_data = len(dataloader.dataset) * data_mult
         self.momentum = momentum
         self.sampling_decay = sampling_decay
         self.grad_max = grad_max
@@ -68,7 +68,7 @@ class SGLDRunner:
         self.param_names, params = zip(*prior.named_params_with_prior(self.model))
         self.optimizer = SGLD(
             params=params,
-            lr=self.learning_rate, num_data=len(self.dataloader.dataset)*self.data_mult,
+            lr=self.learning_rate, num_data=self.eff_num_data,
             momentum=self.momentum, temperature=self.temperature)
 
         schedule = get_cosine_schedule(len(self.dataloader) * self.epochs_per_cycle)
@@ -132,7 +132,7 @@ class SGLDRunner:
         # TODO: this only works when the full data is used,
         # otherwise the log_likelihood should be rescaled according to the batch size
         # TODO: should we multiply this by the batch size somehow?
-        loss = self.model.potential_avg(x, y, temperature=self.temperature, data_mult=self.data_mult)
+        loss = self.model.potential_avg(x, y, self.eff_num_data, temperature=self.temperature)
         loss.backward()
         for p in self.optimizer.param_groups[0]["params"]:
             p.grad.clamp_(min=-self.grad_max, max=self.grad_max)
