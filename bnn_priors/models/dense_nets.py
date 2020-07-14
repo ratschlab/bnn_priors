@@ -10,17 +10,14 @@ def LinearNealNormal(in_dim, out_dim, std_w, std_b):
                   prior.Normal((out_dim,), 0., std_b))
 
 
-def DenseNet(x_train, y_train, width, noise_std=1.):
-    in_dim = x_train.size(-1)
-    out_dim = y_train.size(-1)
-    num_data = x_train.size(0)
+def DenseNet(num_data, in_features, out_features, width, noise_std=1.):
     return RegressionModel(
         num_data, noise_std, nn.Sequential(
-            LinearNealNormal(in_dim, width, 2**.5, 1.0),
+            LinearNealNormal(in_features, width, 2**.5, 1.0),
             nn.ReLU(),
             LinearNealNormal(width, width, 2**.5, 1.0),
             nn.ReLU(),
-            LinearNealNormal(width, out_dim, 2**.5, 1.0)))
+            LinearNealNormal(width, out_features, 2**.5, 1.0)))
 
 
 def RaoBDenseNet(x_train, y_train, width, noise_std=1.):
