@@ -2,6 +2,8 @@ import torch
 import math
 from scipy.stats import chi2
 from collections import OrderedDict
+from typing import Sequence, Optional, Callable, Tuple
+import typing
 
 
 def dot(a, b):
@@ -10,7 +12,7 @@ def dot(a, b):
 
 
 class SGLD(torch.optim.Optimizer):
-    """Implements SGLD with momentum and diagnostics from Wenzel et al. 2020.
+    """SGLD with momentum and diagnostics from Wenzel et al. 2020.
 
     Args:
         params (iterable): iterable of parameters to optimize or dicts defining
@@ -22,10 +24,11 @@ class SGLD(torch.optim.Optimizer):
                              temperature=0 corresponds to SGD with momentum.
         raise_on_no_grad (bool): whether to complain if a parameter does not
                                  have a gradient
-
+        raise_on_nan: whether to complain if a gradient is not all finite.
     """
-    def __init__(self, params, lr, num_data, momentum=0, temperature=1.,
-                 raise_on_no_grad=True, raise_on_nan=True):
+    def __init__(self, params: Sequence[torch.nn.Parameter], lr: float,
+                 num_data: int, momentum: float=0, temperature: float=1.,
+                 raise_on_no_grad: bool=True, raise_on_nan: bool=True):
         assert lr >= 0 and num_data >= 0 and momentum >= 0 and temperature >= 0
         defaults = dict(lr=lr, num_data=num_data, momentum=momentum,
                         temperature=temperature)
@@ -34,7 +37,7 @@ class SGLD(torch.optim.Optimizer):
         self.raise_on_nan = raise_on_nan
 
     @torch.no_grad()
-    def step(self, closure=None):
+    def step(self, closure: Optional[Callable[..., torch.Tensor]]=None):
         loss = None
         if closure is not None:
             with torch.enable_grad():
@@ -90,34 +93,36 @@ class SGLD(torch.optim.Optimizer):
         return loss
 
     @torch.no_grad()
-    def estimate_preconditioner(self, closure, K=32, eps=1e-7):
+    def estimate_preconditioner(self, closure: Callable[..., torch.Tensor],
+                                dataloader: Sequence[Tuple], eps: float=1e-7
+                                ) -> typing.Dict[torch.nn.Parameter, float]:
         """Estimates the preconditioner for each parameter using the algorithm in
         Wenzel et al. 2020.
 
         Args:
-            closure (int -> IO float): calculates the k-th minibatch gradient.
-                                       Should use a different minibatch every
-                                       time it is called.
-            K (int): the number of minibatches to use for estimating.
-            eps (float): RMSProp regularization parameter
+            closure: calculates the minibatch loss, and stores its gradient
+                      in the `.grad` attribute of the parameters.
+            dataloader: a sequence of *args that represent minibatches, and are
+                        used as arguments to the `closure`.
+            eps: RMSProp regularization parameter
 
         Returns:
-            precond (dict): for each parameter (key), the resulting
-                            preconditioner (value).
+            precond: for each parameter (key), the resulting preconditioner (value).
+
         """
         precond = OrderedDict()
         for group in self.param_groups:
             for p in group['params']:
                 precond[p] = 0.
 
-        for k in range(K):
+        K = len(dataloader)
+        for args in dataloader:
             with torch.enable_grad():
-                # TODO: what is closure supposed to do exactly? Because we don't use its output actually
-                closure(k)
+                _loss = closure(args)
 
             for group in self.param_groups:
                 for p in group['params']:
-                    precond[p] += (p.grad.view(-1) @ p.grad.view(-1)).item()
+                    precond[p] += dot(p.grad, p.grad)
 
         min_s = math.inf
         for p, v in precond.items():
