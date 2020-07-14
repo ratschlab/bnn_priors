@@ -129,10 +129,7 @@ class SGLDRunner:
             loss (float): The current loss of the model for x and y
         """
         self.optimizer.zero_grad()
-        # TODO: this only works when the full data is used,
-        # otherwise the log_likelihood should be rescaled according to the batch size
-        # TODO: should we multiply this by the batch size somehow?
-        loss = self.model.potential_avg(x, y, self.eff_num_data, temperature=self.temperature)
+        loss = self.model.potential_avg(x, y, self.eff_num_data)
         loss.backward()
         for p in self.optimizer.param_groups[0]["params"]:
             p.grad.clamp_(min=-self.grad_max, max=self.grad_max)

@@ -51,17 +51,17 @@ class AbstractModel(nn.Module, abc.ABC):
         """
         return self.log_likelihood(x, y, eff_num_data)/eff_num_data
 
-    def potential(self, x, y, eff_num_data, temperature=1.):
+    def potential(self, x, y, eff_num_data):
         """
         There are two subtly different ways of altering the "temperature".
         The Wenzel et al. approach is to apply a temperature (here, T) to both the prior and likelihood together.
         However, the VI approach is to in effect replicate each datapoint multiple times (data_mult)
         """
-        return - (self.log_likelihood(x, y, eff_num_data) + self.log_prior())/temperature
+        return - self.log_likelihood(x, y, eff_num_data) + self.log_prior()
 
-    def potential_avg(self, x, y, eff_num_data, temperature=1.):
+    def potential_avg(self, x, y, eff_num_data):
         "-log p(y, params | x)"
-        return self.potential(x, y, eff_num_data, temperature=temperature) / eff_num_data
+        return self.potential(x, y, eff_num_data) / eff_num_data
 
     def params_with_prior_dict(self):
         return OrderedDict(
@@ -73,7 +73,7 @@ class AbstractModel(nn.Module, abc.ABC):
 
     # Following methods necessary for HMC but not SGLD
 
-    def get_potential(self, x: torch.Tensor, y: torch.Tensor, eff_num_data = None, temperature=1.):
+    def get_potential(self, x: torch.Tensor, y: torch.Tensor, eff_num_data = None):
         if eff_num_data is None:
             eff_num_data = x.shape[0]
 
@@ -81,7 +81,7 @@ class AbstractModel(nn.Module, abc.ABC):
         def potential_fn(param_dict):
             "-log p(y, params | x)"
             with self.using_params(param_dict):
-                return self.potential(x, y, eff_num_data, temperature=temperature)
+                return self.potential(x, y, eff_num_data)
         return potential_fn
 
     @contextlib.contextmanager
