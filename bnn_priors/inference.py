@@ -8,20 +8,22 @@ from bnn_priors import prior
 
 
 class SGLDRunner:
-    def __init__(self, model, num_samples, warmup_steps, burnin_steps=None, learning_rate=5e-4,
-                 skip=1, temperature=1., momentum=0., sampling_decay=True,
+    def __init__(self, model, num_data, num_samples, warmup_steps, burnin_steps=None, learning_rate=1e-2,
+                 skip=1, temperature=1., data_mult=1., momentum=0., sampling_decay=True,
                  grad_max=1e6, cycles=1, precond_update=None, summary_writer=None):
         """
         Stochastic Gradient Langevin Dynamics for posterior sampling.
 
         Args:
             model (torch.Module, PriorMixin): BNN model to sample from
+            num_data (int): Number of datapoints in training sest
             num_samples (int): Number of samples to draw per cycle
             warmup_steps (int): Number of steps per cycle for warming up the Markov chain
             burnin_steps (int): Number of steps per cycle between warmup and sampling. When None, uses the same as warmup_steps.
             learning_rate (float): Initial learning rate
             skip (int): Number of samples to skip between saved samples during the sampling phase
             temperature (float): Temperature for tempering the posterior
+            data_mult (float): Effective replication of each datapoint (which is the usual approach to tempering in VI).
             momentum (float): Momentum decay parameter for SGLD
             sampling_decay (bool): Flag to control whether the learning rate should decay during sampling
             grad_max (float): maximum absolute magnitude of an element of the gradient
@@ -30,12 +32,14 @@ class SGLDRunner:
             summary_writer (optional, tensorboardX.SummaryWriter): where to write the self.metrics
         """
         self.model = model
+        self.num_data = num_data
         self.num_samples = num_samples
         self.warmup_steps = warmup_steps
         self.burnin_steps = warmup_steps if burnin_steps is None else burnin_steps
         self.learning_rate = learning_rate
         self.skip = skip
         self.temperature = temperature
+        self.data_mult = data_mult
         self.momentum = momentum
         self.sampling_decay = sampling_decay
         self.grad_max = grad_max
@@ -62,7 +66,7 @@ class SGLDRunner:
         self.param_names, params = zip(*prior.named_params_with_prior(self.model))
         self.optimizer = SGLD(
             params=params,
-            lr=self.learning_rate, num_data=len(x),
+            lr=self.learning_rate, num_data=self.num_data*self.data_mult,
             momentum=self.momentum, temperature=self.temperature)
 
         schedule = get_cosine_schedule(self.samples_per_cycle)
@@ -137,7 +141,7 @@ class SGLDRunner:
         # TODO: this only works when the full data is used,
         # otherwise the log_likelihood should be rescaled according to the batch size
         # TODO: should we multiply this by the batch size somehow?
-        loss = self.model.potential(x, y) / len(x)
+        loss = self.model.potential_avg(x, y, temperature=self.temperature, data_mult=self.data_mult)
         loss.backward()
         for p in self.optimizer.param_groups[0]["params"]:
             p.grad.clamp_(min=-self.grad_max, max=self.grad_max)
