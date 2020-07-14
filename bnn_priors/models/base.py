@@ -147,12 +147,12 @@ class RaoBRegressionModel(AbstractModel):
         self.noise_std = noise_std
         self.last_layer_std = last_layer_std
 
-        self.log_likelihood_precomp = self._log_likelihood_precomp(y_train)
+        _, n_feat = self.net(x_train[:1]).shape
+        self.log_likelihood_precomp = self._log_likelihood_precomp(y_train, n_feat)
 
-    def _log_likelihood_precomp(self, y):
+    def _log_likelihood_precomp(self, y, n_feat):
         "N log(2π) + (N-F) log(σ²) + tr_YY/(D σ²)"
         N, D = y.shape
-        n_feat = D
 
         sig = self.noise_std**2
         log_sig = 2*math.log(self.noise_std)
