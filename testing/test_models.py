@@ -17,7 +17,7 @@ class TestRaoBDenseNet(unittest.TestCase):
 
         lik1 = model.log_likelihood(x, y, len(x))
 
-        f = model.net(x)
+        f = model.net(x) * model.last_layer_std
         noise = model.noise_std**2 * torch.eye(x.size(0), dtype=f.dtype, device=f.device)
         dist = MultivariateNormal(torch.zeros_like(y[:, 0]), f@f.t() + noise)
 
