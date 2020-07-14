@@ -4,6 +4,11 @@ from scipy.stats import chi2
 from collections import OrderedDict
 
 
+def dot(a, b):
+    "return (a*b).sum().item()"
+    return (a.view(-1) @ b.view(-1)).item()
+
+
 class SGLD(torch.optim.Optimizer):
     """Implements SGLD with momentum and diagnostics from Wenzel et al. 2020.
 
@@ -56,12 +61,11 @@ class SGLD(torch.optim.Optimizer):
                 # Update the momentum
                 state = self.state[p]
                 if mom_decay > 0:
-                    if 'momentum_buffer' in state:
+                    try:
                         momentum = state['momentum_buffer']
-                        momentum.mul_(mom_decay).add_(p.grad, alpha=-hn)
-                    else:
-                        momentum = state['momentum_buffer'] = (
-                            p.grad.detach().mul(-hn))
+                    except KeyError:
+                        momentum = torch.zeros_like(p)
+                    momentum.mul_(mom_decay).add_(p.grad, alpha=-hn)
                 else:
                     momentum = p.grad.detach().mul(-hn)
 
@@ -79,11 +83,9 @@ class SGLD(torch.optim.Optimizer):
                 p.add_(momentum, alpha=h/M)
 
                 # Temperature diagnostics
-                _m = momentum.view(-1)
-                d = _m.size(0)
-                state['est_temperature'] = (_m @ _m).item() / (M*d)
-                state['est_config_temp'] = (
-                    (p.view(-1) @ p.grad.view(-1)).item() * (num_data/d))
+                d = p.numel()
+                state['est_temperature'] = dot(momentum, momentum) / (M*d)
+                state['est_config_temp'] = dot(p, p.grad) * (num_data/d)
 
         return loss
 
