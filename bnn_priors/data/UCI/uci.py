@@ -36,7 +36,6 @@ class UCI:
     def __init__(self, dataset, split, dtype='float32'):
         _ROOT = os.path.abspath(os.path.dirname(__file__))
         dataset_dir = f'{_ROOT}/{dataset}/'
-        print(dataset_dir)
         data = np.loadtxt(f'{dataset_dir}/data.txt').astype(getattr(np, dtype))
         index_features = np.loadtxt(f'{dataset_dir}/index_features.txt')
         index_target = np.loadtxt(f'{dataset_dir}/index_target.txt')
