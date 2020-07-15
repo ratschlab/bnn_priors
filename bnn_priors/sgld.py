@@ -2,7 +2,7 @@ import torch
 import math
 from scipy.stats import chi2
 from collections import OrderedDict
-from typing import Sequence, Optional, Callable, Tuple
+from typing import Sequence, Optional, Callable, Tuple, Dict, Union
 import typing
 
 
@@ -12,7 +12,7 @@ def dot(a, b):
 
 
 class SGLD(torch.optim.Optimizer):
-    """SGLD with momentum and diagnostics from Wenzel et al. 2020.
+    """SGLD with momentum, preconditioning and diagnostics from Wenzel et al. 2020.
 
     Args:
         params (iterable): iterable of parameters to optimize or dicts defining
@@ -26,9 +26,9 @@ class SGLD(torch.optim.Optimizer):
                                  have a gradient
         raise_on_nan: whether to complain if a gradient is not all finite.
     """
-    def __init__(self, params: Sequence[torch.nn.Parameter], lr: float,
+    def __init__(self, params: Sequence[Union[torch.nn.Parameter, Dict]], lr: float,
                  num_data: int, momentum: float=0, temperature: float=1.,
-                 raise_on_no_grad: bool=True, raise_on_nan: bool=True):
+                 raise_on_no_grad: bool=True, raise_on_nan: bool=False):
         assert lr >= 0 and num_data >= 0 and momentum >= 0 and temperature >= 0
         defaults = dict(lr=lr, num_data=num_data, momentum=momentum,
                         temperature=temperature)
@@ -36,8 +36,34 @@ class SGLD(torch.optim.Optimizer):
         self.raise_on_no_grad = raise_on_no_grad
         self.raise_on_nan = raise_on_nan
 
+    def preconditioner(self, parameter):
+        try:
+            return self.state[parameter]['preconditioner']
+        except KeyError:
+            v = self.state[parameter]['preconditioner'] = 1.
+            return v
+
+    def momentum_buffer(self, parameter):
+        try:
+            return self.state[parameter]['momentum_buffer']
+        except KeyError:
+            return self._sample_momentum(parameter)
+
+    def _sample_momentum(self, parameter):
+        temperature = self.param_groups[0]['temperature']
+        M = self.preconditioner(parameter)
+        v = torch.randn_like(parameter).mul_(math.sqrt(M * temperature))
+        self.state[parameter]['momentum_buffer'] = v
+        return v
+
+    def sample_momentum(self):
+        for group in self.param_groups:
+            for p in group['params']:
+                self._sample_momentum(p)
+
     @torch.no_grad()
-    def step(self, closure: Optional[Callable[..., torch.Tensor]]=None):
+    def step(self, closure: Optional[Callable[..., torch.Tensor]]=None,
+             _momentum_step_multiplier=2):
         loss = None
         if closure is not None:
             with torch.enable_grad():
@@ -64,22 +90,16 @@ class SGLD(torch.optim.Optimizer):
                 # Update the momentum
                 state = self.state[p]
                 if mom_decay > 0:
-                    try:
-                        momentum = state['momentum_buffer']
-                    except KeyError:
-                        momentum = torch.zeros_like(p)
+                    momentum = self.momentum_buffer(p)
                     momentum.mul_(mom_decay).add_(p.grad, alpha=-hn)
                 else:
                     momentum = p.grad.detach().mul(-hn)
 
-                if 'preconditioner' in state:
-                    M = state['preconditioner']
-                else:
-                    M = state['preconditioner'] = 1.
+                M = self.preconditioner(p)
 
                 # Add noise to momentum
                 if temperature > 0:
-                    c = math.sqrt(2*(1 - mom_decay) * temperature * M)
+                    c = math.sqrt(_momentum_step_multiplier*(1 - mom_decay) * temperature * M)
                     momentum.add_(torch.randn_like(momentum), alpha=c)
 
                 # Take the gradient step
