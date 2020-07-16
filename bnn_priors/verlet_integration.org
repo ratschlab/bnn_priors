@@ -20,7 +20,7 @@
   for transition probability density $T$ and target distribution density $\pi$.
   If a sample $(\theta_*, m_*)$ is rejected, we have to set the next state of
   the chain to $(\theta_0, -m_0)$ (and not $(\theta_0, m_0)$ like ordinary
-  Metropolis-Hastings)$.
+  Metropolis-Hastings).
 
   It is important to note that the transition probability distribution $T$, and
   thus the acceptance probability, very much depend on the scheme we use to
