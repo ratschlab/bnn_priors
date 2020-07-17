@@ -237,6 +237,6 @@ class RaoBRegressionModel(AbstractModel):
         f = f * self.last_layer_std
         Lf = f.t().to(torch.float64).triangular_solve(L_w, upper=False).solution
         mean = Lf.t() @ white_w_mean
-        var = torch.einsum("in,in->n", Lf, Lf)
+        var = torch.einsum("in,in->n", Lf, Lf) + prior.value_or_call(self.noise_std)**2
         # Switch back to float32
         return torch.distributions.Normal(mean.to(f), var.sqrt().to(f).unsqueeze(-1))

@@ -22,11 +22,11 @@ y_train = data.norm.train_y
 x_test = data.norm.test_X
 y_test = data.norm.test_y
 
-#model = RaoBDenseNet(x_train, y_train, 50, noise_std=LogNormal((), -1., 0.2)).to(x_train)
-model = DenseNet(x_train.shape[-1], y_train.shape[-1], 50, noise_std=LogNormal((), -1., 0.2)).to(x_train)
+model = RaoBDenseNet(x_train, y_train, 50, noise_std=LogNormal((), -1., 0.2)).to(x_train)
+#model = DenseNet(x_train.shape[-1], y_train.shape[-1], 50, noise_std=LogNormal((), -1., 0.2)).to(x_train)
 
-N_steps = 1000
-warmup = 1000
+N_steps = 2000
+warmup = 2000
 
 #opt = t.optim.SGD(model.parameters(), lr=1E-3)
 #
@@ -42,7 +42,7 @@ warmup = 1000
 
 kernel = HMC(potential_fn=lambda p: model.get_potential(x_train, y_train, eff_num_data=1*x_train.shape[0])(p),
              adapt_step_size=False, adapt_mass_matrix=False,
-             step_size=1E-4, num_steps=32)
+             step_size=1E-3, num_steps=32)
 mcmc = MCMC(kernel, num_samples=N_steps, warmup_steps=warmup, initial_params = model.params_with_prior_dict())
 mcmc.run()
 
@@ -58,6 +58,7 @@ for i in range(N_steps):
 final_params = dict((k, v[-1]) for k, v in samples.items())
 with t.no_grad(), model.using_params(sample):
     P = model(x_test)
+    noise_std = model.noise_std()
 
 lps = lps.logsumexp(0) - math.log(N_steps)
 lp = lps.mean()
