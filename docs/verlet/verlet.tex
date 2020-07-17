@@ -1,0 +1,194 @@
+\documentclass{article}
+\usepackage{adria}
+\usepackage[english]{babel}
+\usepackage[style=authoryear,bibencoding=utf8,backend=biber,natbib=true,uniquename=false,uniquelist=false,maxbibnames=99]{biblatex}
+\addbibresource{../references.bib}
+\author{Adrià Garriga-Alonso}
+\date{\today}
+\title{Langevin MCMC and its M-H acceptance probability}
+\hypersetup{
+ pdfauthor={Adrià Garriga Alonso},
+ pdftitle={Langevin MCMC and its M-H acceptance probability},
+ pdfkeywords={},
+ pdfsubject={},
+ pdfcreator={}, 
+ pdflang={English}}
+
+\begin{document}
+\maketitle
+\abstract{MCMC via Langevin dynamics, in its usual form, has an acceptance
+  probability of 0. In this document is an alternative discretisation of its
+  stochastic differential equation (SDE) that is time-reversible, and thus has a
+  non-zero acceptance probability}
+
+\section{Introduction}
+\label{sec:orgb532d68}
+The acceptance probability of an MCMC sampler that follows the Langevin
+stochastic differential equations (SDE) is always 1. However, to be able to
+simulate the SDE, we discretise the time steps, and in so introduce error.
+This error can be exactly corrected \cite{sarkka_solin_2019} by adding a
+Metropolis-Hastings (M-H) step, that applies rejection sampling for the new
+state of the SDE. Additional error is introduced by the approximate
+floating-point arithmetic, but we will disregard it.
+
+In Langevin MCMC, we have some parameters \(\theta\) to be inferred (also named
+\emph{position variables}), and their corresponding \emph{momentum variables} \(m\). The
+generalised Metropolis-Hastings acceptance probability \cite{song2020hams},
+which negates the final momentum, is as follows. If a transition goes from 
+\((\theta_0, m_0) \to (\theta_*, m_*)\), its acceptance probability is
+\begin{equation}
+  \text{Pr}_\text{accept}(\theta_*, m_*) = \text{min}\left(1,
+      \frac{\pi(\theta_*) T(\theta_0, -m_0 | \theta_*, -m_*)}
+          {\pi(\theta_0) T(\theta_*, m_* | \theta_0, m_0)} \right)
+\end{equation}
+for transition probability density \(T\) and target distribution density \(\pi\).
+If a sample \((\theta_*, m_*)\) is rejected, we have to set the next state of
+the chain to \((\theta_0, -m_0)\) (and not \((\theta_0, m_0)\) like ordinary
+Metropolis-Hastings).
+
+It is important to note that the transition probability distribution \(T\), and
+thus the acceptance probability, very much depend on the scheme we use to
+discretise time in the SDE. That is, the integrator.
+
+\section{Symplectic Euler integrator}
+\label{sec:org786af88}
+The Symplectic Euler integrator used in \cite{wenzel20posterior} is not
+time-reversible. This implies that the probability of transitioning
+\((\theta_*, -m_*) \to (\theta_0, m_0)\) is always zero, strictly speaking.
+This is because the value of \(\theta_*\) is determined entirely by the
+previous parameters, \(\theta_0\), and its \textbf{contemporaneous} momentum \(m_*\).
+The forward transition for the parameters is
+\begin{equation}
+  \theta_* = \theta_0 + h M^{-1} m_*.
+\end{equation}
+
+Now, consider what the backward transition would be. The momentum \(-m_*\)
+evolves to \(-m_0\), and the parameters \(\theta_*\) evolve to \(\theta_0\). The
+transition, now applied backward, is
+\begin{equation}
+  \theta_0 = \theta_* + h M^{-1} (-m_0),
+\end{equation}
+which \textbf{cannot} be true if \(m_0 \ne m_*\).
+
+\section{Leapfrog Verlet integration}
+\label{sec:org7376eca}
+We use the Verlet Leapfrog integrator from \cite{complete-verlet}. It has two
+desirable features. First, it is time-reversible, which means the forward and
+backward transition probability densities cancel out. Thus, the M-H acceptance
+probability is \(\text{min}(1, \pi(\theta_*) / \pi(\theta_0))\).
+
+Second, it uses the gradient with respect to the parameters at
+whole time steps (\(0, 1, \dots\)) and with respect to the momentum at half time
+steps (\(1/2, 3/2, \dots\)). Thus, no additional computation is needed to
+calculate \(\pi(\theta_*) / \pi(\theta_0)\) when using full batch gradients.
+
+The Langevin dynamics differential equations are
+\begin{align}
+  dr(t) &= v(t) \\
+  m\,dv(t) &= -\alpha v(t) + f(r(t)) + \sqrt{2\alpha T}dW
+\end{align}
+where \(dW\) is a Wiener process.
+
+For discrete time step \(h\), the corresponding Verlet update equations are 
+\begin{align}
+a &= (1 - \alpha h / 2m) / (1 + \alpha h / 2m) \\
+b &= 1 / (1 + \alpha h / 2m) \\
+v\ssup{n+\frac{1}{2}} &= \sqrt{b} \sqb{v\ssup{n} + \frac{h}{2m}f\ssup{n} + \frac{1}{2m}\eta\ssup{n+1}} \\
+r\ssup{n+1} &= r\ssup{n}+ \sqrt{b}\, h v\ssup{n+\frac{1}{2}} \\
+v\ssup{n+1} &= \frac{a}{\sqrt{b}}v\ssup{n+\frac{1}{2}} + \frac{h}{2m}f\ssup{n+1} + \frac{1}{2m}\eta\ssup{n+1},\\
+\end{align}
+for \(\eta\ssup{t} \sim \Normal{0, 2\alpha T}\).
+
+We may also combine the two updates to \(v\) to give:
+\begin{equation}
+v\ssup{t+\frac{1}{2}} = a v\ssup{t-\frac{1}{2}} + \frac{h\sqrt{b}}{m}f\ssup{t} + \frac{\sqrt{b}}{2m}\bra{\eta\ssup{t} + \eta\ssup{n+1}}
+\end{equation}
+
+\subsection{Change of variables to \citet{wenzel20posterior}}
+{
+  \newcommand{\gradat}[1]{{\nabla_\vtheta U(\vtheta\ssup{#1})}}
+\label{sec:org3c9a23e}
+The new variables are
+\begin{align*}
+\vtheta(t) &\eqdef r(t) & \vm(t) &\eqdef \vM v(t) \\
+\vM &\eqdef m &   \nabla_\vtheta U(\vtheta(t)) &\eqdef -f(r(t)) \\
+\gamma &\eqdef \alpha / m & d\vW &\eqdef dW \\ 
+\end{align*}
+
+The Langevin differential equations are now
+\begin{align}
+  d\vtheta &= \vM^{-1} \vm dt \\
+  d\vm &= - \nabla_\vtheta U(\vtheta)dt -\gamma \vm dt  + \sqrt{2\gamma T}\vM^{1/2} d\vW.
+\end{align}
+We also reparameterize the time step $h$ and friction $\gamma$ by introducing
+the momentum decay $\beta$ and the learning rate $\ell$. As listed by
+\citet{wenzel20posterior}, $h = \sqrt{\ell / n}$ and $\gamma = (1 - \beta)\sqrt{n / \ell}$.
+
+The Verlet integration scheme is
+\begin{align}
+b &= (1 + \gamma (h/2))^{-1} = (1 + \frac{1 - \beta}{2})^{-1} = 2/(3 - \beta)\\
+a &= (1 - \gamma (h/2)) \cdot b = (1 - \frac{1 - \beta}{2}) \cdot b = \frac{1+\beta}{3-\beta}\\
+\vm\ssup{n+\frac{1}{2}} &= \sqrt{b} \sqb{\vm\ssup{n} + \frac{h}{2}\gradat{n}  + \frac{1}{2}\eta\ssup{n}} \\
+\vtheta\ssup{n+1} &= \vtheta\ssup{n}+ \sqrt{b}\, h \vM^{-1} \vm\ssup{n+\frac{1}{2}}\\
+\vm\ssup{n+1} &= \frac{a}{\sqrt{b}}\vm\ssup{n+\frac{1}{2}} + \frac{h}{2}\gradat{n+1} + \frac{1}{2}\eta\ssup{n}\\
+  \frac{1}{2}\eta\ssup{n} &= \sqrt{\frac{\gamma T}{2}}\vM^{1/2}\epsilon\ssup{n}.\\
+\end{align}
+We can always lower-bound $1/3 \le a$ and $2/3 \le b$, because $0 \le \beta$.
+If we also assume that $\beta \le 1$, as is usually the case in deep learning, we can
+upper-bound $a \le b \le 1$.
+
+For a $d$-dimensional parameter and momentum, the configurational and kinetic temperatures are
+\begin{align}
+  \hat{T}_c\ssup{n} &= \frac{1}{d}\left\langle\vtheta\ssup{n}, \gradat{n}\right\rangle & \hat{T}_k\ssup{n} &= \frac{1}{d} \left\langle \vm\ssup{n}, \vM^{-1}\vm\ssup{n} \right\rangle.
+\end{align}
+\subsection{Change of variables to convenient form}
+We wish to arrange the updates in the equations above such that:
+\begin{itemize}
+ \item The floating point errors are compounded as little as possible
+ \item We do not need to carry Gaussian noises forward
+\end{itemize}
+
+Define
+\begin{align}
+  \tilde{\vm}\ssup{n+\frac{1}{2}} &\eqdef \frac{1}{\sqrt{b}}\vm\ssup{n+\frac{1}{2}} &&\text{(half steps)}. \\
+\tilde{\vu}\ssup{n} &\eqdef a\tilde{\vm}\ssup{n} + \frac{1}{2}\eta\ssup{n} = \vm\ssup{n} - \frac{h}{2}\gradat{n+1} &&\text{(whole steps)} \\
+\end{align}
+The quantity $\vu$ is not a momentum with the right temperature, but it does not
+contain gradients from its contemporaneous gradients. The quantity $\tilde{\vm}$
+is a momentum, scaled by $\sqrt{b}$. Thus the update equations become
+\begin{align}
+\tilde{\vm}\ssup{n+\frac{1}{2}} &= \tilde{\vu}\ssup{n} + h\gradat{n}  + \frac{1}{2}\eta\ssup{n} \\
+\vtheta\ssup{n+1} &= \vtheta\ssup{n}+ b\, h \vM^{-1} \tilde{\vm}\ssup{n+\frac{1}{2}}\\
+\tilde{\vu}\ssup{n+1} &= a\tilde{\vm}\ssup{n+\frac{1}{2}} + \frac{1}{2}\eta\ssup{n}\\
+\end{align}
+and the kinetic temperature we can calculate is
+\begin{equation}
+  \hat{T}\ssup{n+1/2}_k = \frac{b}{d}\left\langle \tilde{\vm}\ssup{n+\frac{1}{2}}, \vM^{-1}\tilde{\vm}\ssup{n+\frac{1}{2}}\right\rangle.
+\end{equation}
+
+\subsection{Momentum without preconditioning}
+
+We may also remove the preconditioning from the momentum, by changing
+\begin{align}
+\bar{\vm}\ssup{n + \frac{1}{2}} &\eqdef \vM^{-1/2} \tilde{\vm}\ssup{n + \frac{1}{2}} &
+\bar{\vu}\ssup{n} &\eqdef \vM^{-1/2} \tilde{\vu}\ssup{n}.
+\end{align}
+
+The updates become
+\begin{align}
+  \bar{\vm}\ssup{n+\frac{1}{2}} &= \bar{\vu}\ssup{n} + h\vM^{-1/2}\gradat{n} + \sqrt{\frac{\gamma T}{2}}\epsilon\ssup{n} \\
+  \vtheta\ssup{n+1} &= \vtheta\ssup{n}+ b\, h \vM^{-1/2} \bar{\vm}\ssup{n+\frac{1}{2}}\\
+  \bar{\vu}\ssup{n+1} &= a\bar{\vm}\ssup{n+\frac{1}{2}} + \sqrt{\frac{\gamma T}{2}}\epsilon\ssup{n}, \\
+\end{align}
+and the kinetic temperature loses its covariance
+\begin{equation}
+  \hat{T}\ssup{n+1/2}_k = \frac{b}{d}\left\langle \bar{\vm}\ssup{n+\frac{1}{2}}, \bar{\vm}\ssup{n+\frac{1}{2}}\right\rangle.
+\end{equation}
+
+As another advantage, we do not need to update the parameterization of the
+momentum when we update the preconditioning.
+
+} % end newcommand scope
+
+\printbibliography
+\end{document}
