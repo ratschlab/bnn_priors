@@ -4,7 +4,7 @@ import math
 
 from .base import Prior
 
-__all__ = ('LocScale', 'Normal', 'Laplace', 'Cauchy', 'StudentT', 'Uniform')
+__all__ = ('LocScale', 'Normal', 'Laplace', 'Cauchy', 'StudentT', 'Uniform', 'LogNormal')
 
 
 class LocScale(Prior):
@@ -27,6 +27,11 @@ class LocScale(Prior):
 
 class Normal(LocScale):
     _dist = td.Normal
+
+class LogNormal(LocScale):
+    _dist = td.Normal
+    def forward(self):
+        return (self.loc + self.scale * self.p).exp()
 
 
 class Laplace(LocScale):

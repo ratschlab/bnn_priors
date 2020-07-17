@@ -154,14 +154,14 @@ class RaoBRegressionModel(AbstractModel):
         "N log(2π) + (N-F) log(σ²) + tr_YY/(D σ²)"
         N, D = y.shape
 
-        sig = self.noise_std**2
-        log_sig = 2*math.log(self.noise_std)
+        sig = prior.value_or_call(self.noise_std)**2
+        log_sig = 2*math.log(prior.value_or_call(self.noise_std))
 
         tr_YY__Ds = (y.view(-1) @ y.view(-1)).item() / (D*sig)
         const = N*math.log(2*math.pi)
         a = (N-n_feat) * log_sig + tr_YY__Ds
         const_a = const+a
-        assert type(const_a) == float
+        assert isinstance(const_a, float) or isinstance(const_a, torch.Tensor)
         return const_a
 
     def log_likelihood(self, x, y, eff_num_data):
@@ -195,7 +195,7 @@ class RaoBRegressionModel(AbstractModel):
         N, D = y.shape
         N_, n_feat = f.shape
         assert N == N_
-        sig = self.noise_std**2
+        sig = prior.value_or_call(self.noise_std)**2
         last_layer_var = self.last_layer_std**2
 
         FF = (f.t() @ f) * last_layer_var
@@ -211,11 +211,15 @@ class RaoBRegressionModel(AbstractModel):
         # Round likelihood down to the original dtype
         likelihood = likelihood.to(f.dtype)
         return likelihood
+        #cov = f @ f.t() * last_layer_var + sig*torch.eye(f.shape[0], dtype=torch.float64)
+        #mean = torch.zeros(f.shape[0], dtype=torch.float64)
+        #Py = torch.distributions.MultivariateNormal(mean, cov)
+        #return Py.log_prob(y).sum()
 
     def _posterior_w(self, x, y):
         "returns mean and lower triangular precision of p(w | x,y)"
         f = self.net(x) * self.last_layer_std
-        sig = self.noise_std**2
+        sig = prior.value_or_call(self.noise_std)**2
         # Precision matrix
         A = (f.t()@f)/sig + torch.eye(f.size(-1), dtype=f.dtype, device=f.device)
         # switch to float64
