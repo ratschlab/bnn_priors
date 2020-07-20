@@ -40,6 +40,9 @@ class SGLD(torch.optim.Optimizer):
         super(SGLD, self).__init__(params, defaults)
         self.raise_on_no_grad = raise_on_no_grad
         self.raise_on_nan = raise_on_nan
+        # OK to call this one, but not `sample_momentum`, because
+        # `update_preconditioner` uses no random numbers.
+        self.update_preconditioner()
 
     def _preconditioner_default(self, state, p) -> torch.Tensor:
         try:
@@ -150,7 +153,11 @@ class SGLD(torch.optim.Optimizer):
 
             state = self.state[p]
             old_M = self._preconditioner_default(state, p)
-            self._convert_momentum_buffer(state['momentum_buffer'], old_M, new_M)
+            try:
+                self._convert_momentum_buffer(state['momentum_buffer'], old_M, new_M)
+            except KeyError as e:
+                if e.args[0] == "momentum_buffer":
+                    pass  # no need to convert it if it does not exist
             state['preconditioner'] = new_M
 
     _preconditioner_pow = 1/2
