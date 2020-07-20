@@ -110,7 +110,7 @@ class VerletSGLD(SGLD):
 
         # Second half step for the momentum
         if noise_std > 0:
-            state['momentum_buffer'] = noise.add_(momentum, value=a)
+            state['momentum_buffer'] = noise.add_(momentum, alpha=a)
         else:
             momentum.mul_(a)
 

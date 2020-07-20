@@ -3,51 +3,31 @@ import numpy as np
 import torch
 
 from gpytorch.distributions import MultivariateNormal
-from bnn_priors.verlet_sgld import VerletSGLD
+from bnn_priors.verlet_sgld import HMC
 from bnn_priors.models import DenseNet
 from bnn_priors import prior
 
+from .test_verlet_sgld import store_verlet_state, zip_allclose, new_model_loss
 from .utils import requires_float64
 
-def store_verlet_state(sgld):
-    return zip(*((p.detach().clone(), state['momentum_buffer'].detach().clone())
-                 for p, state in sgld.state.items()))
 
-def zip_allclose(sequence_a, sequence_b):
-    return (torch.allclose(a, b) for a, b in zip(sequence_a, sequence_b))
-
-def new_model_loss(N=10, D=1):
-    x = torch.randn(N, 1)
-    y = x.sin()
-    model = DenseNet(x.size(-1), y.size(-1), 10, noise_std=0.1)
-    def loss():
-        model.zero_grad()
-        v = model.potential_avg(x, y, eff_num_data=1.)
-        v.backward()
-        return v
-    return model, loss
-
-
-class VerletSGLDTest(unittest.TestCase):
+class HMCTest(unittest.TestCase):
     @requires_float64
-    def test_reversible(self, N=10, seed=1234):
+    def test_reversible(self, N=10):
         model, loss = new_model_loss(N=N)
-        sgld = VerletSGLD(prior.params_with_prior(model), lr=0.01, num_data=N,
-                          temperature=0.5, momentum=0.9, raise_on_nan=True,
-                          raise_on_no_grad=True)
+
+        sgld = HMC(prior.params_with_prior(model), lr=0.01, num_data=N,
+                   raise_on_nan=True, raise_on_no_grad=True)
 
         sgld.sample_momentum()
         p0, m0 = store_verlet_state(sgld)
 
-        torch.manual_seed(seed)
         sgld.initial_step(loss)
         p1, m_half = store_verlet_state(sgld)
 
-        torch.manual_seed(seed)
         sgld.step(loss)
         p2, m_3halves = store_verlet_state(sgld)
 
-        torch.manual_seed(seed)
         sgld.final_step(loss)
         p2_alt, m2 = store_verlet_state(sgld)
 
@@ -63,19 +43,16 @@ class VerletSGLDTest(unittest.TestCase):
         for _, state in sgld.state.items():
             state['momentum_buffer'].neg_()
 
-        torch.manual_seed(seed)
         sgld.initial_step(loss)
         p1_alt, m_3halves_neg = store_verlet_state(sgld)
         assert all(zip_allclose(p1, p1_alt))
         assert all(zip_allclose(m_3halves, map(torch.neg, m_3halves_neg)))
 
-        torch.manual_seed(seed)
         sgld.step(loss)
         p0_alt, m_half_neg = store_verlet_state(sgld)
         assert all(zip_allclose(p0, p0_alt))
         assert all(zip_allclose(m_half, map(torch.neg, m_half_neg)))
 
-        torch.manual_seed(seed)
         sgld.final_step(loss)
         p0_alt2, m0_neg = store_verlet_state(sgld)
         assert all(zip_allclose(p0, p0_alt2))
