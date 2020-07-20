@@ -1,6 +1,7 @@
 import torch
 import math
 from scipy.stats import chi2
+import numpy as np
 from collections import OrderedDict
 from typing import Sequence, Optional, Callable, Tuple, Dict, Union
 import typing
@@ -40,8 +41,6 @@ class SGLD(torch.optim.Optimizer):
         self.raise_on_no_grad = raise_on_no_grad
         self.raise_on_nan = raise_on_nan
 
-        self._start_of_training = True
-
     def _preconditioner_default(self, state, p) -> torch.Tensor:
         try:
             return state['preconditioner']
@@ -66,31 +65,34 @@ class SGLD(torch.optim.Optimizer):
 
     @torch.no_grad()
     def step(self, closure: Optional[Callable[..., torch.Tensor]]=None):
+        return self._step_internal(closure)
+
+    def _step_internal(self, closure, **step_fn_kwargs):
         loss = None
         if closure is not None:
             with torch.enable_grad():
                 loss = closure()
+        try:
+            for group in self.param_groups:
+                for p in group['params']:
+                    if p.grad is None:
+                        if self.raise_on_no_grad:
+                            raise RuntimeError(
+                                f"No gradient for parameter with shape {p.shape}")
+                        continue
+                    if self.raise_on_nan and not torch.isfinite(p.grad).all():
+                        raise ValueError(
+                            f"Gradient of shape {p.shape} is not finite: {p.grad}")
 
-        if self._start_of_training:
-            self._start_of_training = False
-            self.sample_momentum()
-            self.update_preconditioner()
-
-        for group in self.param_groups:
-            for p in group['params']:
-                if p.grad is None:
-                    if self.raise_on_no_grad:
-                        raise RuntimeError(
-                            f"No gradient for parameter with shape {p.shape}")
-                    continue
-                if self.raise_on_nan and not torch.isfinite(p.grad).all():
-                    raise ValueError(
-                        f"Gradient of shape {p.shape} is not finite: {p.grad}")
-
-                self._step_internal(group, p, self.state[p])
+                    self._step_fn(group, p, self.state[p], **step_fn_kwargs)
+        except KeyError as e:
+            if e.args[0] == "momentum_buffer":
+                raise RuntimeError("No 'momentum_buffer' stored in state. "
+                                   "Perhaps you forgot to call `sample_momentum`?")
+            raise e
         return loss
 
-    def _step_internal(self, group, p, state):
+    def _step_fn(self, group, p, state):
         mom_decay = group['momentum']
         temperature = group['temperature']
         num_data = group['num_data']
@@ -148,16 +150,16 @@ class SGLD(torch.optim.Optimizer):
 
             state = self.state[p]
             old_M = self._preconditioner_default(state, p)
-            self._convert_momentum_buffer(state['momentum_buffer'], old_M, new_M, normaliser)
+            self._convert_momentum_buffer(state['momentum_buffer'], old_M, new_M)
             state['preconditioner'] = new_M
 
     _preconditioner_pow = 1/2
-    def _convert_momentum_buffer(self, momentum_buffer, old_M, new_M, normaliser):
+    def _convert_momentum_buffer(self, momentum_buffer, old_M, new_M):
         conversion = new_M.div(old_M).sqrt_()
         momentum_buffer.mul_(conversion)
 
 
-    def kinetic_temperature_intervals(self, c: Union[float, np.ndarray]=0.95) -> OrderedDict[
+    def kinetic_temperature_intervals(self, c: Union[float, np.ndarray]=0.95) -> Dict[
             torch.nn.Parameter, Tuple[np.ndarray, np.ndarray]]:
         """Calculates the confidence intervals for the kinetic temperature of the
         momentum of each parameter. Assumes the target temperature is 1.
