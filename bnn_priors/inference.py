@@ -38,7 +38,7 @@ class SGLDRunner:
         self.warmup_epochs = warmup_epochs
         self.sample_epochs = sample_epochs
         self.skip = skip
-        #num_samples (int): Number of recorded per cycle
+        # num_samples (int): Number of recorded per cycle
         self.num_samples = sample_epochs // skip
         self.learning_rate = learning_rate
         self.temperature = temperature
