@@ -12,6 +12,8 @@ import matplotlib.pyplot as plt
 from pyro.infer.mcmc import NUTS, HMC
 from pyro.infer.mcmc.api import MCMC
 from sacred import Experiment
+from sacred.utils import apply_backspaces_and_linefeeds
+from sacred.observers import FileStorageObserver
 
 from bnn_priors.data import UCI
 from bnn_priors.models import RaoBDenseNet, DenseNet
@@ -19,6 +21,8 @@ from bnn_priors.prior import LogNormal
 from bnn_priors.inference import SGLDRunner
 
 ex = Experiment("bnn_training")
+ex.captured_out_filter = apply_backspaces_and_linefeeds
+ex.observers.append(FileStorageObserver('../logs'))
 
 @ex.config
 def config():
