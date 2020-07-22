@@ -14,6 +14,9 @@
  pdfcreator={}, 
  pdflang={English}}
 
+\newcommand{\gradat}[1]{{\nabla_\vtheta U(\vtheta\ssup{#1})}}
+\newcommand{\transition}[2]{{\bra{\vtheta\ssup{#1}, \vq\ssup{#1}} \to \bra{\vtheta\ssup{#2}, \vq\ssup{#2}}}}
+
 \begin{document}
 \maketitle
 \abstract{MCMC via Langevin dynamics, in its usual form, has an acceptance
@@ -33,7 +36,7 @@ floating-point arithmetic, but we will disregard it.
 
 In Langevin MCMC, we have some parameters \(\theta\) to be inferred (also named
 \emph{position variables}), and their corresponding \emph{momentum variables} \(m\). The
-generalised Metropolis-Hastings acceptance probability \cite{song2020hams},
+generalised Metropolis-Hastings acceptance probability \cite{bussi-parrinello},
 which negates the final momentum, is as follows. If a transition goes from 
 \((\theta_0, m_0) \to (\theta_*, m_*)\), its acceptance probability is
 \begin{equation}
@@ -52,12 +55,12 @@ discretise time in the SDE. That is, the integrator.
 
 \section{Symplectic Euler integrator}
 \label{sec:org786af88}
-The Symplectic Euler integrator used in \cite{wenzel20posterior} is not
-time-reversible. This implies that the probability of transitioning
-\((\theta_*, -m_*) \to (\theta_0, m_0)\) is always zero, strictly speaking.
-This is because the value of \(\theta_*\) is determined entirely by the
-previous parameters, \(\theta_0\), and its \textbf{contemporaneous} momentum \(m_*\).
-The forward transition for the parameters is
+The Symplectic Euler integrator used in \cite{wenzel20posterior} is not time
+reversible in the limit of zero friction. This implies that the probability of
+transitioning \((\theta_*, -m_*) \to (\theta_0, m_0)\) is always zero, strictly
+speaking. This is because the value of \(\theta_*\) is determined entirely by
+the previous parameters, \(\theta_0\), and its \textbf{contemporaneous} momentum
+\(m_*\). The forward transition for the parameters is
 \begin{equation}
   \theta_* = \theta_0 + h M^{-1} m_*.
 \end{equation}
@@ -68,127 +71,175 @@ transition, now applied backward, is
 \begin{equation}
   \theta_0 = \theta_* + h M^{-1} (-m_0),
 \end{equation}
-which \textbf{cannot} be true if \(m_0 \ne m_*\).
+which cannot be true if \(m_0 \ne m_*\).
 
-\section{Leapfrog Verlet integration}
+\section{Related work}
+
+\citet{mannella2004} published a stochastic integrator for Langevin dynamics
+that reduces to the normal Störmer-Verlet integrator on the limit of $\gamma \to
+0$. However, it is in position form, that is, it first updates the position,
+then the velocity, then the position again. Thus, it is not easily adapted to an
+MCMC algorithm. \citet{groenbech-complete-verlet} describes a form of Mannella's
+integrator which corresponds to velocity Verlet. However, neither of these
+schemes is suitable for MCMC in Langevin dynamics: they only use one Gaussian
+random variable per time step, and Langevin dynamics is not measure-preserving.
+This implies that the backwards transition also has probability 0
+\citep{bussi-parrinello}.
+
+\citet{bussi-parrinello} also wrote an integration scheme that reduces to the
+velocity Störmer-Verlet integrator. Their explicit intention is to correct the
+error introduced by discretising the time-step, using the Metropolis-Hastings
+correction. They note that, since the dynamics of Langevin dynamics are not
+measure preserving, unlike those of Hamiltonian flow, the acceptance probability
+with discrete time steps cannot be simply the reduction in log-joint
+probability. Instead, the forward and backward probability of transition have to
+be explicitly calculated.
+Unfortunately, it can be shown \citep{lm-aboba} that their integration scheme
+overestimates the temperature of the velocity in a simple 1D harmonic
+oscillator.
+
+\citet{scc-time-rescaling} solve this problem by scaling the gradient time step
+down by a factor of $0.95 \le b \le 1$, which we define in the next
+section. Their proposed OVRVO integrator (so named by the order in which various
+operators are applied) is the approach we employ in this document.
+
+\section{OVRVO integration in one dimension}
 \label{sec:org7376eca}
-We use the Verlet Leapfrog integrator from \cite{complete-verlet}. It has two
-desirable features. First, it is time-reversible, which means the forward and
-backward transition probability densities cancel out. Thus, the M-H acceptance
-probability is \(\text{min}(1, \pi(\theta_*) / \pi(\theta_0))\).
+We use the OVRVO integrator by \cite{scc-time-rescaling}. It is symmetric
+under time reversal and employs two independent Gaussian RVs per time step, so
+its probability of acceptance is never zero and can be evaluated.
 
-Second, it uses the gradient with respect to the parameters at
-whole time steps (\(0, 1, \dots\)) and with respect to the momentum at half time
-steps (\(1/2, 3/2, \dots\)). Thus, no additional computation is needed to
-calculate \(\pi(\theta_*) / \pi(\theta_0)\) when using full batch gradients.
+At the same time, if the exact momenta are not needed, the Gaussian RVs can be
+fused for an amortised computational cost of 1 random draw per time step. This
+changes the long-term temperature statistics, but in an easily correctable
+manner.
 
 The Langevin dynamics differential equations are
 \begin{align}
   dr(t) &= v(t) \\
-  m\,dv(t) &= -\alpha v(t) + f(r(t)) + \sqrt{2\alpha T}dW
+  dv(t) &= -\gamma v(t) + m^{-1}f(r(t)) + m^{-\frac{1}{2}}\sqrt{2\gamma T}dW
 \end{align}
 where \(dW\) is a Wiener process.
 
-For discrete time step \(h\), the corresponding Verlet update equations are 
+For discrete time step \(h\), the corresponding OVRVO updates are
 \begin{align}
-a &= (1 - \alpha h / 2m) / (1 + \alpha h / 2m) \\
-b &= 1 / (1 + \alpha h / 2m) \\
-v\ssup{n+\frac{1}{2}} &= \sqrt{b} \sqb{v\ssup{n} + \frac{h}{2m}f\ssup{n} + \frac{1}{2m}\eta\ssup{n+1}} \\
-r\ssup{n+1} &= r\ssup{n}+ \sqrt{b}\, h v\ssup{n+\frac{1}{2}} \\
-v\ssup{n+1} &= \frac{a}{\sqrt{b}}v\ssup{n+\frac{1}{2}} + \frac{h}{2m}f\ssup{n+1} + \frac{1}{2m}\eta\ssup{n+1},\\
+a &\eqdef e^{-\gamma h} \\
+b &\eqdef \sqrt{\frac{2}{\gamma h} \tanh \bra{\frac{\gamma h}{2}}} \\
+  v\ssup{n+\frac{1}{2}} &\eqdef \sqrt{a} v\ssup{n} + \frac{bh}{2}m^{-1}f\ssup{n} + m^{-\frac{1}{2}}\sqrt{(1-a)T} \epsilon^{n+\frac{1}{2}} \\
+r\ssup{n+\frac{1}{2}} &\eqdef r\ssup{n} + \frac{b h}{2} v\ssup{n+\frac{1}{2}} \\
+  r\ssup{n+1} &\eqdef r\ssup{n+\frac{1}{2}} + \frac{b h}{2} v\ssup{n+\frac{1}{2}} \\
+  v\ssup{n+1} &\eqdef \sqrt{a} v\ssup{n+\frac{1}{2}} + \frac{bh\sqrt{a}}{2}m^{-1}f\ssup{n+1} + m^{-\frac{1}{2}}\sqrt{(1-a)T} \epsilon^{n+1} \\
+\intertext{We may also combine the two updates to \(v\) to give:}
+v\ssup{n+\frac{1}{2}} &= a v\ssup{n-\frac{1}{2}} + \frac{bh(1 + a)}{2}m^{-1}f\ssup{n} + m^{-\frac{1}{2}}\sqrt{(1 - a^2)T} \epsilon^{n+\frac{1}{2}}
+\intertext{And define an auxiliary quantity $u$:}
+  u\ssup{n} &\eqdef v\ssup{n+\frac{1}{2}} - \frac{bh}{2}m^{-1}f\ssup{n} \\
+  &= \sqrt{a}v\ssup{n} + m^{-\frac{1}{2}}\sqrt{(1-a)T} \epsilon^{n+\frac{1}{2}}
 \end{align}
-for \(\eta\ssup{t} \sim \Normal{0, 2\alpha T}\).
 
-We may also combine the two updates to \(v\) to give:
+\subsection{Empirical temperature estimation}
+
+Langevin dynamics allows for estimation of the temperature using the position
+and velocity variables.
 \begin{equation}
-v\ssup{t+\frac{1}{2}} = a v\ssup{t-\frac{1}{2}} + \frac{h\sqrt{b}}{m}f\ssup{t} + \frac{\sqrt{b}}{2m}\bra{\eta\ssup{t} + \eta\ssup{n+1}}
+  T = \E\sqb{r(t)f(t)} = \E\sqb{m v(t)^2}
+\end{equation}
+for any $T$. We know that the velocity in particular is Gaussian-distributed \citep{bussi-parrinello,wenzel20posterior}
+\begin{equation}
+v(t) \sim \Normal{0, \frac{T}{m}}
 \end{equation}
 
-\subsection{Change of variables to \citet{wenzel20posterior}}
-{
-  \newcommand{\gradat}[1]{{\nabla_\vtheta U(\vtheta\ssup{#1})}}
-\label{sec:org3c9a23e}
-The new variables are
+In the OVRVO integrator, the value of $r$ is more accurate at half
+time steps, and the value of $v$ is more accurate at full time steps. For this
+reason, we defined the quantity $u\ssup{n}$. Its distribution is
+\begin{equation}
+  u\ssup{n} \sim \Normal{0, a\frac{T}{m} + \frac{(1-a)T}{m}} = \Normal{0, \frac{T}{m}}.
+\end{equation}
+which means we can also check the temperature by empirically averaging $u\ssup{n}$.
+
+\section{Multiple dimensions}
+We introduce an unnormalised posterior density  $\pi(\vtheta)$ that we want to
+sample from. This induces a potential $U(\vtheta) = -\log \pi(\vtheta)$.
+The new, vector-valued, variables are
 \begin{align*}
-\vtheta(t) &\eqdef r(t) & \vm(t) &\eqdef \vM v(t) \\
-\vM &\eqdef m &   \nabla_\vtheta U(\vtheta(t)) &\eqdef -f(r(t)) \\
-\gamma &\eqdef \alpha / m & d\vW &\eqdef dW \\ 
+\vtheta(t) &\eqdef r(t) & \vq(t) &\eqdef \vM^{\frac{1}{2}} v(t) \\
+\vM &\eqdef m &   \nabla_\vtheta U(\vtheta(t)) &\eqdef -f(t) \\
 \end{align*}
+
+At state $(\vtheta, \vq)$, the energy of the system is
+\begin{equation}
+  H(\vtheta, \vq) \eqdef U(\vtheta) + \frac{1}{2}\vq^\tp\vq,
+  \label{eq:energy}
+\end{equation}
+and the canonical distribution of the dynamical system, for temperature $T$, is $p(\vtheta, \vq)
+\propto \exp(-\frac{1}{T}H(\vtheta, \vq))$.
 
 The Langevin differential equations are now
 \begin{align}
-  d\vtheta &= \vM^{-1} \vm dt \\
-  d\vm &= - \nabla_\vtheta U(\vtheta)dt -\gamma \vm dt  + \sqrt{2\gamma T}\vM^{1/2} d\vW.
+  d\vtheta &= \vM^{-\frac{1}{2}} \vq dt \\
+  d\vq &= - \vM^{-\frac{1}{2}}\nabla_\vtheta U(\vtheta)dt -\gamma \vq dt  + \sqrt{2\gamma T} d\vW.
 \end{align}
 We also reparameterize the time step $h$ and friction $\gamma$ by introducing
 the momentum decay $\beta$ and the learning rate $\ell$. As listed by
 \citet{wenzel20posterior}, $h = \sqrt{\ell / n}$ and $\gamma = (1 - \beta)\sqrt{n / \ell}$.
 
-The Verlet integration scheme is
+The reparameterised OVRVO scheme is
 \begin{align}
-b &= (1 + \gamma (h/2))^{-1} = (1 + \frac{1 - \beta}{2})^{-1} = 2/(3 - \beta)\\
-a &= (1 - \gamma (h/2)) \cdot b = (1 - \frac{1 - \beta}{2}) \cdot b = \frac{1+\beta}{3-\beta}\\
-\vm\ssup{n+\frac{1}{2}} &= \sqrt{b} \sqb{\vm\ssup{n} + \frac{h}{2}\gradat{n}  + \frac{1}{2}\eta\ssup{n}} \\
-\vtheta\ssup{n+1} &= \vtheta\ssup{n}+ \sqrt{b}\, h \vM^{-1} \vm\ssup{n+\frac{1}{2}}\\
-\vm\ssup{n+1} &= \frac{a}{\sqrt{b}}\vm\ssup{n+\frac{1}{2}} + \frac{h}{2}\gradat{n+1} + \frac{1}{2}\eta\ssup{n}\\
-  \frac{1}{2}\eta\ssup{n} &= \sqrt{\frac{\gamma T}{2}}\vM^{1/2}\epsilon\ssup{n}.\\
+a &\eqdef e^{\beta - 1} \\
+b &\eqdef \sqrt{\frac{2}{1 - \beta} \tanh \bra{\frac{1- \beta}{2}}} \\
+\vq\ssup{n+\frac{1}{2}} &\eqdef \sqrt{a} \vq\ssup{n} - \frac{bh}{2}\vM^{-\frac{1}{2}}\gradat{n} + \sqrt{(1-a)T} \vepsilon\ssup{n+\frac{1}{2}} \\
+  \vtheta\ssup{n+1} &\eqdef \vtheta\ssup{n} + b h \vM^{-\frac{1}{2}}\vq\ssup{n+\frac{1}{2}} \\
+\vq\ssup{n+1} &\eqdef \sqrt{a} \vq\ssup{n+\frac{1}{2}} - \frac{bh\sqrt{a}}{2}\vM^{-\frac{1}{2}}\gradat{n+1} + \sqrt{(1-a)T} \vepsilon\ssup{n+1} \\
+\intertext{For computational convenience, we will use the parameters only at whole time steps, even though the integrator is slightly more accurate at half time steps in simple cases \citep{scc-time-rescaling}. We also redefine $u\ssup{n}$}
+  \tilde{\vq}\ssup{n+1} &\eqdef \sqrt{a} \vq\ssup{n+\frac{1}{2}} + \sqrt{(1-a)T} \vepsilon\ssup{n+\frac{3}{2}}
+\label{eq:ovrvo-updates}
 \end{align}
-We can always lower-bound $1/3 \le a$ and $2/3 \le b$, because $0 \le \beta$.
-If we also assume that $\beta \le 1$, as is usually the case in deep learning, we can
-upper-bound $a \le b \le 1$.
 
 For a $d$-dimensional parameter and momentum, the configurational and kinetic temperatures are
 \begin{align}
-  \hat{T}_c\ssup{n} &= \frac{1}{d}\left\langle\vtheta\ssup{n}, \gradat{n}\right\rangle & \hat{T}_k\ssup{n} &= \frac{1}{d} \left\langle \vm\ssup{n}, \vM^{-1}\vm\ssup{n} \right\rangle.
+  \hat{T}_c\ssup{n} &= \frac{1}{d}\angbra{\vtheta\ssup{n}, \gradat{n}} & \hat{T}_k\ssup{n} &= \frac{1}{d} \angbra{\tilde{\vq}\ssup{n}, \tilde{\vq}\ssup{n}}.
 \end{align}
-\subsection{Change of variables to convenient form}
-We wish to arrange the updates in the equations above such that:
-\begin{itemize}
- \item The floating point errors are compounded as little as possible
- \item We do not need to carry Gaussian noises forward
-\end{itemize}
-
-Define
-\begin{align}
-  \tilde{\vm}\ssup{n+\frac{1}{2}} &\eqdef \frac{1}{\sqrt{b}}\vm\ssup{n+\frac{1}{2}} &&\text{(half steps)}. \\
-\tilde{\vu}\ssup{n} &\eqdef a\tilde{\vm}\ssup{n} + \frac{1}{2}\eta\ssup{n} = \vm\ssup{n} - \frac{h}{2}\gradat{n+1} &&\text{(whole steps)} \\
-\end{align}
-The quantity $\vu$ is not a momentum with the right temperature, but it does not
-contain gradients from its contemporaneous gradients. The quantity $\tilde{\vm}$
-is a momentum, scaled by $\sqrt{b}$. Thus the update equations become
-\begin{align}
-\tilde{\vm}\ssup{n+\frac{1}{2}} &= \tilde{\vu}\ssup{n} + h\gradat{n}  + \frac{1}{2}\eta\ssup{n} \\
-\vtheta\ssup{n+1} &= \vtheta\ssup{n}+ b\, h \vM^{-1} \tilde{\vm}\ssup{n+\frac{1}{2}}\\
-\tilde{\vu}\ssup{n+1} &= a\tilde{\vm}\ssup{n+\frac{1}{2}} + \frac{1}{2}\eta\ssup{n}\\
-\end{align}
-and the kinetic temperature we can calculate is
+\subsection{Metropolis-Hastings acceptance probability}
+Writing $x\ssup{n} = \bra{\vtheta\ssup{n}, \vq\ssup{n}}$, we associate with each
+point $x\ssup{n}$ an importance weight $w\ssup{n}$ \citep{bussi-parrinello}. The
+ratio of weights can be used in a Metropolis-Hastings acceptance probability
+$x\ssup{n} \to x\ssup{n+1}$, as
 \begin{equation}
-  \hat{T}\ssup{n+1/2}_k = \frac{b}{d}\left\langle \tilde{\vm}\ssup{n+\frac{1}{2}}, \vM^{-1}\tilde{\vm}\ssup{n+\frac{1}{2}}\right\rangle.
+\Pr\bra{\text{accept } x\ssup{n+1} \mvbar x\ssup{n}} = \min\bra{1, \frac{w\ssup{n+1}}{w\ssup{n}}}.
 \end{equation}
 
-\subsection{Momentum without preconditioning}
-
-We may also remove the preconditioning from the momentum, by changing
-\begin{align}
-\bar{\vm}\ssup{n + \frac{1}{2}} &\eqdef \vM^{-1/2} \tilde{\vm}\ssup{n + \frac{1}{2}} &
-\bar{\vu}\ssup{n} &\eqdef \vM^{-1/2} \tilde{\vu}\ssup{n}.
-\end{align}
-
-The updates become
-\begin{align}
-  \bar{\vm}\ssup{n+\frac{1}{2}} &= \bar{\vu}\ssup{n} + h\vM^{-1/2}\gradat{n} + \sqrt{\frac{\gamma T}{2}}\epsilon\ssup{n} \\
-  \vtheta\ssup{n+1} &= \vtheta\ssup{n}+ b\, h \vM^{-1/2} \bar{\vm}\ssup{n+\frac{1}{2}}\\
-  \bar{\vu}\ssup{n+1} &= a\bar{\vm}\ssup{n+\frac{1}{2}} + \sqrt{\frac{\gamma T}{2}}\epsilon\ssup{n}, \\
-\end{align}
-and the kinetic temperature loses its covariance
+We may express $w\ssup{n}$ in terms of an effective energy
+$\tilde{H}\ssup{n} = -T \log w\ssup{n}$, which starts as $\tilde{H}\ssup{0} =
+H(\vtheta\ssup{0}, \vq\ssup{0})$ and evolves as 
 \begin{equation}
-  \hat{T}\ssup{n+1/2}_k = \frac{b}{d}\left\langle \bar{\vm}\ssup{n+\frac{1}{2}}, \bar{\vm}\ssup{n+\frac{1}{2}}\right\rangle.
+ \Delta\tilde{H} = \tilde{H}\ssup{n+1} - \tilde{H}\ssup{n} =
+-T\log \frac{M(x\ssup{n} \vbar x\ssup{n+1})}
+{M(x\ssup{n+1} \vbar x\ssup{n})}
++ H\bra{x\ssup{n+1}}  - H\bra{x\ssup{n}}.
 \end{equation}
 
-As another advantage, we do not need to update the parameterization of the
-momentum when we update the preconditioning.
+This effective energy should fluctuate during the simulation, but not exhibit a
+systematic drift. If the momentum is resampled, it should be reset.
 
-} % end newcommand scope
+Solving for $\vepsilon\ssup{n+\frac{1}{2}}, \vepsilon\ssup{n}$ in
+equation~\ref{eq:ovrvo-updates}, changing the variables in the probability density and
+calculating the ratio, we get \citep{bussi-parrinello}:
+\begin{align*}
+  -T\log \frac{M(x\ssup{n} \vbar x\ssup{n+1})}
+  {M(x\ssup{n+1} \vbar x\ssup{n})}
+  &=
+    -\frac{1}{2}\angbra{\gradat{n} + \gradat{n+1}, \vtheta\ssup{n+1} - \vtheta\ssup{n}} \\
+  &+ \frac{h^2b^2}{8}\bra{\angbra{\gradat{n+1}, \vM^{-1}\gradat{n+1}} - \angbra{\gradat{n}, \vM^{-1}\gradat{n}}} \\
+  &- \frac{1}{2}\angbra{\vq\ssup{n+1}, \vq\ssup{n+1}} + \frac{1}{2}\angbra{\vq\ssup{n}, \vq\ssup{n}}.
+\end{align*}
+Together with equation~\ref{eq:energy}, the result is
+\begin{align*}
+  \Delta\tilde{H} &= \Delta U -\frac{1}{2}\Delta\vtheta^\tp \bra{\nabla U\ssup{n} + \nabla U\ssup{n+1}}
+                    + \frac{h^2b^2}{8}\Delta\bra{\nabla U^\tp\vM^{-1}\nabla U}.
+\end{align*}
+
+The change in effective energy does not depend on the momentum at all. Thus, we
+can avoid calculating the momentum at whole time steps in
+equation~\ref{eq:ovrvo-updates}, and draw only one Gaussian RV per time step.
 
 \printbibliography
 \end{document}
