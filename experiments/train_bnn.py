@@ -36,17 +36,17 @@ def config():
     weight_scale = 2.**0.5
     bias_loc = 0.
     bias_scale = 1.
-    n_samples = 200
-    warmup = 200
-    burnin = 200
+    n_samples = 1000
+    warmup = 2000
+    burnin = 2000
     skip = 5
-    cycles =  2
+    cycles =  5
     temperature = 1.0
     momentum = 0.9
     precond_update = None
     lr = 5e-4
-    
-    
+
+
 @ex.capture
 def get_data(data):
     assert data[:3] == "UCI" or data in []
@@ -83,8 +83,8 @@ def get_model(x_train, y_train, model, width, weight_prior, weight_loc,
     elif model == "raobdensenet":
         net = RaoBDenseNet(x_train, y_train, width, noise_std=LogNormal((), -1., 0.2)).to(x_train)
     return net
-    
-    
+
+
 @ex.automain
 def main(inference, model, width, n_samples, warmup,
         burnin, skip, cycles, temperature, momentum,
@@ -96,16 +96,16 @@ def main(inference, model, width, n_samples, warmup,
     assert temperature > 0
 
     data = get_data()
-        
+
     device = ('cuda' if t.cuda.is_available() else 'cpu')
     x_train = data.norm.train_X
     y_train = data.norm.train_y
 
     x_test = data.norm.test_X
     y_test = data.norm.test_y
-    
+
     model = get_model(x_train=x_train, y_train=y_train)
-        
+
     if inference == "HMC":
         kernel = HMC(potential_fn=lambda p: model.get_potential(x_train, y_train, eff_num_data=1*x_train.shape[0])(p),
              adapt_step_size=False, adapt_mass_matrix=False,
@@ -119,15 +119,15 @@ def main(inference, model, width, n_samples, warmup,
                   warmup_epochs=warmup, sample_epochs=sample_epochs, learning_rate=lr,
                   skip=skip, sampling_decay=True, cycles=cycles, temperature=temperature,
                   momentum=momentum, precond_update=precond_update)
-        
+
     mcmc.run(progressbar=True)
     samples = mcmc.get_samples()
-    
+
     # TODO: solve this more elegantly
     if inference == "SGLD":
         samples = {(key[:-2] if key[-2:] == ".p" else key) : val for key, val in samples.items()}
         del samples["lr"]
-        
+
     lps = t.zeros(n_samples, *y_test.shape)
 
     for i in range(n_samples):
@@ -141,7 +141,8 @@ def main(inference, model, width, n_samples, warmup,
         noise_std = model.noise_std()
 
     lps = lps.logsumexp(0) - math.log(n_samples)
-    
+
     results = {"lp_mean": lps.mean().item(),
-              "lp_std": lps.std().item()}
+              "lp_std": lps.std().item(),
+              "lp_stderr": float(lps.std().item()/np.sqrt(len(lps)))}
     return results
