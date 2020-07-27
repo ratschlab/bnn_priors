@@ -189,14 +189,14 @@ b &\eqdef \sqrt{\frac{2}{1 - \beta} \tanh \bra{\frac{1- \beta}{2}}} \\
 \vq\ssup{n+\frac{1}{2}} &\eqdef \sqrt{a} \vq\ssup{n} - \frac{bh}{2}\vM^{-\frac{1}{2}}\gradat{n} + \sqrt{(1-a)T} \vepsilon\ssup{n+\frac{1}{2}} \\
   \vtheta\ssup{n+1} &\eqdef \vtheta\ssup{n} + b h \vM^{-\frac{1}{2}}\vq\ssup{n+\frac{1}{2}} \\
 \vq\ssup{n+1} &\eqdef \sqrt{a} \vq\ssup{n+\frac{1}{2}} - \frac{bh\sqrt{a}}{2}\vM^{-\frac{1}{2}}\gradat{n+1} + \sqrt{(1-a)T} \vepsilon\ssup{n+1} \\
-\intertext{For computational convenience, we will use the parameters only at whole time steps, even though the integrator is slightly more accurate at half time steps in simple cases \citep{scc-time-rescaling}. We also redefine $u\ssup{n}$}
-  \tilde{\vq}\ssup{n+1} &\eqdef \sqrt{a} \vq\ssup{n+\frac{1}{2}} + \sqrt{(1-a)T} \vepsilon\ssup{n+\frac{3}{2}}
+\intertext{For computational convenience, we will use the parameters $\vtheta$ only at whole time steps and the momenta $\vq$ at half time steps, even though the integrator is slightly more accurate at half time steps for the parameters and whole time steps for the momenta in simple cases \citep{scc-time-rescaling}. A momentum update that uses only one Gaussian is}
+  \vq\ssup{n+\frac{1}{2}} &\eqdef a \vq\ssup{n-\frac{1}{2}} - \frac{bh(1 + a)}{2}\vM^{-\frac{1}{2}}\gradat{n} + \sqrt{(1-a^2)T} \vepsilon\ssup{n+\frac{1}{2}}
 \label{eq:ovrvo-updates}
 \end{align}
 
 For a $d$-dimensional parameter and momentum, the configurational and kinetic temperatures are
 \begin{align}
-  \hat{T}_c\ssup{n} &= \frac{1}{d}\angbra{\vtheta\ssup{n}, \gradat{n}} & \hat{T}_k\ssup{n} &= \frac{1}{d} \angbra{\tilde{\vq}\ssup{n}, \tilde{\vq}\ssup{n}}.
+  \hat{T}_c\ssup{n} &= \frac{1}{d}\angbra{\vtheta\ssup{n}, \gradat{n}} & \hat{T}_k\ssup{n+\frac{1}{2}} &= \frac{1}{d} \angbra{\vq\ssup{n+\frac{1}{2}}, \vq\ssup{n+\frac{1}{2}}}.
 \end{align}
 \subsection{Metropolis-Hastings acceptance probability}
 Writing $x\ssup{n} = \bra{\vtheta\ssup{n}, \vq\ssup{n}}$, we associate with each
