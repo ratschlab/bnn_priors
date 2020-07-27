@@ -8,7 +8,7 @@ from bnn_priors import prior
 
 class SGLDTest(unittest.TestCase):
     def test_snelson_inference(self):
-        data = np.load("../data/snelson.npz")
+        data = np.load("../bnn_priors/data/snelson.npz")
 
         device = ('cuda' if torch.cuda.is_available() else 'cpu')
         x_train = torch.from_numpy(data['x_train']).unsqueeze(1).to(device=device, dtype=torch.get_default_dtype())
@@ -25,7 +25,7 @@ class SGLDTest(unittest.TestCase):
         precond_update = 10
         lr = 5e-4
 
-        model = DenseNet(x_train, y_train, 128, noise_std=0.5)
+        model = DenseNet(x_train.shape[-1], y_train.shape[-1], 128, noise_std=0.5)
         model.to(x_train)
         if torch.cuda.is_available():
             model = model.cuda()   # Resample model with He initialization so SGLD works.
