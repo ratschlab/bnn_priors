@@ -7,7 +7,7 @@ from typing import List, Sequence, Dict, Union
 from collections import OrderedDict
 import contextlib
 
-__all__ = ('RegressionModel', 'RaoBRegressionModel', 'CategoricalModel')
+__all__ = ('RegressionModel', 'RaoBRegressionModel', 'CategoricalModel', 'AbstractModel')
 
 
 class AbstractModel(nn.Module, abc.ABC):

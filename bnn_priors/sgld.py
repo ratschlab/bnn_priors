@@ -44,27 +44,20 @@ class SGLD(torch.optim.Optimizer):
         # `update_preconditioner` uses no random numbers.
         self.update_preconditioner()
 
-    def _preconditioner_default(self, state, p) -> torch.Tensor:
+    def _preconditioner_default(self, state, p) -> float:
         try:
             return state['preconditioner']
         except KeyError:
-            v = state['preconditioner'] = torch.ones_like(p)
+            v = state['preconditioner'] = 1.
             return v
 
     @torch.no_grad()
     def sample_momentum(self):
         "Sample the momenta for all the parameters"
         for group in self.param_groups:
+            std = math.sqrt(group['temperature'])
             for p in group['params']:
-                state = self.state[p]
-                std = self._momentum_std(group, p, state)
-                state['momentum_buffer'] = torch.randn_like(p).mul_(std)
-
-    def _momentum_std(self, group, p, state) -> torch.Tensor:
-        temperature = group['temperature']
-        M = self._preconditioner_default(state, p)
-        return M.sqrt().mul_(math.sqrt(temperature))
-
+                self.state[p]['momentum_buffer'] = torch.randn_like(p).mul_(std)
 
     @torch.no_grad()
     def step(self, closure: Optional[Callable[..., torch.Tensor]]=None):
@@ -77,6 +70,7 @@ class SGLD(torch.optim.Optimizer):
                 loss = closure()
         try:
             for group in self.param_groups:
+                self._update_group(group)
                 for p in group['params']:
                     if p.grad is None:
                         if self.raise_on_no_grad:
@@ -86,8 +80,8 @@ class SGLD(torch.optim.Optimizer):
                     if self.raise_on_nan and not torch.isfinite(p.grad).all():
                         raise ValueError(
                             f"Gradient of shape {p.shape} is not finite: {p.grad}")
-
                     self._step_fn(group, p, self.state[p], **step_fn_kwargs)
+
         except KeyError as e:
             if e.args[0] == "momentum_buffer":
                 raise RuntimeError("No 'momentum_buffer' stored in state. "
@@ -95,36 +89,34 @@ class SGLD(torch.optim.Optimizer):
             raise e
         return loss
 
+    def _update_group(self, g):
+        g['hn'] = math.sqrt(g['lr'] * g['num_data'])
+        g['h'] = math.sqrt(g['lr'] / g['num_data'])
+        g['noise_std'] = math.sqrt(2*(1 - g['momentum']) * g['temperature'])
+
     def _step_fn(self, group, p, state):
-        mom_decay = group['momentum']
-        temperature = group['temperature']
-        num_data = group['num_data']
-        hn = math.sqrt(group['lr'] * num_data)
-        h = math.sqrt(group['lr'] / num_data)
+        M_rsqrt = self._preconditioner_default(state, p)
 
-        # Update the momentum
-        if mom_decay > 0:
+        # Update the momentum with the gradient
+        if group['momentum'] > 0:
             momentum = state['momentum_buffer']
-            momentum.mul_(mom_decay).add_(p.grad, alpha=-hn)
+            momentum.mul_(group['momentum']).add_(p.grad, alpha=-group['hn']*M_rsqrt)
         else:
-            momentum = p.grad.detach().mul(-hn)
-
-        M = state['preconditioner']
+            momentum = p.grad.detach().mul(-group['hn']*M_rsqrt)
 
         # Add noise to momentum
-        if temperature > 0:
-            c = math.sqrt((1 - mom_decay) * temperature)
-            momentum.addcmul_(torch.randn_like(momentum), M.sqrt(), value=c)
+        if group['temperature'] > 0:
+            momentum.add_(torch.randn_like(momentum), alpha=group['noise_std'])
 
         # Take the gradient step
-        p.addcdiv_(momentum, M, value=h)
+        p.add_(momentum, alpha=group['h']*M_rsqrt)
 
         # Temperature diagnostics
         d = p.numel()
-        state['est_temperature'] = dot(momentum, momentum/M) / d
-        state['est_config_temp'] = dot(p, p.grad) * (num_data/d)
+        state['est_temperature'] = dot(momentum, momentum) / d
+        state['est_config_temp'] = dot(p, p.grad) * (group['num_data']/d)
 
-        # RMSProp
+        # RMSProp moving average
         alpha = group['rmsprop_alpha']
         state['square_avg'].mul_(alpha).addcmul_(p.grad, p.grad, value=1 - alpha)
 
@@ -145,26 +137,11 @@ class SGLD(torch.optim.Optimizer):
                 except KeyError:
                     square_avg = state['square_avg'] = torch.ones_like(p)
 
-                precond[p] = square_avg + eps
-                min_s = min(min_s, precond[p].mean())
+                precond[p] = square_avg.mean() + eps
+                min_s = min(min_s, precond[p])
 
         for p, new_M in precond.items():
-            new_M.div_(min_s).pow_(self._preconditioner_pow)
-
-            state = self.state[p]
-            old_M = self._preconditioner_default(state, p)
-            try:
-                self._convert_momentum_buffer(state['momentum_buffer'], old_M, new_M)
-            except KeyError as e:
-                if e.args[0] == "momentum_buffer":
-                    pass  # no need to convert it if it does not exist
-            state['preconditioner'] = new_M
-
-    _preconditioner_pow = 1/2
-    def _convert_momentum_buffer(self, momentum_buffer, old_M, new_M):
-        conversion = new_M.div(old_M).sqrt_()
-        momentum_buffer.mul_(conversion)
-
+            self.state[p]['preconditioner'] = new_M**(-1/4)
 
     def kinetic_temperature_intervals(self, c: Union[float, np.ndarray]=0.95) -> Dict[
             torch.nn.Parameter, Tuple[np.ndarray, np.ndarray]]:
@@ -181,7 +158,7 @@ class SGLD(torch.optim.Optimizer):
         for group in self.param_groups:
             for p in group["params"]:
                 df = p.numel()
-                lower = chi2.ppf((1-c)/2, df) / df
-                upper = chi2.ppf((1+c)/2, df) / df
+                lower = chi2.ppf((1-c)/2, df=df, scale=1/df)
+                upper = chi2.ppf((1+c)/2, df=df, scale=1/df)
                 d[p] = (lower, upper)
         return d
