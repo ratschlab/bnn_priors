@@ -1,12 +1,13 @@
 import unittest
 import numpy as np
 import torch
+import scipy.stats
+
 from bnn_priors.models import DenseNet, AbstractModel
 from bnn_priors.inference import SGLDRunner
 from bnn_priors import prior
 from bnn_priors.sgld import SGLD
 
-import scipy.stats 
 
 class GaussianModel(AbstractModel):
     likelihood_dist = NotImplemented
@@ -18,11 +19,13 @@ class GaussianModel(AbstractModel):
             setattr(self, str(i), prior.Normal(torch.Size([D]), mean, std))
 
     def potential_avg(self):
+        return -self.log_prior()
+
+    def potential_avg_closure(self):
         self.zero_grad()
-        loss = -self.log_prior()
+        loss = self.potential_avg()
         loss.backward()
         return loss
-
 
 class SGLDTest(unittest.TestCase):
     def test_snelson_inference(self):
