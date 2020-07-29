@@ -44,6 +44,10 @@ class Cauchy(LocScale):
 
 class StudentT(LocScale):
     _dist = td.StudentT
+    def __init__(self, shape, loc, scale, df=1):
+        Prior.__init__(self, shape, df=df, loc=0., scale=1.)
+        self.loc = loc
+        self.scale = scale
 
 
 class Uniform(LocScale):
