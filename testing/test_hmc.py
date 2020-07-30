@@ -5,7 +5,7 @@ import scipy.stats
 import math
 
 from gpytorch.distributions import MultivariateNormal
-from bnn_priors.verlet_sgld import HMC
+from bnn_priors.mcmc import HMC
 from bnn_priors.models import DenseNet
 from bnn_priors import prior
 
@@ -69,7 +69,7 @@ class HMCTest(unittest.TestCase):
     def test_distribution_preservation(self, n_vars=50, n_dim=1000, n_samples=100, momentum_resample=4):
         """Tests whether HMC preserves the distribution of a  Gaussian potential correctly.
         """
-        torch.manual_seed(123)
+        torch.manual_seed(122)
         mean, std = 1, 2.
         model = GaussianModel(N=n_vars, D=n_dim, mean=mean, std=std)
         sgld = HMC(prior.params_with_prior(model), lr=1/32, num_data=1)
@@ -84,8 +84,7 @@ class HMCTest(unittest.TestCase):
             if step % momentum_resample == 0:
                 if step != 0:
                     loss = sgld.final_step(model.potential_avg_closure)
-                    energy = loss.item() + sgld.point_energy()
-                    delta_energy = energy - prev_energy
+                    delta_energy = sgld.delta_energy(prev_loss, loss)
                     rejected = sgld.maybe_reject(delta_energy)
                     if rejected:
                         with torch.no_grad():
@@ -98,9 +97,7 @@ class HMCTest(unittest.TestCase):
                         break
 
                 sgld.sample_momentum()
-                prev_energy = sgld.point_energy()
                 prev_loss = sgld.initial_step(model.potential_avg_closure, save_state=True).item()
-                prev_energy += prev_loss
             else:
                 sgld.step(model.potential_avg_closure)
 

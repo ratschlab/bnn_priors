@@ -61,16 +61,16 @@ class SGLD(torch.optim.Optimizer):
 
     @torch.no_grad()
     def step(self, closure: Optional[Callable[..., torch.Tensor]]=None):
-        return self._step_internal(closure)
+        return self._step_internal(self._update_group_fn, self._step_fn, closure)
 
-    def _step_internal(self, closure, **step_fn_kwargs):
+    def _step_internal(self, update_group_fn, step_fn, closure, **step_fn_kwargs):
         loss = None
         if closure is not None:
             with torch.enable_grad():
                 loss = closure()
         try:
             for group in self.param_groups:
-                self._update_group(group)
+                update_group_fn(group)
                 for p in group['params']:
                     if p.grad is None:
                         if self.raise_on_no_grad:
@@ -80,7 +80,7 @@ class SGLD(torch.optim.Optimizer):
                     if self.raise_on_nan and not torch.isfinite(p.grad).all():
                         raise ValueError(
                             f"Gradient of shape {p.shape} is not finite: {p.grad}")
-                    self._step_fn(group, p, self.state[p], **step_fn_kwargs)
+                    step_fn(group, p, self.state[p], **step_fn_kwargs)
 
         except KeyError as e:
             if e.args[0] == "momentum_buffer":
@@ -89,7 +89,7 @@ class SGLD(torch.optim.Optimizer):
             raise e
         return loss
 
-    def _update_group(self, g):
+    def _update_group_fn(self, g):
         g['hn'] = math.sqrt(g['lr'] * g['num_data'])
         g['h'] = math.sqrt(g['lr'] / g['num_data'])
         g['noise_std'] = math.sqrt(2*(1 - g['momentum']) * g['temperature'])

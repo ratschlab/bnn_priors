@@ -6,7 +6,7 @@ import scipy.stats
 from bnn_priors.models import DenseNet, AbstractModel
 from bnn_priors.inference import SGLDRunner
 from bnn_priors import prior
-from bnn_priors.sgld import SGLD
+from bnn_priors.mcmc import SGLD
 
 
 class GaussianModel(AbstractModel):
@@ -62,57 +62,51 @@ class SGLDTest(unittest.TestCase):
         assert (sgld.metrics["preconditioner/latent_fn.0.weight_prior"][0]
                 != sgld.metrics["preconditioner/latent_fn.0.weight_prior"][-1])
 
-    def test_posterior_and_temperatures(self, n_vars=3, n_dim=100, n_samples=500, thin=4):
-        """Tests whether SGLD samples from a Gaussian potential correctly, and whether
-        the kinetic and configurational temperatures have the distribution they
-        ought to have (Chi^2)
+    def test_distribution_preservation(self, n_vars=50, n_dim=1000, n_samples=200):
+        """Tests whether VerletSGLD preserves the distribution of a  Gaussian potential correctly.
         """
-        torch.manual_seed(123)
+        torch.manual_seed(124)
         mean, std = 1, 2.
-        temperature = 1-1/4
+        temperature = 3/4
         model = GaussianModel(N=n_vars, D=n_dim, mean=mean, std=std)
-        sgld = SGLD(prior.params_with_prior(model), lr=1/4, num_data=1,
-                    momentum=1-1/128, temperature=temperature)
-
-        kinetic_temp = np.zeros(n_samples * n_vars)
-        config_temp = np.zeros(n_samples * n_vars)
-        samples = np.zeros(n_samples * n_dim * n_vars)
-
+        sgld = SGLD(prior.params_with_prior(model), lr=0.1/n_samples, num_data=1,
+                    momentum=0.9, temperature=temperature)
         model.sample_all_priors()
+        with torch.no_grad():
+            for p in prior.params_with_prior(model):
+                p.mul_(temperature**.5)
+
+        # Set the preconditioner randomly
+        for _, state in sgld.state.items():
+            state['preconditioner'] = torch.rand_like(state['preconditioner']) + 0.2
+
         sgld.sample_momentum()
-        for i in range(n_samples*thin):
-            if i == 0:
-                try:
-                    sgld.step(model.potential_avg)
-                except AttributeError:
-                    sgld.initial_step(model.potential_avg)
-            else:
-                sgld.step(model.potential_avg)
 
-            if i % thin == 0:
-                i_ = i // thin
-                for j, (p, state) in enumerate(sgld.state.items()):
-                    kinetic_temp[i_*n_vars + j] = state['est_temperature']
-                    config_temp[i_*n_vars + j] = state['est_config_temp']
-                    samples[(i_*n_vars + j)*n_dim : (i_*n_vars + j + 1)*n_dim] = p.detach().numpy()
+        for step in range(n_samples):
+            sgld.step(model.potential_avg_closure)
 
-        # Test whether the samples come from a 1-d Gaussian
+        parameters = np.empty(n_vars*n_dim)
+        kinetic_temp = np.empty(n_vars)
+        config_temp = np.empty(n_vars)
+        for i, (p, state) in enumerate(sgld.state.items()):
+            parameters[i*n_dim:(i+1)*n_dim] = p.detach().numpy()
+            kinetic_temp[i] = state['est_temperature']
+            config_temp[i] = state['est_config_temp']
+
+        # Test whether the parameters are 1-d Gaussian distributed
         statistic, (critical_value, *_), (significance_level, *_
-                                          ) = scipy.stats.anderson(samples, dist='norm')
+                                          ) = scipy.stats.anderson(parameters, dist='norm')
 
         assert significance_level == 15, "next line does not check for significance of 15%"
-        # Test correctly fails if the prior is a Student-T distribution with 30 degrees of freedom
-        # and we sample from it i.i.d.
         assert statistic < critical_value, "the samples are not Normal with p<0.15"
 
-        # def norm(x): return scipy.stats.norm.cdf(x, scale=temperature**.5)
-        # _, pvalue = scipy.stats.ks_1samp(samples, norm, mode='exact')
-        # assert pvalue >= 0.3, "the samples are not Normal with the correct variance with p<0.3"
+        def norm(x): return scipy.stats.norm.cdf(x, scale=temperature**.5)
+        _, pvalue = scipy.stats.ks_1samp(parameters, norm, mode='exact')
+        assert pvalue >= 0.3, "the samples are not Normal with the correct variance with p<0.3"
 
-        # def chi2(x): return scipy.stats.chi2.cdf(x, df=n_dim, loc=0., scale=temperature/n_dim)
-
-        # _, pvalue = scipy.stats.ks_1samp(config_temp, chi2, mode='exact')
-        # assert pvalue >= 0.3, "the configurational temperature is not Chi^2 with p<0.3"
+        def chi2(x): return scipy.stats.chi2.cdf(x, df=n_dim, loc=0., scale=temperature/n_dim)
+        _, pvalue = scipy.stats.ks_1samp(config_temp, chi2, mode='exact')
+        assert pvalue >= 0.3, "the configurational temperature is not Chi^2 with p<0.3"
         # _, pvalue = scipy.stats.ks_1samp(kinetic_temp, chi2, mode='exact')
         # assert pvalue >= 0.3, "the kinetic temperature is not Chi^2 with p<0.3"
 

@@ -2,7 +2,7 @@ import numpy as np
 from tqdm import tqdm
 import torch
 from .utils import get_cosine_schedule
-from .sgld import SGLD
+from .mcmc import SGLD
 import math
 from bnn_priors import prior
 
