@@ -69,7 +69,7 @@ class SGLDTest(unittest.TestCase):
         mean, std = 1, 2.
         temperature = 3/4
         model = GaussianModel(N=n_vars, D=n_dim, mean=mean, std=std)
-        sgld = SGLD(prior.params_with_prior(model), lr=0.1/n_samples, num_data=1,
+        sgld = SGLD(prior.params_with_prior(model), lr=1/512, num_data=1,
                     momentum=0.9, temperature=temperature)
         model.sample_all_priors()
         with torch.no_grad():
@@ -78,7 +78,7 @@ class SGLDTest(unittest.TestCase):
 
         # Set the preconditioner randomly
         for _, state in sgld.state.items():
-            state['preconditioner'] = torch.rand_like(state['preconditioner']) + 0.2
+            state['preconditioner'] = torch.rand(()).item() + 0.2
 
         sgld.sample_momentum()
 

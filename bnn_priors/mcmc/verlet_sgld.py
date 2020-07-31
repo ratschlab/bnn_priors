@@ -31,9 +31,17 @@ class VerletSGLD(SGLD):
             "unclear which `num_data` to use"
         delta_energy = (loss - prev_loss) * num_data
 
-        for p, state in self.state.items():
-            delta_energy += state['delta_energy']
+        for group in self.param_groups:
+            for p in group['params']:
+                state = self.state[p]
+                point_energy = self._point_energy(group, p, state)
+                delta_energy += state['delta_energy'] + point_energy
         return delta_energy
+
+    def _point_energy(self, group, p, state):
+        M_rsqrt = self._preconditioner_default(state, p)
+        curv = M_rsqrt**2 * group['num_data']**2 * group['b^2h^2'] / 8
+        return curv * dot(p.grad, p.grad)
 
     @torch.no_grad()
     def maybe_reject(self, delta_energy: float) -> bool:
@@ -133,28 +141,25 @@ class VerletSGLD(SGLD):
         M_rsqrt = self._preconditioner_default(state, p)
 
         # Gradient step on the new_momentum
-        grad_lr = -.5 * group['grad_v'] * group['bhn'] * M_rsqrt
         old_momentum = state['momentum_buffer']
         new_momentum = torch.randn_like(p).mul_(group['noise_std'])
+        grad_lr = -.5 * group['grad_v'] * group['bhn'] * M_rsqrt
         new_momentum.add_(p.grad, alpha=grad_lr)
         if group['mom_decay'] > 0:
             new_momentum.add_(old_momentum, alpha=group['mom_decay'])
 
         # Calculate this steps's contribution to the energy difference
-        curv = M_rsqrt**2 * group['num_data']**2 * group['b^2h^2'] / 8
         c_gm = -.5 * group['bhn'] * M_rsqrt
         if is_initial:
-            state['delta_energy'] = -curv * dot(p.grad, p.grad)
+            state['delta_energy'] = -self._point_energy(group, p, state)
             state['delta_energy'] += c_gm * dot(p.grad, new_momentum)
         elif is_final:
-            state['delta_energy'] += curv * dot(p.grad, p.grad)
-            state['delta_energy'] += c_gm * dot(p.grad, new_momentum)
+            state['delta_energy'] += c_gm * dot(p.grad, old_momentum)
         else:
-            delta_2_0 = old_momentum.add_(new_momentum)
-            state['delta_energy'] -= c_gm * dot(p.grad, delta_2_0)
+            state['delta_energy'] += c_gm * dot(p.grad, old_momentum.add_(new_momentum))
+        del old_momentum
 
         state['momentum_buffer'] = new_momentum
-
         if not is_final:
             p.add_(new_momentum, alpha=group['bh']*M_rsqrt)
 

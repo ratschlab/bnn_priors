@@ -137,7 +137,7 @@ class SGLD(torch.optim.Optimizer):
                 except KeyError:
                     square_avg = state['square_avg'] = torch.ones_like(p)
 
-                precond[p] = square_avg.mean() + eps
+                precond[p] = square_avg.mean().item() + eps
                 min_s = min(min_s, precond[p])
 
         for p, new_M in precond.items():

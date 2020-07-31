@@ -77,7 +77,7 @@ class HMCTest(unittest.TestCase):
 
         # Set the preconditioner randomly
         for _, state in sgld.state.items():
-            state['preconditioner'] = torch.rand_like(state['preconditioner']) + 0.2
+            state['preconditioner'] = torch.rand(()).item() + 0.2
 
         assert n_samples % momentum_resample == 0
         for step in range(n_samples+1):
