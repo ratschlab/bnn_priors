@@ -17,21 +17,20 @@ class LocScale(Prior):
        scale (float, torch.Tensor, prior.Prior): scale
     """
     def __init__(self, shape, loc, scale):
-        super().__init__(shape, 0., 1.)
+        super().__init__(shape, loc, scale)
         self.loc = loc
         self.scale = scale
 
     def forward(self):
-        return self.loc + self.scale * self.p
+        return self.p
 
 
 class Normal(LocScale):
     _dist = td.Normal
 
+    
 class LogNormal(LocScale):
-    _dist = td.Normal
-    def forward(self):
-        return (self.loc + self.scale * self.p).exp()
+    _dist = td.LogNormal
 
 
 class Laplace(LocScale):
@@ -45,7 +44,7 @@ class Cauchy(LocScale):
 class StudentT(LocScale):
     _dist = td.StudentT
     def __init__(self, shape, loc, scale, df=1):
-        Prior.__init__(self, shape, df=df, loc=0., scale=1.)
+        Prior.__init__(self, shape, df=df, loc=loc, scale=scale)
         self.loc = loc
         self.scale = scale
 
@@ -61,12 +60,6 @@ class Uniform(LocScale):
     """
     _dist = td.Normal
     def __init__(self, shape, low, high):
-        super().__init__(shape, 0., 1.)
+        super().__init__(shape, low, high)
         self.low = low
         self.high = high
-
-    def forward(self):
-        dist = self.dist()
-        uniform = dist.cdf(self.p)
-        # uniform = torch.nn.functional.sigmoid(self.p)
-        return self.low + (self.high-self.low) * uniform
