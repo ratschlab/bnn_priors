@@ -4,6 +4,7 @@ import torch
 import scipy.stats
 
 from bnn_priors import prior
+from bnn_priors.models import AbstractModel
 from bnn_priors.mcmc import SGLD
 
 

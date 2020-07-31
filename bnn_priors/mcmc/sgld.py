@@ -141,7 +141,9 @@ class SGLD(torch.optim.Optimizer):
                 min_s = min(min_s, precond[p])
 
         for p, new_M in precond.items():
-            self.state[p]['preconditioner'] = new_M**(-1/4)
+            # ^(1/2) to form the preconditioner,
+            # ^(-1/2) because we want the preconditioner's inverse square root.
+            self.state[p]['preconditioner'] = (new_M / min_s)**(-1/4)
 
     def kinetic_temperature_intervals(self, c: Union[float, np.ndarray]=0.95) -> Dict[
             torch.nn.Parameter, Tuple[np.ndarray, np.ndarray]]:

@@ -11,17 +11,33 @@ class SGLDRunner:
     def __init__(self, model, dataloader, epochs_per_cycle, warmup_epochs, sample_epochs, learning_rate=1e-2,
                  skip=1, temperature=1., data_mult=1., momentum=0., sampling_decay=True,
                  grad_max=1e6, cycles=1, precond_update=None, summary_writer=None):
-        """
-        Stochastic Gradient Langevin Dynamics for posterior sampling.
+        """Stochastic Gradient Langevin Dynamics for posterior sampling.
+
+        On calling `run`, this class runs SGLD for `cycles` sampling cycles. In
+        each cycle, there are 3 phases: descent, warmup and sampling. The cycle
+        lasts for `epochs_per_cycle` epochs in total, and the warmup and
+        sampling phases last for `warmup_epochs` and `sample_epochs` epochs
+        respectively.
+
+        The descent phase performs regular gradient descent with momentum, i.e.
+        SGLD with temperature=0. The warmup phase raises the temperature to 1.
+        During the sample phase, samples get stored.
+
+        The learning rate keep decreasing all throughout the cycle following a
+        cosine function, from learning_rate=1 at the beginning to
+        learning_rate=0 at the end.
+
+        The preconditioner gets updated every `precond_update` epochs,
+        regardless of the phase in the cycle.
 
         Args:
             model (torch.Module, PriorMixin): BNN model to sample from
             num_data (int): Number of datapoints in training sest
-            warmup_epochs (int): Number of epochs per cycle for warming up the Markov chain
-            burnin_epochs (int): Number of epochs per cycle between warmup and sampling. When None, uses the same as warmup_steps.
-            sample_epochs (int): Number of sample epochs
+            warmup_epochs (int): Number of epochs per cycle for warming up the Markov chain, at the beginning.
+            sample_epochs (int): Number of epochs per cycle where the samples are kept, at the end.
+
             learning_rate (float): Initial learning rate
-            skip (int): Number of samples to skip between saved samples during the sampling phase
+            skip (int): Number of samples to skip between saved samples during the sampling phase. Sometimes called "thinning".
             temperature (float): Temperature for tempering the posterior
             data_mult (float): Effective replication of each datapoint (which is the usual approach to tempering in VI).
             momentum (float): Momentum decay parameter for SGLD
@@ -30,13 +46,19 @@ class SGLDRunner:
             cycles (int): Number of warmup and sampling cycles to perform
             precond_update (int): Number of steps after which the preconditioner should be updated. None disables the preconditioner.
             summary_writer (optional, tensorboardX.SummaryWriter): where to write the self.metrics
+
         """
         self.model = model
         self.dataloader = dataloader
+
+        assert warmup_epochs >= 0
+        assert sample_epochs >= 0
+        assert epochs_per_cycle >= warmup_epochs + sample_epochs
         self.epochs_per_cycle = epochs_per_cycle
         self.descent_epochs = epochs_per_cycle - warmup_epochs - sample_epochs
         self.warmup_epochs = warmup_epochs
         self.sample_epochs = sample_epochs
+
         self.skip = skip
         #num_samples (int): Number of recorded per cycle
         self.num_samples = sample_epochs // skip

@@ -5,7 +5,7 @@ from torch.utils.data import DataLoader, TensorDataset
 import scipy.stats
 from pathlib import Path
 
-from bnn_priors.models import DenseNet, AbstractModel
+from bnn_priors.models import DenseNet
 from bnn_priors.inference import SGLDRunner
 
 
@@ -28,12 +28,12 @@ class SGLDRunnerTest(unittest.TestCase):
         dataloader = DataLoader(TensorDataset(x_train, y_train), batch_size=15)
 
         sgld = SGLDRunner(model=model, dataloader=dataloader,
-                          epochs_per_cycle=1, warmup_epochs=5, sample_epochs=1,
+                          epochs_per_cycle=3, warmup_epochs=1, sample_epochs=1,
                           learning_rate=5e-4, temperature=1., data_mult=1., momentum=0.9,
-                          sampling_decay=True, cycles=4, precond_update=3)
+                          sampling_decay=True, cycles=4, precond_update=2)
         sgld.run(progressbar=False)
 
         assert sgld.metrics["loss"][0] > sgld.metrics["loss"][-1]
         assert sgld.metrics["lr"][0] > sgld.metrics["lr"][1]
-        assert (sgld.metrics["preconditioner/latent_fn.0.weight_prior"][0]
-                != sgld.metrics["preconditioner/latent_fn.0.weight_prior"][-1])
+        assert (sgld.metrics["preconditioner/net.0.weight_prior"][0]
+                != sgld.metrics["preconditioner/net.0.weight_prior"][-1])
