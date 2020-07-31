@@ -53,6 +53,8 @@ class VerletSGLDTest(unittest.TestCase):
 
         sgld.sample_momentum()
 
+        sum_acceptance = 0.
+        n_acceptance = 0
         assert n_samples % mh_freq == 0
         for step in range(n_samples+1):
             if step % mh_freq == 0:
@@ -63,9 +65,11 @@ class VerletSGLDTest(unittest.TestCase):
                     if rejected:
                         with torch.no_grad():
                             assert np.allclose(prev_loss, model.potential_avg().item())
-                        print(f"Rejected sample, with P(accept)={math.exp(-delta_energy)}")
-                    else:
-                        print(f"Accepted sample, with P(accept)={math.exp(-delta_energy)}")
+                    #     print(f"Rejected sample, with P(accept)={math.exp(-delta_energy)}")
+                    # else:
+                    #     print(f"Accepted sample, with P(accept)={math.exp(-delta_energy)}")
+                    n_acceptance += 1
+                    sum_acceptance += min(1., math.exp(-delta_energy))
 
                     if step == n_samples:
                         break
@@ -73,6 +77,8 @@ class VerletSGLDTest(unittest.TestCase):
                 prev_loss = sgld.initial_step(model.potential_avg_closure, save_state=True).item()
             else:
                 sgld.step(model.potential_avg_closure)
+
+        assert sum_acceptance/n_acceptance > 0.6  # Was 0.73 at commit 56988f7
 
         parameters = np.empty(n_vars*n_dim)
         kinetic_temp = np.empty(n_vars)

@@ -70,6 +70,7 @@ class SGLDRunner:
             params=params,
             lr=self.learning_rate, num_data=self.eff_num_data,
             momentum=self.momentum, temperature=self.temperature)
+        self.optimizer.sample_momentum()
 
         schedule = get_cosine_schedule(len(self.dataloader) * self.epochs_per_cycle)
         self.scheduler = torch.optim.lr_scheduler.LambdaLR(
@@ -95,10 +96,8 @@ class SGLDRunner:
                     self.step(step, x, y)
                     step += 1
 
-                # TODO: should we also do this during sampling?
                 if self.precond_update is not None and epoch % self.precond_update == 0:
-                    # TODO: how do we actually handle minibatches here?
-                    self.optimizer.estimate_preconditioner(closure=lambda x: x, K=1)
+                    self.optimizer.update_preconditioner()
 
                 sampling_epoch = epoch - (self.descent_epochs + self.warmup_epochs)
                 if (0 <= sampling_epoch) and (sampling_epoch % self.skip == 0):
