@@ -147,19 +147,14 @@ class RaoBRegressionModel(AbstractModel):
         self.noise_std = noise_std
         self.last_layer_std = last_layer_std
 
-        #_, n_feat = self.net(x_train[:1]).shape
-        #self.log_likelihood_precomp = self._log_likelihood_precomp(y_train, n_feat)
-
-    @property
-    def log_likelihood_precomp(self):
-        return self._log_likelihood_precomp(self.y_train, self.net(self.x_train[:1]).shape[-1])
-
-    def _log_likelihood_precomp(self, y, n_feat):
+    def _log_likelihood_constants(self, y, n_feat, sig):
         "N log(2π) + (N-F) log(σ²) + tr_YY/(D σ²)"
         N, D = y.shape
 
-        sig = prior.value_or_call(self.noise_std)**2
-        log_sig = 2*math.log(prior.value_or_call(self.noise_std))
+        if isinstance(sig, float):
+            log_sig = math.log(sig)
+        else:
+            log_sig = sig.log()
 
         tr_YY__Ds = (y.view(-1) @ y.view(-1)).item() / (D*sig)
         const = N*math.log(2*math.pi)
@@ -181,8 +176,8 @@ class RaoBRegressionModel(AbstractModel):
               + log det(xxᵀ + σ²I) - yᵀxᵀ(xxᵀ + σ²I)⁻¹xy / σ²]
         where tr_YY = tr{YᵀY} = (∑_j y_jᵀy_j).
 
-        The first line of the above expression is precomputed in
-        `self.log_likelihood_precomp`
+        The first line of the above expression is computed in
+        `self.log_likelihood_constants`
 
         (the terms with logs come from applying Woodbury to the log
         determinant, the trace(YYᵀ) and quadratic form come from applying
@@ -202,6 +197,8 @@ class RaoBRegressionModel(AbstractModel):
         sig = prior.value_or_call(self.noise_std)**2
         last_layer_var = self.last_layer_std**2
 
+        constants = self._log_likelihood_constants(y, f.size(-1), sig)
+
         FF = (f.t() @ f) * last_layer_var
         # Switch to float64 for the cholesky bit
         FF_sig = FF.to(torch.float64) + sig*torch.eye(n_feat, dtype=torch.float64, device=f.device)
@@ -211,7 +208,7 @@ class RaoBRegressionModel(AbstractModel):
         Lfy = (f.t() @ y).to(torch.float64).triangular_solve(L, upper=False)
         Lfy_flat = Lfy.solution.t().view(-1)
         quad = (Lfy_flat @ Lfy_flat) * (last_layer_var/(D*sig))
-        likelihood = (-D/2) * (self.log_likelihood_precomp + logdet - quad)
+        likelihood = (-D/2) * (constants + logdet - quad)
         # Round likelihood down to the original dtype
         likelihood = likelihood.to(f.dtype)
         return likelihood
