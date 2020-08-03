@@ -32,9 +32,16 @@ class Prior(nn.Module, abc.ABC):
         self.p = nn.Parameter(self._sample_value(shape))
 
         for key, arg in itertools.chain(enumerate(args), kwargs.items()):
+            assert str(key) != "p", "repeated name of parameter"
             if isinstance(arg, nn.Module):
-                # register child modules
                 self.add_module(str(key), arg)
+            elif isinstance(arg, nn.Parameter):
+                self.register_parameter(str(key), arg)
+            elif isinstance(arg, torch.Tensor):
+                self.register_buffer(str(key), arg)
+            else:
+                setattr(self, str(key), arg)
+
 
     @staticmethod
     @abc.abstractmethod
