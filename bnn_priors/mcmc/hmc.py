@@ -45,14 +45,15 @@ class HMC(VerletSGLD):
         grad_lr = -.5 * group['grad_v'] * group['bhn'] * M_rsqrt
         momentum.add_(p.grad, alpha=grad_lr)
 
-        if not is_final:
-            # Update the parameters:
-            p.add_(momentum, alpha=group['bh']*M_rsqrt)
-
         # Temperature diagnostics
         d = p.numel()
         state['est_temperature'] = dot(momentum, momentum) / d
+        # NOTE: p and p.grad are from the same time step
         state['est_config_temp'] = dot(p, p.grad) * (group['num_data']/d)
+
+        if not is_final:
+            # Update the parameters:
+            p.add_(momentum, alpha=group['bh']*M_rsqrt)
 
         # RMSProp moving average
         alpha = group['rmsprop_alpha']

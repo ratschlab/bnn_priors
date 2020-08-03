@@ -1,8 +1,10 @@
+import os
 import torch as t
 import numpy as np
 from torch.utils.data import TensorDataset
 
 __all__ = ('UCI',)
+
 
 class Dataset:
     """
@@ -32,15 +34,17 @@ class UCI:
     ```
     """
     def __init__(self, dataset, split, dtype='float32'):
-        data = np.loadtxt('data/UCI/{}/data.txt'.format(dataset)).astype(getattr(np, dtype))
-        index_features = np.loadtxt('data/UCI/{}/index_features.txt'.format(dataset))
-        index_target = np.loadtxt('data/UCI/{}/index_target.txt'.format(dataset))
+        _ROOT = os.path.abspath(os.path.dirname(__file__))
+        dataset_dir = f'{_ROOT}/{dataset}/'
+        data = np.loadtxt(f'{dataset_dir}/data.txt').astype(getattr(np, dtype))
+        index_features = np.loadtxt(f'{dataset_dir}/index_features.txt')
+        index_target = np.loadtxt(f'{dataset_dir}/index_target.txt')
         X_unnorm = t.from_numpy(data[:, index_features.astype(int)])
         y_unnorm = t.from_numpy(data[:, index_target.astype(int):index_target.astype(int)+1])
 
         # split into train and test
-        index_train = np.loadtxt('data/UCI/{}/index_train_{}.txt'.format(dataset, split)).astype(int)
-        index_test  = np.loadtxt('data/UCI/{}/index_test_{}.txt'.format(dataset, split)).astype(int)
+        index_train = np.loadtxt(f'{dataset_dir}/index_train_{split}.txt').astype(int)
+        index_test  = np.loadtxt(f'{dataset_dir}/index_test_{split}.txt').astype(int)
 
         # record unnormalized dataset
         self.unnorm = Dataset(X_unnorm, y_unnorm, index_train, index_test)

@@ -108,13 +108,14 @@ class SGLD(torch.optim.Optimizer):
         if group['temperature'] > 0:
             momentum.add_(torch.randn_like(momentum), alpha=group['noise_std'])
 
-        # Take the gradient step
-        p.add_(momentum, alpha=group['h']*M_rsqrt)
-
         # Temperature diagnostics
         d = p.numel()
         state['est_temperature'] = dot(momentum, momentum) / d
+        # NOTE: p and p.grad are from the same time step
         state['est_config_temp'] = dot(p, p.grad) * (group['num_data']/d)
+
+        # Take the gradient step
+        p.add_(momentum, alpha=group['h']*M_rsqrt)
 
         # RMSProp moving average
         alpha = group['rmsprop_alpha']

@@ -64,8 +64,7 @@ class AbstractModel(nn.Module, abc.ABC):
         return self.potential(x, y, eff_num_data) / eff_num_data
 
     def params_with_prior_dict(self):
-        return OrderedDict(
-            (k, v.data) for (k, v) in prior.named_params_with_prior(self))
+        return OrderedDict(prior.named_params_with_prior(self))
 
     def sample_all_priors(self):
         for _, v in prior.named_priors(self):
@@ -89,17 +88,22 @@ class AbstractModel(nn.Module, abc.ABC):
         try:
             pmd = self._prior_mod_dict
         except AttributeError:
-            pmd = self._prior_mod_dict = list(
-                (k, v, v.p) for (k, v) in prior.named_priors(self))
+            pmd = self._prior_mod_dict = OrderedDict()
+            for prefix, mod in self.named_modules():
+                for name, p in mod.named_parameters(recurse=False):
+                    full_name = prefix + ("" if prefix == "" else ".") + name
+                    print(repr(full_name), repr(name), mod, p)
+                    pmd[full_name] = (name, mod, p)
 
         assert len(param_dict) == len(pmd)
-        try:      # assign `torch.Tensor`s to `Prior.p`s
-            for k, mod, _ in pmd:
-                mod._parameters['p'] = param_dict[k]
+        try:      # assign `torch.Tensor`s to `nn.Module`s
+            for k, param in param_dict.items():
+                name, mod, _ = pmd[k]
+                mod._parameters[name] = param
             yield
-        finally:  # Restore `Prior.p`s
-            for k, mod, p in pmd:
-                mod._parameters['p'] = p
+        finally:  # Restore `nn.Parameter`s
+            for _, (name, mod, p) in pmd.items():
+                mod._parameters[name] = p
 
 
 
@@ -147,21 +151,20 @@ class RaoBRegressionModel(AbstractModel):
         self.noise_std = noise_std
         self.last_layer_std = last_layer_std
 
-        _, n_feat = self.net(x_train[:1]).shape
-        self.log_likelihood_precomp = self._log_likelihood_precomp(y_train, n_feat)
-
-    def _log_likelihood_precomp(self, y, n_feat):
+    def _log_likelihood_constants(self, y, n_feat, sig):
         "N log(2π) + (N-F) log(σ²) + tr_YY/(D σ²)"
         N, D = y.shape
 
-        sig = self.noise_std**2
-        log_sig = 2*math.log(self.noise_std)
+        if isinstance(sig, float):
+            log_sig = math.log(sig)
+        else:
+            log_sig = sig.log()
 
         tr_YY__Ds = (y.view(-1) @ y.view(-1)).item() / (D*sig)
         const = N*math.log(2*math.pi)
         a = (N-n_feat) * log_sig + tr_YY__Ds
         const_a = const+a
-        assert type(const_a) == float
+        assert isinstance(const_a, float) or isinstance(const_a, torch.Tensor)
         return const_a
 
     def log_likelihood(self, x, y, eff_num_data):
@@ -177,8 +180,8 @@ class RaoBRegressionModel(AbstractModel):
               + log det(xxᵀ + σ²I) - yᵀxᵀ(xxᵀ + σ²I)⁻¹xy / σ²]
         where tr_YY = tr{YᵀY} = (∑_j y_jᵀy_j).
 
-        The first line of the above expression is precomputed in
-        `self.log_likelihood_precomp`
+        The first line of the above expression is computed in
+        `self.log_likelihood_constants`
 
         (the terms with logs come from applying Woodbury to the log
         determinant, the trace(YYᵀ) and quadratic form come from applying
@@ -195,8 +198,10 @@ class RaoBRegressionModel(AbstractModel):
         N, D = y.shape
         N_, n_feat = f.shape
         assert N == N_
-        sig = self.noise_std**2
+        sig = prior.value_or_call(self.noise_std)**2
         last_layer_var = self.last_layer_std**2
+
+        constants = self._log_likelihood_constants(y, f.size(-1), sig)
 
         FF = (f.t() @ f) * last_layer_var
         # Switch to float64 for the cholesky bit
@@ -207,15 +212,19 @@ class RaoBRegressionModel(AbstractModel):
         Lfy = (f.t() @ y).to(torch.float64).triangular_solve(L, upper=False)
         Lfy_flat = Lfy.solution.t().view(-1)
         quad = (Lfy_flat @ Lfy_flat) * (last_layer_var/(D*sig))
-        likelihood = (-D/2) * (self.log_likelihood_precomp + logdet - quad)
+        likelihood = (-D/2) * (constants + logdet - quad)
         # Round likelihood down to the original dtype
         likelihood = likelihood.to(f.dtype)
         return likelihood
+        #cov = f @ f.t() * last_layer_var + sig*torch.eye(f.shape[0], dtype=torch.float64)
+        #mean = torch.zeros(f.shape[0], dtype=torch.float64)
+        #Py = torch.distributions.MultivariateNormal(mean, cov)
+        #return Py.log_prob(y).sum()
 
     def _posterior_w(self, x, y):
         "returns mean and lower triangular precision of p(w | x,y)"
         f = self.net(x) * self.last_layer_std
-        sig = self.noise_std**2
+        sig = prior.value_or_call(self.noise_std)**2
         # Precision matrix
         A = (f.t()@f)/sig + torch.eye(f.size(-1), dtype=f.dtype, device=f.device)
         # switch to float64
@@ -229,6 +238,6 @@ class RaoBRegressionModel(AbstractModel):
         f = f * self.last_layer_std
         Lf = f.t().to(torch.float64).triangular_solve(L_w, upper=False).solution
         mean = Lf.t() @ white_w_mean
-        var = torch.einsum("in,in->n", Lf, Lf)
+        var = torch.einsum("in,in->n", Lf, Lf) + prior.value_or_call(self.noise_std)**2
         # Switch back to float32
         return torch.distributions.Normal(mean.to(f), var.sqrt().to(f).unsqueeze(-1))

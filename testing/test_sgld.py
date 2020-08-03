@@ -1,6 +1,7 @@
 import unittest
 import numpy as np
 import torch
+import math
 import scipy.stats
 
 from bnn_priors import prior
@@ -30,8 +31,8 @@ class SGLDTest(unittest.TestCase):
     def test_distribution_preservation(self, n_vars=50, n_dim=1000, n_samples=200):
         """Tests whether VerletSGLD preserves the distribution of a  Gaussian potential correctly.
         """
-        torch.manual_seed(124)
-        mean, std = 1, 2.
+        torch.manual_seed(123)
+        mean, std = 1., 2.
         temperature = 3/4
         model = GaussianModel(N=n_vars, D=n_dim, mean=mean, std=std)
         sgld = SGLD(prior.params_with_prior(model), lr=1/512, num_data=1,
@@ -39,11 +40,11 @@ class SGLDTest(unittest.TestCase):
         model.sample_all_priors()
         with torch.no_grad():
             for p in prior.params_with_prior(model):
-                p.mul_(temperature**.5)
+                p.sub_(mean).mul_(temperature**.5).add_(mean)
 
         # Set the preconditioner randomly
         for _, state in sgld.state.items():
-            state['preconditioner'] = torch.rand(()).item() + 0.2
+            state['preconditioner'] = (torch.rand(()).item() + 0.2) / math.sqrt(std)
 
         sgld.sample_momentum()
 
@@ -65,7 +66,7 @@ class SGLDTest(unittest.TestCase):
         assert significance_level == 15, "next line does not check for significance of 15%"
         assert statistic < critical_value, "the samples are not Normal with p<0.15"
 
-        def norm(x): return scipy.stats.norm.cdf(x, scale=temperature**.5)
+        def norm(x): return scipy.stats.norm.cdf(x, loc=mean, scale=std*temperature**.5)
         _, pvalue = scipy.stats.ks_1samp(parameters, norm, mode='exact')
         assert pvalue >= 0.3, "the samples are not Normal with the correct variance with p<0.3"
 

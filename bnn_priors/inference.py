@@ -60,7 +60,7 @@ class SGLDRunner:
         self.sample_epochs = sample_epochs
 
         self.skip = skip
-        #num_samples (int): Number of recorded per cycle
+        # num_samples (int): Number of recorded per cycle
         self.num_samples = sample_epochs // skip
         self.learning_rate = learning_rate
         self.temperature = temperature
@@ -71,9 +71,8 @@ class SGLDRunner:
         self.cycles = cycles
         self.precond_update = precond_update
         self.summary_writer = summary_writer
-        # TODO: is there a nicer way than adding this ".p" here?
-        self._samples = {name+".p" : torch.zeros(torch.Size([self.num_samples*cycles])+param.shape)
-                         for name, param in self.model.params_with_prior_dict().items()}
+        self._samples = {name: torch.zeros(torch.Size([self.num_samples*cycles])+param.shape)
+                         for name, param in prior.named_params_with_prior(model)}
         self._samples["lr"] = torch.zeros(torch.Size([self.num_samples*cycles]))
 
         self.metrics = {}
@@ -123,9 +122,8 @@ class SGLDRunner:
 
                 sampling_epoch = epoch - (self.descent_epochs + self.warmup_epochs)
                 if (0 <= sampling_epoch) and (sampling_epoch % self.skip == 0):
-                    for name, param in self.model.params_with_prior_dict().items():
-                        # TODO: is there a more elegant way than adding this ".p" here?
-                        self._samples[name+".p"][(self.num_samples*cycle)+(sampling_epoch//self.skip)] = param
+                    for name, param in prior.named_params_with_prior(self.model):
+                        self._samples[name][(self.num_samples*cycle)+(sampling_epoch//self.skip)] = param
                     self._samples["lr"][(self.num_samples*cycle)+(sampling_epoch//self.skip)] = self.optimizer.param_groups[0]["lr"]
 
     def add_scalar(self, name, value, step):

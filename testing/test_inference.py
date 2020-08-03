@@ -35,5 +35,5 @@ class SGLDRunnerTest(unittest.TestCase):
 
         assert sgld.metrics["loss"][0] > sgld.metrics["loss"][-1]
         assert sgld.metrics["lr"][0] > sgld.metrics["lr"][1]
-        assert (sgld.metrics["preconditioner/net.0.weight_prior"][0]
-                != sgld.metrics["preconditioner/net.0.weight_prior"][-1])
+        assert (sgld.metrics["preconditioner/net.0.weight_prior.p"][0]
+                != sgld.metrics["preconditioner/net.0.weight_prior.p"][-1])

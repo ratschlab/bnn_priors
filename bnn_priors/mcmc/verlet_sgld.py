@@ -159,14 +159,15 @@ class VerletSGLD(SGLD):
             state['delta_energy'] += c_gm * dot(p.grad, old_momentum.add_(new_momentum))
         del old_momentum
 
-        state['momentum_buffer'] = new_momentum
-        if not is_final:
-            p.add_(new_momentum, alpha=group['bh']*M_rsqrt)
-
         # Temperature diagnostics
         d = p.numel()
         state['est_temperature'] = dot(new_momentum, new_momentum) / d
+        # NOTE: p and p.grad are from the same time step
         state['est_config_temp'] = dot(p, p.grad) * (group['num_data']/d)
+
+        state['momentum_buffer'] = new_momentum
+        if not is_final:
+            p.add_(new_momentum, alpha=group['bh']*M_rsqrt)
 
         # RMSProp moving average
         alpha = group['rmsprop_alpha']

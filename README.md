@@ -41,3 +41,21 @@ py.test testing/test_models.py::TestRaoBDenseNet
 # single test
 py.test testing/test_models.py::TestRaoBDenseNet::test_likelihood
 ```
+
+## Using sacred
+
+We are using `sacred` (https://github.com/IDSIA/sacred) to manage the experiments.
+
+### Running the training script
+
+The training script (`experiments/train_bnn.py`) takes several different parameters that are defined in the `config()` function within that script. To deviate from the default parameters, sacred uses the command line keyword `with`.
+The usage could be for instance
+
+```sh
+python train_bnn.py with weight_prior=laplace inference=HMC data=UCI_wine
+```
+
+### Reading out the results
+
+Each experiment (so each run of the training script) generates a numbered subdirectory in `logs/`.
+The used configuration parameters are stored in this subdirectory in the `config.json` file and the results (the return values of the `main()` method in the training script, e.g., performance metrics) are stored in `run.json`.

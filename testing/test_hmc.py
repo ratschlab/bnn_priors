@@ -70,14 +70,14 @@ class HMCTest(unittest.TestCase):
         """Tests whether HMC preserves the distribution of a  Gaussian potential correctly.
         """
         torch.manual_seed(122)
-        mean, std = 1, 2.
+        mean, std = 1., 2.,
         model = GaussianModel(N=n_vars, D=n_dim, mean=mean, std=std)
         sgld = HMC(prior.params_with_prior(model), lr=1/32, num_data=1)
         model.sample_all_priors()
 
         # Set the preconditioner randomly
         for _, state in sgld.state.items():
-            state['preconditioner'] = torch.rand(()).item() + 0.2
+            state['preconditioner'] = (torch.rand(()).item() + 0.2) / math.sqrt(std)
 
         sum_acceptance = 0.
         n_acceptance = 0
@@ -114,6 +114,7 @@ class HMCTest(unittest.TestCase):
             parameters[i*n_dim:(i+1)*n_dim] = p.detach().numpy()
             kinetic_temp[i] = state['est_temperature']
             config_temp[i] = state['est_config_temp']
+        assert i == len(config_temp)-1
 
         # Test whether the parameters are 1-d Gaussian distributed
         statistic, (critical_value, *_), (significance_level, *_
@@ -122,11 +123,14 @@ class HMCTest(unittest.TestCase):
         assert significance_level == 15, "next line does not check for significance of 15%"
         assert statistic < critical_value, "the samples are not Normal with p<0.15"
 
-        _, pvalue = scipy.stats.ks_1samp(parameters, scipy.stats.norm.cdf, mode='exact')
+        def norm(x): return scipy.stats.norm.cdf(x, loc=mean, scale=std)
+        _, pvalue = scipy.stats.ks_1samp(parameters, norm, mode='exact')
         assert pvalue >= 0.3, "the samples are not Normal with the correct variance with p<0.3"
 
         def chi2(x): return scipy.stats.chi2.cdf(x, df=n_dim, loc=0., scale=1/n_dim)
         _, pvalue = scipy.stats.ks_1samp(config_temp, chi2, mode='exact')
         assert pvalue >= 0.3, "the configurational temperature is not Chi^2 with p<0.3"
+
+        def chi2(x): return scipy.stats.chi2.cdf(x, df=n_dim, loc=0., scale=1/n_dim)
         _, pvalue = scipy.stats.ks_1samp(kinetic_temp, chi2, mode='exact')
         assert pvalue >= 0.3, "the kinetic temperature is not Chi^2 with p<0.3"
