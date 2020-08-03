@@ -123,9 +123,8 @@ def main(inference, model, width, n_samples, warmup,
     mcmc.run(progressbar=True)
     samples = mcmc.get_samples()
 
-    # TODO: solve this more elegantly
+    # TODO: don't add `lr` to `samples` in the first place
     if inference == "SGLD":
-        samples = {(key[:-2] if key[-2:] == ".p" else key) : val for key, val in samples.items()}
         del samples["lr"]
 
     lps = t.zeros(n_samples, *y_test.shape)

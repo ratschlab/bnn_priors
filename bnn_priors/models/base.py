@@ -64,8 +64,7 @@ class AbstractModel(nn.Module, abc.ABC):
         return self.potential(x, y, eff_num_data) / eff_num_data
 
     def params_with_prior_dict(self):
-        return OrderedDict(
-            (k, v.data) for (k, v) in prior.named_params_with_prior(self))
+        return OrderedDict(prior.named_params_with_prior(self))
 
     def sample_all_priors(self):
         for _, v in prior.named_priors(self):
@@ -89,17 +88,22 @@ class AbstractModel(nn.Module, abc.ABC):
         try:
             pmd = self._prior_mod_dict
         except AttributeError:
-            pmd = self._prior_mod_dict = list(
-                (k, v, v.p) for (k, v) in prior.named_priors(self))
+            pmd = self._prior_mod_dict = OrderedDict()
+            for prefix, mod in self.named_modules():
+                for name, p in mod.named_parameters(recurse=False):
+                    full_name = prefix + ("" if prefix == "" else ".") + name
+                    print(repr(full_name), repr(name), mod, p)
+                    pmd[full_name] = (name, mod, p)
 
         assert len(param_dict) == len(pmd)
-        try:      # assign `torch.Tensor`s to `Prior.p`s
-            for k, mod, _ in pmd:
-                mod._parameters['p'] = param_dict[k]
+        try:      # assign `torch.Tensor`s to `nn.Module`s
+            for k, param in param_dict.items():
+                name, mod, _ = pmd[k]
+                mod._parameters[name] = param
             yield
-        finally:  # Restore `Prior.p`s
-            for k, mod, p in pmd:
-                mod._parameters['p'] = p
+        finally:  # Restore `nn.Parameter`s
+            for _, (name, mod, p) in pmd.items():
+                mod._parameters[name] = p
 
 
 
