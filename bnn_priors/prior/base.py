@@ -73,9 +73,9 @@ def named_priors(mod: nn.Module):
 
 
 def named_params_with_prior(mod: nn.Module):
-    """iterate over all parameters that have a `Prior` specified, and the names of
-    their priors."""
-    return ((k, v.p) for (k, v) in named_priors(mod))
+    """iterate over all parameters that have a `Prior` specified, and their names
+    """
+    return ((k+("p" if k == "" else ".p"), v.p) for (k, v) in named_priors(mod))
 
 
 def params_with_prior(mod: nn.Module):
