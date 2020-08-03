@@ -15,6 +15,9 @@ def _assert_eigvecs_allclose(ref_vecs, vecs, **kwargs):
 
 
 class EffDimTest(unittest.TestCase):
+    def setUp(self):
+        torch.manual_seed(832173)
+
     def test_hessian(self, Da=5, Db=4):
         "Compare `eff_dim.hessian` with manual calculation"
         A = torch.randn(Da, Da)
