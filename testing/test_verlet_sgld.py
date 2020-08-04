@@ -33,10 +33,10 @@ def new_model_loss(N=10, D=1):
 
 class VerletSGLDTest(unittest.TestCase):
     @requires_float64
-    def test_distribution_preservation(self, n_vars=50, n_dim=1000, n_samples=200, mh_freq=4):
+    def test_distribution_preservation(self, n_vars=50, n_dim=1000, n_samples=200, mh_freq=4, do_rejection=True, seed=145):
         """Tests whether VerletSGLD preserves the distribution of a  Gaussian potential correctly.
         """
-        torch.manual_seed(145)
+        torch.manual_seed(seed)
         mean, std = 1., 2.
         temperature = 3/4
         model = GaussianModel(N=n_vars, D=n_dim, mean=mean, std=std)
@@ -61,7 +61,10 @@ class VerletSGLDTest(unittest.TestCase):
                 if step != 0:
                     loss = sgld.final_step(model.potential_avg_closure).item()
                     delta_energy = sgld.delta_energy(prev_loss, loss)
-                    rejected = sgld.maybe_reject(delta_energy)
+                    if do_rejection:
+                        rejected = sgld.maybe_reject(delta_energy)
+                    else:
+                        rejected = False
                     if rejected:
                         with torch.no_grad():
                             assert np.allclose(prev_loss, model.potential_avg().item())
@@ -104,3 +107,35 @@ class VerletSGLDTest(unittest.TestCase):
         assert pvalue >= 0.3, "the configurational temperature is not Chi^2 with p<0.3"
         _, pvalue = scipy.stats.ks_1samp(kinetic_temp, chi2, mode='exact')
         assert pvalue >= 0.3, "the kinetic temperature is not Chi^2 with p<0.3"
+
+
+if __name__ == '__main__':
+    """ There are 4 probabilistic assertions in the test in `verlet_sgld.py`.
+    Assuming they are independent, the test should pass `(1-.15)*(1-.3)**3 =
+    29.15%` of the time. Using this script that goes through random seeds 0-50,
+    the test succeeds 34% of the time, 32% of the time if you omit the M-H
+    correction. Probably good enough. """
+    import tqdm
+    test = VerletSGLDTest()
+    norand_succ = 0
+    norand_total = 0
+    for seed in tqdm.trange(50):
+        try:
+            test.test_distribution_preservation(do_rejection=False, seed=seed)
+            norand_succ += 1
+        except AssertionError:
+            pass
+        norand_total += 1
+    print("No rejection success %:", norand_succ/norand_total)
+
+    rand_succ = 0
+    rand_total = 0
+    for seed in tqdm.trange(50):
+        try:
+            test.test_distribution_preservation(do_rejection=True, seed=seed)
+            rand_succ += 1
+        except AssertionError:
+            pass
+        rand_total += 1
+
+    print("M-H rejection success %:", rand_succ/rand_total)
