@@ -1,9 +1,10 @@
-import numpy as np
+import math
+from typing import Callable
 
 
-def get_cosine_schedule(samples_per_cycle):
-    def schedule(i):
+def get_cosine_schedule(samples_per_cycle: int) -> Callable[[int], float]:
+    def schedule(i: int) -> float:
         cycle_progress = (i % samples_per_cycle) / samples_per_cycle
-        scale = 0.5 * (np.cos(np.pi * cycle_progress) + 1.)
+        scale = 0.5 * (math.cos(math.pi * cycle_progress) + 1.)
         return scale
     return schedule
