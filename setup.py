@@ -19,6 +19,7 @@ setup(
         "pyro-ppl>=1.3<1.4",
         # Coarse dependencies
         "numpy>=1.0<2.0",
+        "scipy>=1.5.2<1.6",
         "tqdm>=4.0<5.0",
         "matplotlib>=3.0<4.0",
     ],

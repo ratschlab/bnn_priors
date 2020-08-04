@@ -2,9 +2,10 @@ import torch
 from torch import nn
 import unittest
 from torch.utils.data import DataLoader, TensorDataset
-import functools
 
 from bnn_priors import eff_dim
+
+from .utils import requires_float64
 
 def _assert_eigvecs_allclose(ref_vecs, vecs, **kwargs):
     "Eigenvectors can have flipped sign"
@@ -13,19 +14,10 @@ def _assert_eigvecs_allclose(ref_vecs, vecs, **kwargs):
                 or torch.allclose(ref_vecs[:, i], -vecs[:, i], **kwargs))
 
 
-def requires_float64(fn):
-    @functools.wraps(fn)
-    def float64_fn(*args, **kwargs):
-        dtype = torch.get_default_dtype()
-        torch.set_default_dtype(torch.float64)
-        try:
-            return fn(*args, **kwargs)
-        finally:
-            torch.set_default_dtype(dtype)
-    return float64_fn
-
-
 class EffDimTest(unittest.TestCase):
+    def setUp(self):
+        torch.manual_seed(832173)
+
     def test_hessian(self, Da=5, Db=4):
         "Compare `eff_dim.hessian` with manual calculation"
         A = torch.randn(Da, Da)
