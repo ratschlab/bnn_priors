@@ -46,7 +46,7 @@ class VerletSGLDTest(unittest.TestCase):
     """
 
     @requires_float64
-    def test_distribution_preservation(self, n_vars=50, n_dim=1000, n_samples=200, mh_freq=4, do_rejection=True, seed=145):
+    def test_distribution_preservation(self, n_vars=50, n_dim=1000, n_samples=200, mh_freq=4, do_rejection=True, seed=145, store_success=False):
         """Tests whether VerletSGLD preserves the distribution of a  Gaussian potential correctly.
 
         Q: Why is the learning rate different compared to the SGLD test?
@@ -65,6 +65,13 @@ class VerletSGLDTest(unittest.TestCase):
         with torch.no_grad():
             for p in prior.params_with_prior(model):
                 p.sub_(mean).mul_(temperature**.5).add_(mean)
+
+        success = {}
+        def assert_or_store(truth, key):
+            if store_success:
+                success[key] = truth
+            else:
+                assert truth, key
 
         # Set the preconditioner randomly
         for _, state in sgld.state.items():
@@ -115,17 +122,18 @@ class VerletSGLDTest(unittest.TestCase):
                                           ) = scipy.stats.anderson(parameters, dist='norm')
 
         assert significance_level == 15, "next line does not check for significance of 15%"
-        assert statistic < critical_value, "the samples are not Normal with p<0.15"
+        assert_or_store(statistic < critical_value, "the samples are not Normal with p<0.15")
 
         def norm(x): return scipy.stats.norm.cdf(x, loc=mean, scale=std*temperature**.5)
         _, pvalue = scipy.stats.ks_1samp(parameters, norm, mode='exact')
-        assert pvalue >= 0.3, "the samples are not Normal with the correct variance with p<0.3"
+        assert_or_store(pvalue >= 0.3, "the samples are not Normal with the correct variance with p<0.3")
 
         def chi2(x): return scipy.stats.chi2.cdf(x, df=n_dim, loc=0., scale=temperature/n_dim)
         _, pvalue = scipy.stats.ks_1samp(config_temp, chi2, mode='exact')
-        assert pvalue >= 0.3, "the configurational temperature is not Chi^2 with p<0.3"
+        assert_or_store(pvalue >= 0.3, "the configurational temperature is not Chi^2 with p<0.3")
         _, pvalue = scipy.stats.ks_1samp(kinetic_temp, chi2, mode='exact')
-        assert pvalue >= 0.3, "the kinetic temperature is not Chi^2 with p<0.3"
+        assert_or_store(pvalue >= 0.3, "the kinetic temperature is not Chi^2 with p<0.3")
+        return success
 
 
 if __name__ == '__main__':
@@ -135,26 +143,30 @@ if __name__ == '__main__':
     the test succeeds 34% of the time, 32% of the time if you omit the M-H
     correction. Probably good enough. """
     import tqdm
+    from collections import defaultdict
     test = VerletSGLDTest()
-    norand_succ = 0
-    norand_total = 0
-    for seed in tqdm.trange(50):
-        try:
-            test.test_distribution_preservation(do_rejection=False, seed=seed)
-            norand_succ += 1
-        except AssertionError:
-            pass
-        norand_total += 1
-    print("No rejection success %:", norand_succ/norand_total)
 
-    rand_succ = 0
+    rand_succ = defaultdict(lambda: 0)
     rand_total = 0
-    for seed in tqdm.trange(50):
-        try:
-            test.test_distribution_preservation(do_rejection=True, seed=seed)
-            rand_succ += 1
-        except AssertionError:
-            pass
+    for seed in tqdm.trange(100):
+        success = test.test_distribution_preservation(do_rejection=True, seed=seed, store_success=True, n_dim=2000, n_samples=500)
+        for k, v in success.items():
+            rand_succ[k] += (1 if v else 0)
         rand_total += 1
 
-    print("M-H rejection success %:", rand_succ/rand_total)
+    for k, v in rand_succ.items():
+        print(f"M-H test for not '{k}': {v/rand_total*100}% success (should be >~70% or >~85%)")
+    print()
+
+
+    norand_total = 0
+    norand_succ = defaultdict(lambda: 0)
+    for seed in tqdm.trange(100):
+        success = test.test_distribution_preservation(do_rejection=False, seed=seed, store_success=True, n_dim=2000, n_samples=500)
+        for k, v in success.items():
+            norand_succ[k] += (1 if v else 0)
+        norand_total += 1
+
+    for k, v in norand_succ.items():
+        print(f"No-reject test for not '{k}': {v/rand_total*100}% success (should be >~70% or >~85%)")
+    print()
