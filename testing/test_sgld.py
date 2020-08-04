@@ -29,7 +29,7 @@ class GaussianModel(AbstractModel):
 
 class SGLDTest(unittest.TestCase):
     def test_distribution_preservation(self, n_vars=50, n_dim=1000, n_samples=200):
-        """Tests whether VerletSGLD preserves the distribution of a  Gaussian potential correctly.
+        """Tests whether SGLD preserves the distribution of a Gaussian potential correctly.
         """
         torch.manual_seed(123)
         mean, std = 1., 2.

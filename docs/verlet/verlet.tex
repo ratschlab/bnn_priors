@@ -241,5 +241,8 @@ The change in effective energy does not depend on the momentum at all. Thus, we
 can avoid calculating the momentum at whole time steps in
 equation~\ref{eq:ovrvo-updates}, and draw only one Gaussian RV per time step.
 
+In the implementation, we substitute $\vtheta\ssup{n+1} - \vtheta\ssup{n} = b h
+\vM^{-\frac{1}{2}}\vq\ssup{n+\frac{1}{2}}$ to save computation.
+
 \printbibliography
 \end{document}

@@ -32,14 +32,33 @@ def new_model_loss(N=10, D=1):
 
 
 class VerletSGLDTest(unittest.TestCase):
+    """
+    Q: Why don't we have this kind of test for the VerletSGLD?
+
+    A: because, VerletSGLD is not, and should not be, reversible. If it were
+    exactly reversible, the expression for the acceptance probability would be
+    the same as for HMC. However, Langevin dynamics do not preserve the volume.
+    For example, they shrink the momentum by sqrt(a) at every step, and compensate
+    with injected noise.
+
+    Thus the name of the class is a little improper, it's not really a Verlet
+    integrator.
+    """
+
     @requires_float64
     def test_distribution_preservation(self, n_vars=50, n_dim=1000, n_samples=200, mh_freq=4, do_rejection=True, seed=145):
         """Tests whether VerletSGLD preserves the distribution of a  Gaussian potential correctly.
+
+        Q: Why is the learning rate different compared to the SGLD test?
+        A: VerletSGLD should be able to handle a larger learning rate because
+           it uses a more accurate integration scheme, and also corrects errors
+           with the M-H step.
         """
         torch.manual_seed(seed)
         mean, std = 1., 2.
         temperature = 3/4
         model = GaussianModel(N=n_vars, D=n_dim, mean=mean, std=std)
+        # `num_data=1` to prevent scaling the Gaussian potential
         sgld = VerletSGLD(prior.params_with_prior(model), lr=1/32, num_data=1,
                           momentum=0.9, temperature=temperature)
         model.sample_all_priors()
