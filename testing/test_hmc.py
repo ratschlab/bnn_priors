@@ -85,7 +85,7 @@ class HMCTest(unittest.TestCase):
         for step in range(n_samples+1):
             if step % momentum_resample == 0:
                 if step != 0:
-                    loss = sgld.final_step(model.potential_avg_closure)
+                    loss = sgld.final_step(model.potential_avg_closure).item()
                     delta_energy = sgld.delta_energy(prev_loss, loss)
                     rejected = sgld.maybe_reject(delta_energy)
                     if rejected:

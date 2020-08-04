@@ -36,7 +36,7 @@ class VerletSGLDTest(unittest.TestCase):
     def test_distribution_preservation(self, n_vars=50, n_dim=1000, n_samples=200, mh_freq=4):
         """Tests whether VerletSGLD preserves the distribution of a  Gaussian potential correctly.
         """
-        torch.manual_seed(123)
+        torch.manual_seed(145)
         mean, std = 1., 2.
         temperature = 3/4
         model = GaussianModel(N=n_vars, D=n_dim, mean=mean, std=std)
@@ -59,7 +59,7 @@ class VerletSGLDTest(unittest.TestCase):
         for step in range(n_samples+1):
             if step % mh_freq == 0:
                 if step != 0:
-                    loss = sgld.final_step(model.potential_avg_closure)
+                    loss = sgld.final_step(model.potential_avg_closure).item()
                     delta_energy = sgld.delta_energy(prev_loss, loss)
                     rejected = sgld.maybe_reject(delta_energy)
                     if rejected:
