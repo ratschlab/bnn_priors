@@ -8,14 +8,14 @@ from scipy import stats
 from .test_eff_dim import requires_float64
 
 
-def _generic_logp_test(prior_klass, size, td_klass, **kwargs):
-    dist = prior_klass(size, **kwargs)
-    tdist = td_klass(**kwargs)
+def _generic_logp_test(prior_class, size, td_class, **kwargs):
+    dist = prior_class(size, **kwargs)
+    tdist = td_class(**kwargs)
     assert torch.allclose(dist.log_prob(), tdist.log_prob(dist()).sum())
 
 
-def _generic_positive_test(prior_klass, **kwargs):
-    dist = prior_klass(torch.Size([]), **kwargs)
+def _generic_positive_test(prior_class, **kwargs):
+    dist = prior_class(torch.Size([]), **kwargs)
     with torch.no_grad():
         dist.p[...] = -100.
     v = dist()
@@ -26,10 +26,10 @@ def _generic_positive_test(prior_klass, **kwargs):
 
 @requires_float64
 @torch.no_grad()
-def _generic_sample_test(prior_klass, td_klass, n_samples=100000, seed=123, np_cdf=None, **kwargs):
+def _generic_sample_test(prior_class, td_class, n_samples=100000, seed=123, np_cdf=None, **kwargs):
     torch.manual_seed(seed)
-    dist = prior_klass(torch.Size([n_samples]), **kwargs)
-    td_dist = td_klass(**kwargs)
+    dist = prior_class(torch.Size([n_samples]), **kwargs)
+    td_dist = td_class(**kwargs)
 
     if np_cdf is None:
         @torch.no_grad()
