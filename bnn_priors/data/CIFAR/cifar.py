@@ -30,8 +30,10 @@ class CIFAR10:
         data_test = torchvision.datasets.CIFAR10(dataset_dir, download=True, train=False)
 
         # get data into right shape and type
-        X_unnorm = t.from_numpy(np.concatenate([data_train.data, data_test.data]).astype(dtype))
-        y = t.from_numpy(np.eye(10)[np.concatenate([data_train.targets, data_test.targets])].astype(dtype))
+        X_unnorm = t.from_numpy(np.concatenate([data_train.data, data_test.data]).astype(dtype)).permute(0,3,1,2)
+        y = t.from_numpy(np.concatenate([data_train.targets, data_test.targets]).astype('int'))
+        # alternative version to yield one-hot vectors
+        # y = t.from_numpy(np.eye(10)[np.concatenate([data_train.targets, data_test.targets])].astype(dtype))
         
         # train / test split
         index_train = np.arange(len(data_train))
