@@ -18,7 +18,7 @@ from bnn_priors.data import UCI
 from bnn_priors.models import RaoBDenseNet, DenseNet
 from bnn_priors.prior import LogNormal
 from bnn_priors import prior
-from bnn_priors.inference import SGLDRunner
+import bnn_priors.inference
 
 ex = Experiment("bnn_training")
 ex.captured_out_filter = apply_backspaces_and_linefeeds
@@ -92,9 +92,9 @@ def get_model(x_train, y_train, model, width, weight_prior, weight_loc,
 
 @ex.automain
 def main(inference, model, width, n_samples, warmup,
-        burnin, skip, cycles, temperature, momentum,
-        precond_update, lr):
-    assert inference in ["SGLD", "HMC"]
+         burnin, skip, cycles, temperature, momentum,
+         precond_update, lr, _run):
+    assert inference in ["SGLD", "HMC", "VerletSGLD", "OurHMC"]
     assert width > 0
     assert n_samples > 0
     assert cycles > 0
@@ -116,21 +116,26 @@ def main(inference, model, width, n_samples, warmup,
              adapt_step_size=False, adapt_mass_matrix=False,
              step_size=1e-3, num_steps=32)
         mcmc = MCMC(kernel, num_samples=n_samples, warmup_steps=warmup, initial_params=model.params_with_prior_dict())
-    elif inference == "SGLD":
+    else:
+        if inference == "SGLD":
+            runner_class = bnn_priors.inference.SGLDRunner
+        elif inference == "VerletSGLD":
+            runner_class = bnn_priors.inference.VerletSGLDRunner
+        elif inference == "OurHMC":
+            runner_class = bnn_priors.inference.HMCRunner
         sample_epochs = n_samples * skip // cycles
         epochs_per_cycle = warmup + burnin + sample_epochs
         dataloader = t.utils.data.DataLoader(data.norm.train, batch_size = len(data.norm.train), shuffle=True)
-        mcmc = SGLDRunner(model=model, dataloader=dataloader, epochs_per_cycle=epochs_per_cycle,
-                  warmup_epochs=warmup, sample_epochs=sample_epochs, learning_rate=lr,
-                  skip=skip, sampling_decay=True, cycles=cycles, temperature=temperature,
-                  momentum=momentum, precond_update=precond_update)
+        mcmc = runner_class(model=model, dataloader=dataloader,
+                            epochs_per_cycle=epochs_per_cycle,
+                            warmup_epochs=warmup, sample_epochs=sample_epochs,
+                            learning_rate=lr, skip=skip, sampling_decay=True,
+                            cycles=cycles, temperature=temperature,
+                            momentum=momentum, precond_update=precond_update,
+                            add_scalar_fn=_run.log_scalar)
 
     mcmc.run(progressbar=True)
     samples = mcmc.get_samples()
-
-    # TODO: don't add `lr` to `samples` in the first place
-    if inference == "SGLD":
-        del samples["lr"]
 
     lps = t.zeros(n_samples, *y_test.shape)
 

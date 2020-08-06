@@ -152,12 +152,11 @@ class VerletSGLD(SGLD):
         c_gm = -.5 * group['bhn'] * M_rsqrt
         if is_initial:
             state['delta_energy'] = -self._point_energy(group, p, state)
-            state['delta_energy'] += c_gm * dot(p.grad, new_momentum)
-        elif is_final:
-            state['delta_energy'] += c_gm * dot(p.grad, old_momentum)
         else:
-            state['delta_energy'] += c_gm * dot(p.grad, old_momentum.add_(new_momentum))
+            state['delta_energy'] += state['prev_new_momentum_delta']
+            state['delta_energy'] += c_gm * dot(p.grad, old_momentum)
         del old_momentum
+        state['prev_new_momentum_delta'] = c_gm * dot(p.grad, new_momentum)
 
         # Temperature diagnostics
         d = p.numel()
