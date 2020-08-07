@@ -11,9 +11,9 @@ class Dataset:
     """
     Represents the full dataset.  We will have two copies: one normalised, one unnormalized.
     """
-    def __init__(self, X, y, index_train, index_test):
-        self.X = X
-        self.y = y
+    def __init__(self, X, y, index_train, index_test, device="cpu"):
+        self.X = X.to(device)
+        self.y = y.to(device)
 
         self.train_X = self.X[index_train]
         self.train_y = self.y[index_train]

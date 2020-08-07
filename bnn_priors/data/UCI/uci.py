@@ -36,7 +36,7 @@ class UCI:
     uci.norm.train
     ```
     """
-    def __init__(self, dataset, split, dtype='float32'):
+    def __init__(self, dataset, split, dtype='float32', device="cpu"):
         _ROOT = os.path.abspath(os.path.dirname(__file__))
         dataset_dir = f'{_ROOT}/{dataset}/'
         data = np.loadtxt(f'{dataset_dir}/data.txt').astype(getattr(np, dtype))
@@ -50,7 +50,7 @@ class UCI:
         index_test  = np.loadtxt(f'{dataset_dir}/index_test_{split}.txt').astype(int)
 
         # record unnormalized dataset
-        self.unnorm = Dataset(X_unnorm, y_unnorm, index_train, index_test)
+        self.unnorm = Dataset(X_unnorm, y_unnorm, index_train, index_test, device)
 
         # compute normalization constants based on training set
         self.X_std = t.std(self.unnorm.train_X, 0)
@@ -63,7 +63,7 @@ class UCI:
         X_norm = (self.unnorm.X - self.X_mean)/self.X_std
         y_norm = (self.unnorm.y - self.y_mean)/self.y_std
 
-        self.norm = Dataset(X_norm, y_norm, index_train, index_test)
+        self.norm = Dataset(X_norm, y_norm, index_train, index_test, device)
 
         self.num_train_set = self.unnorm.X.shape[0]
         self.in_features   = self.unnorm.X.shape[1]

@@ -4,7 +4,7 @@ import torch.nn.functional as F
 from torch import Tensor
 
 from .layers import Conv2d
-from . import RegressionModel, LinearPrior
+from . import RegressionModel, LinearPrior, ClassificationModel
 from .. import prior
 
 __all__ = ('Conv2dPrior', 'PreActResNet18', 'PreActResNet34')
@@ -115,11 +115,11 @@ class PreActResNet(nn.Module):
         return out
 
 
-def PreActResNet18(noise_std=1.,
+def PreActResNet18(softmax_temp=1.,
              prior_w=prior.Normal, loc_w=0., std_w=2**.5,
              prior_b=prior.Normal, loc_b=0., std_b=1.,
             scaling_fn=None, bn=True):
-    return RegressionModel(PreActResNet(PreActBlock,
+    return ClassificationModel(PreActResNet(PreActBlock,
                                         [2,2,2,2], bn=bn,
                                         prior_w=prior_w,
                                        loc_w=loc_w,
@@ -127,14 +127,14 @@ def PreActResNet18(noise_std=1.,
                                        prior_b=prior_b,
                                        loc_b=loc_b,
                                        std_b=std_b,
-                                       scaling_fn=scaling_fn,), noise_std)
+                                       scaling_fn=scaling_fn,), softmax_temp)
 
 
-def PreActResNet34(noise_std=1.,
+def PreActResNet34(softmax_temp=1.,
              prior_w=prior.Normal, loc_w=0., std_w=2**.5,
              prior_b=prior.Normal, loc_b=0., std_b=1.,
             scaling_fn=None, bn=True):
-    return RegressionModel(PreActResNet(PreActBlock,
+    return ClassificationModel(PreActResNet(PreActBlock,
                                         [3,4,6,3], bn=bn,
                                         prior_w=prior_w,
                                        loc_w=loc_w,
@@ -142,4 +142,4 @@ def PreActResNet34(noise_std=1.,
                                        prior_b=prior_b,
                                        loc_b=loc_b,
                                        std_b=std_b,
-                                       scaling_fn=scaling_fn,), noise_std)
+                                       scaling_fn=scaling_fn,), softmax_temp)

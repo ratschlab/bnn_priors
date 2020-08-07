@@ -21,7 +21,7 @@ class CIFAR10:
     cifar10.norm.train
     ```
     """
-    def __init__(self, dtype='float32'):
+    def __init__(self, dtype='float32', device="cpu"):
         _ROOT = os.path.abspath(os.path.dirname(__file__))
         dataset_dir = f'{_ROOT}/cifar10/'
         
@@ -40,7 +40,7 @@ class CIFAR10:
         index_test = np.arange(len(data_train), len(data_train) + len(data_test))
         
         # create unnormalized data set
-        self.unnorm = Dataset(X_unnorm, y, index_train, index_test)
+        self.unnorm = Dataset(X_unnorm, y, index_train, index_test, device)
         
         # compute normalization constants based on training set
         self.X_std = t.std(self.unnorm.train_X, 0)
@@ -49,7 +49,7 @@ class CIFAR10:
         
         # create normalized data set
         X_norm = (self.unnorm.X - self.X_mean)/self.X_std
-        self.norm = Dataset(X_norm, y, index_train, index_test)
+        self.norm = Dataset(X_norm, y, index_train, index_test, device)
 
         # save some data shapes
         self.num_train_set = self.unnorm.X.shape[0]
