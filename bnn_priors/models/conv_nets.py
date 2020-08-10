@@ -49,7 +49,9 @@ class PreActBlock(nn.Module):
 
         if stride != 1 or in_planes != self.expansion*planes:
             self.shortcut = nn.Sequential(
-                nn.Conv2d(in_planes, self.expansion*planes, kernel_size=1, stride=stride, bias=False)
+                Conv2dPrior(in_planes, self.expansion*planes, kernel_size=1, stride=stride,
+                                 prior_w=prior_w, loc_w=loc_w, std_w=std_w,
+                                 prior_b=None, scaling_fn=scaling_fn)
             )
 
     def forward(self, x):
@@ -62,7 +64,6 @@ class PreActBlock(nn.Module):
         out = self.conv2(F.relu(out))
         out += shortcut
         return out
-
 
 class PreActResNet(nn.Module):
     def __init__(self, block, num_blocks, num_classes=10, bn=True,

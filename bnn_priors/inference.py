@@ -73,8 +73,6 @@ class SGLDRunner:
         self.summary_writer = summary_writer
         self._samples = {name: torch.zeros(torch.Size([self.num_samples*cycles])+param.shape)
                          for name, param in prior.named_params_with_prior(model)}
-        self._samples["lr"] = torch.zeros(torch.Size([self.num_samples*cycles]))
-
         self.metrics = {}
 
     def run(self, progressbar=False):
@@ -124,7 +122,6 @@ class SGLDRunner:
                 if (0 <= sampling_epoch) and (sampling_epoch % self.skip == 0):
                     for name, param in prior.named_params_with_prior(self.model):
                         self._samples[name][(self.num_samples*cycle)+(sampling_epoch//self.skip)] = param
-                    self._samples["lr"][(self.num_samples*cycle)+(sampling_epoch//self.skip)] = self.optimizer.param_groups[0]["lr"]
 
     def add_scalar(self, name, value, step):
         try:
