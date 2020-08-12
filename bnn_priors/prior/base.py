@@ -48,15 +48,15 @@ class Prior(nn.Module, abc.ABC):
     def _dist(*args, **kwargs):
         pass
 
-    def dist(self):
+    def _dist_obj(self):
         return self._dist(*map(value_or_call, self.args),
                           **{k: value_or_call(v) for k, v in self.kwargs.items()})
 
     def log_prob(self):
-        return self.dist().log_prob(self.p).sum()
+        return self._dist_obj().log_prob(self.p).sum()
 
     def _sample_value(self, shape: torch.Size):
-        dist = self.dist()
+        dist = self._dist_obj()
         dim = len(dist.event_shape)
         if dim != 0:
             shape = shape[:-dim]

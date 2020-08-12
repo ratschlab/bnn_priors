@@ -26,10 +26,6 @@ class Normal(LocScale):
     _dist = td.Normal
 
 
-class LogNormal(LocScale):
-    _dist = td.LogNormal
-
-
 class Laplace(LocScale):
     _dist = td.Laplace
 
@@ -42,3 +38,11 @@ class StudentT(LocScale):
     _dist = td.StudentT
     def __init__(self, shape, loc, scale, df=2):
         Prior.__init__(self, shape, df=df, loc=loc, scale=scale)
+
+
+class LogNormal(LocScale):
+    _dist = td.Normal
+    def forward(self):
+        return self.p.exp()
+    def log_prob(self):
+        return super().log_prob() - self.p.sum()

@@ -1,11 +1,11 @@
-
 import torch.distributions as td
 import torch
 import math
+from gpytorch.utils.transforms import inv_softplus
 
 from .base import Prior
 
-__all__ = ('Uniform',)
+__all__ = ('Uniform', 'Gamma')
 
 
 class Uniform(Prior):
@@ -33,7 +33,11 @@ class Uniform(Prior):
         """in this case, calculating log_prob(forward(x)) directly is easier than
         calculating log_prob(x) + log(abs(det( dx/dy ))).
         """
-        log_prob = -torch.log(self.high - self.low)
+        distance = self.high - self.low
+        if isinstance(distance, float):
+            return -math.log(distance) * self.p.numel()
+
+        log_prob = -torch.log(distance)
         # Account for broadcasting log_prob across self.p
         multiplier = self.p.numel() / log_prob.numel()
         return log_prob.sum() * multiplier
@@ -41,3 +45,18 @@ class Uniform(Prior):
     def _sample_value(self, shape: torch.Size):
         return torch.randn(shape)
 
+
+class Gamma(Prior):
+    _dist = td.Gamma
+    def __init__(self, shape, concentration, rate):
+        super().__init__(shape, concentration=concentration, rate=rate)
+
+    def _sample_value(self, shape: torch.Size):
+        x = super()._sample_value(shape)
+        return inv_softplus(x)
+
+    def forward(self):
+        return torch.nn.functional.softplus(self.p)
+
+    def log_prob(self):
+        return self._dist_obj().log_prob(self()).sum()
