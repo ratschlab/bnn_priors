@@ -1,9 +1,10 @@
+from torch import nn, Tensor
+
 from .layers import Linear
 from . import RegressionModel, RaoBRegressionModel
 from .. import prior
-from torch import nn, Tensor
 
-__all__ = ('LinearNealNormal', 'DenseNet', 'RaoBDenseNet')
+__all__ = ('LinearNealNormal', 'LinearPrior', 'DenseNet', 'RaoBDenseNet')
 
 def LinearNealNormal(in_dim: int, out_dim: int, std_w: float, std_b: float) -> nn.Module:
     return Linear(prior.Normal((out_dim, in_dim), 0., std_w/in_dim**.5),
