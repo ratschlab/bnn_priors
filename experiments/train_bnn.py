@@ -20,8 +20,7 @@ from bnn_priors.prior import LogNormal
 from bnn_priors import prior
 from bnn_priors.inference import SGLDRunner
 
-DEVICE = t.device("cuda:0" if t.cuda.is_available() else "cpu")
-
+# Makes CUDA faster
 if t.cuda.is_available():
     t.backends.cudnn.benchmark = True
 
@@ -53,6 +52,17 @@ def config():
     batch_size = None
     batchnorm = True
     save_samples = False # TODO: allow for saving the generated samples
+    device = "try_cuda"
+
+
+@ex.capture
+def device(device):
+    if device == "try_cuda":
+        if t.cuda.is_available():
+            return t.device("cuda:0")
+        else:
+            return t.device("cpu")
+    return t.device(device)
 
 
 @ex.capture
@@ -63,9 +73,9 @@ def get_data(data):
         assert uci_dataset in ["boston", "concrete", "energy", "kin8nm",
                                "naval", "power", "protein", "wine", "yacht"]
         # TODO: do we ever use a different split than 0?
-        dataset = UCI(uci_dataset, 0, device=DEVICE)
+        dataset = UCI(uci_dataset, 0, device=device())
     elif data == "cifar10":
-        dataset = CIFAR10(device=DEVICE)
+        dataset = CIFAR10(device=device())
     return dataset
 
 
@@ -157,7 +167,7 @@ def main(inference, model, width, n_samples, warmup,
     lps = []
 
     for i in range(n_samples):
-        sample = dict((k, v[i].to(DEVICE)) for k, v in samples.items())
+        sample = dict((k, v[i].to(device())) for k, v in samples.items())
         sampled_state_dict = {**sample, **bn_params}
         with t.no_grad():
             # TODO: get model.using_params() to work with batchnorm params
@@ -173,11 +183,6 @@ def main(inference, model, width, n_samples, warmup,
     # TODO: should we save these final params somewhere?
     final_params = dict((k, v[-1]) for k, v in samples.items())
     
-    # TODO : why did we have the noise_std thing here?
-#    with t.no_grad(), model.using_params(sample):
-#        P = model(x_test)
-#        noise_std = model.noise_std()
-
     lps = lps.logsumexp(0) - math.log(n_samples)
 
     results = {"lp_mean": lps.mean().item(),
