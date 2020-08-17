@@ -4,7 +4,7 @@ import math
 
 from .base import Prior
 
-__all__ = ('LocScale', 'Normal', 'Laplace', 'Cauchy', 'StudentT', 'LogNormal')
+__all__ = ('LocScale', 'Normal', 'Laplace', 'Cauchy', 'StudentT', 'LogNormal', 'Improper')
 
 
 class LocScale(Prior):
@@ -19,8 +19,6 @@ class LocScale(Prior):
     def __init__(self, shape, loc, scale):
         super().__init__(shape, loc=loc, scale=scale)
 
-    def forward(self):
-        return self.p
 
 class Normal(LocScale):
     _dist = td.Normal
@@ -46,3 +44,12 @@ class LogNormal(LocScale):
         return self.p.exp()
     def log_prob(self):
         return super().log_prob() - self.p.sum()
+
+
+class Improper(Normal):
+    "Improper prior that samples like a Normal"
+    def __init__(self, shape, scale):
+        super().__init__(shape, 0., scale)
+
+    def log_prob(self):
+        return 0.0
