@@ -1,3 +1,6 @@
+"""
+Adapted from  https://github.com/kuangliu/pytorch-cifar/blob/master/models/preact_resnet.py
+"""
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -60,10 +63,11 @@ class PreActBlock(nn.Module):
         out = x
         out = self.bn1(out)
         out = F.relu(out)
+        shortcut = self.shortcut(out)
         out = self.conv1(out)
         out = self.bn2(out)
         out = self.conv2(F.relu(out))
-        out += self.shortcut(x)
+        out += shortcut
         return out
 
 class PreActResNet(nn.Module):
