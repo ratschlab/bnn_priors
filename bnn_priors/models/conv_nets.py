@@ -53,16 +53,17 @@ class PreActBlock(nn.Module):
                                  prior_w=prior_w, loc_w=loc_w, std_w=std_w,
                                  prior_b=None, scaling_fn=scaling_fn)
             )
+        else:
+            self.shortcut = (lambda x: x)
 
     def forward(self, x):
         out = x
         out = self.bn1(out)
         out = F.relu(out)
-        shortcut = self.shortcut(out) if hasattr(self, 'shortcut') else x
         out = self.conv1(out)
         out = self.bn2(out)
         out = self.conv2(F.relu(out))
-        out += shortcut
+        out += self.shortcut(x)
         return out
 
 class PreActResNet(nn.Module):
