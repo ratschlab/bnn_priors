@@ -80,7 +80,7 @@ class PriorTest(unittest.TestCase):
         _generic_logp_test(prior.Cauchy, size, td.Cauchy, loc=loc, scale=scale)
         _generic_logp_test(prior.StudentT, size, td.StudentT, df=3, loc=loc, scale=scale)
 
-        assert prior.Improper(size, scale).log_prob() == 0.0
+        assert prior.Improper(size, loc, scale).log_prob() == 0.0
 
 
     def test_loc_scale_sample_positive(self):
@@ -102,8 +102,5 @@ class PriorTest(unittest.TestCase):
         _generic_sample_test(prior.StudentT, td.StudentT, np_cdf=np_cdf, df=3, loc=loc, scale=scale)
         _generic_positive_test(prior.StudentT, df=3, loc=loc, scale=scale)
 
-        _generic_sample_test(
-            prior.Improper,
-            lambda scale: td.Normal(loc=0., scale=scale),
-            scale=scale)
-        _generic_positive_test(prior.Improper, scale=scale)
+        _generic_sample_test(prior.Improper, td.Normal, loc=loc, scale=scale)
+        _generic_positive_test(prior.Improper, loc=loc, scale=scale)
