@@ -52,7 +52,7 @@ class Prior(nn.Module, abc.ABC):
         return self._dist(*map(value_or_call, self.args),
                           **{k: value_or_call(v) for k, v in self.kwargs.items()})
 
-    def log_prob(self):
+    def log_prob(self) -> float:
         return self._dist_obj().log_prob(self.p).sum()
 
     def _sample_value(self, shape: torch.Size):
