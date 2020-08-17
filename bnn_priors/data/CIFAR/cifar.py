@@ -2,8 +2,6 @@ import os
 import torch as t
 import torchvision
 import numpy as np
-from torch.utils.data import TensorDataset
-
 from bnn_priors.data import Dataset
 
 
@@ -43,9 +41,8 @@ class CIFAR10:
         self.unnorm = Dataset(X_unnorm, y, index_train, index_test, device)
         
         # compute normalization constants based on training set
-        self.X_std = t.std(self.unnorm.train_X, 0)
-        self.X_std[self.X_std == 0] = 1. # ensure we don't divide by zero
-        self.X_mean = t.mean(self.unnorm.train_X, 0)
+        self.X_std = t.std(self.unnorm.train_X, (0, 2, 3), keepdims=True)
+        self.X_mean = t.mean(self.unnorm.train_X, (0, 2, 3), keepdims=True)
         
         # create normalized data set
         X_norm = (self.unnorm.X - self.X_mean)/self.X_std
