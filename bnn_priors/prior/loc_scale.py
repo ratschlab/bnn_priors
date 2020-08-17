@@ -48,8 +48,5 @@ class LogNormal(LocScale):
 
 class Improper(Normal):
     "Improper prior that samples like a Normal"
-    def __init__(self, shape, scale):
-        super().__init__(shape, 0., scale)
-
     def log_prob(self):
         return 0.0
