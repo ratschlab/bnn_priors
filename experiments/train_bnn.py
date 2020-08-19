@@ -23,6 +23,8 @@ from bnn_priors.inference import SGLDRunner
 # Makes CUDA faster
 if t.cuda.is_available():
     t.backends.cudnn.benchmark = True
+    
+TMPDIR = "/tmp"
 
 ex = Experiment("bnn_training")
 ex.captured_out_filter = apply_backspaces_and_linefeeds
@@ -121,7 +123,7 @@ def get_model(x_train, y_train, model, width, weight_prior, weight_loc,
 @ex.automain
 def main(inference, model, width, n_samples, warmup,
         burnin, skip, cycles, temperature, momentum,
-        precond_update, lr, batch_size):
+        precond_update, lr, batch_size, save_samples):
     assert inference in ["SGLD", "HMC"]
     assert width > 0
     assert n_samples > 0
@@ -180,8 +182,12 @@ def main(inference, model, width, n_samples, warmup,
 
     lps = t.tensor(lps)
 
-    # TODO: should we save these final params somewhere?
-    final_params = dict((k, v[-1]) for k, v in samples.items())
+    if save_samples:
+        samples_file = os.path.join(TMPDIR, "samples.pt")
+        t.save(samples, samples_file)
+        ex.add_artifact(filename=samples_file)
+        os.remove(samples_file)
+        
     
     lps = lps.logsumexp(0) - math.log(n_samples)
 
