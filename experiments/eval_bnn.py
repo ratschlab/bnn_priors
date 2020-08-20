@@ -117,7 +117,7 @@ def main(config_file, batch_size, n_samples, log_dir, eval_data, data,
             for batch_x, batch_y in dataloader_test:
                 pred = model(batch_x)
                 lps_batch = pred.log_prob(batch_y)
-                if eval_data[:7] == "cifar10":
+                if eval_data[:7] == "cifar10" or eval_data[-5:] == "mnist":
                     accs_batch = (t.argmax(pred.probs, dim=1) == batch_y).float()
                 else:
                     accs_batch = (pred.mean - batch_y)**2.
