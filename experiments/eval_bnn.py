@@ -101,6 +101,8 @@ def main(config_file, batch_size, n_samples, log_dir, eval_data, data,
         batch_size = min(batch_size, len(data.norm.test))
     dataloader_test = t.utils.data.DataLoader(data.norm.test, batch_size=batch_size)
 
+    # TODO: refactor this into a method in the exp_utils
+    
     lps = []
     accs = []
 
@@ -115,7 +117,7 @@ def main(config_file, batch_size, n_samples, log_dir, eval_data, data,
             for batch_x, batch_y in dataloader_test:
                 pred = model(batch_x)
                 lps_batch = pred.log_prob(batch_y)
-                if eval_data in ["cifar10"]:
+                if eval_data[:7] == "cifar10":
                     accs_batch = (t.argmax(pred.probs, dim=1) == batch_y).float()
                 else:
                     accs_batch = (pred.mean - batch_y)**2.
@@ -123,7 +125,7 @@ def main(config_file, batch_size, n_samples, log_dir, eval_data, data,
                 accs_sample.extend(list(accs_batch.cpu().numpy()))
             lps.append(lps_sample)
             accs.append(accs_sample)
-
+            
     lps = t.tensor(lps)    
     lps = lps.logsumexp(0) - math.log(n_samples)
     accs = t.tensor(accs)

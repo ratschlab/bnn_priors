@@ -1,5 +1,5 @@
 import torch as t
-from bnn_priors.data import UCI, CIFAR10
+from bnn_priors.data import UCI, CIFAR10, CIFAR10_C
 from bnn_priors.models import RaoBDenseNet, DenseNet, PreActResNet18, PreActResNet34
 from bnn_priors.prior import LogNormal
 from bnn_priors import prior
@@ -15,13 +15,16 @@ def device(device):
 
 
 def get_data(data, device):
-    assert data[:3] == "UCI" or data in ["cifar10"]
+    assert data[:3] == "UCI" or data[:8] == "cifar10c" or data in ["cifar10"]
     if data[:3] == "UCI":
         uci_dataset = data.split("_")[1]
         assert uci_dataset in ["boston", "concrete", "energy", "kin8nm",
                                "naval", "power", "protein", "wine", "yacht"]
         # TODO: do we ever use a different split than 0?
         dataset = UCI(uci_dataset, 0, device=device)
+    elif data[:8] == "cifar10c":
+        corruption = data.split("-")[1]
+        dataset = CIFAR10_C(corruption, device=device)
     elif data == "cifar10":
         dataset = CIFAR10(device=device)
     return dataset
