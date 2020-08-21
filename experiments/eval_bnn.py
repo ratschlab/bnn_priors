@@ -22,6 +22,7 @@ from bnn_priors import prior
 from bnn_priors.inference import SGLDRunner
 from bnn_priors import exp_utils
 from bnn_priors.exp_utils import get_prior
+from bnn_priors.third_party.calibration_error import ece, ace, rmsce
 
 # Makes CUDA faster
 if t.cuda.is_available():
@@ -38,6 +39,7 @@ def config():
     eval_data = None
     likelihood_eval = True
     accuracy_eval = True
+    calibration_eval = False
     
     assert config_file is not None, "No config_file provided"
     ex.add_config(config_file)
@@ -69,7 +71,7 @@ def get_model(x_train, y_train, model, width, weight_prior, weight_loc,
 
 @ex.automain
 def main(config_file, batch_size, n_samples, log_dir, eval_data, data,
-        likelihood_eval, accuracy_eval):
+        likelihood_eval, accuracy_eval, calibration_eval):
     runfile = os.path.join(log_dir, "run.json")
     with open(runfile) as infile:
         run_data = json.load(infile)
@@ -103,17 +105,22 @@ def main(config_file, batch_size, n_samples, log_dir, eval_data, data,
 
     # TODO: refactor this into a method in the exp_utils
     
+    if calibration_eval and not (eval_data[:7] == "cifar10" or eval_data[-5:] == "mnist"):
+        raise NotImplementedError("The calibration is not defined for this type of data.")
+    
     lps = []
     accs = []
+    probs = []
 
     for i in range(n_samples):
-        sample = dict((k, v[i].to(device())) for k, v in samples.items())
+        sample = dict((k, v[i]) for k, v in samples.items())
         sampled_state_dict = {**sample, **bn_params}
         with t.no_grad():
             # TODO: get model.using_params() to work with batchnorm params
             model.load_state_dict(sampled_state_dict)
             lps_sample = []
             accs_sample = []
+            probs_sample = []
             for batch_x, batch_y in dataloader_test:
                 pred = model(batch_x)
                 lps_batch = pred.log_prob(batch_y)
@@ -121,15 +128,29 @@ def main(config_file, batch_size, n_samples, log_dir, eval_data, data,
                     accs_batch = (t.argmax(pred.probs, dim=1) == batch_y).float()
                 else:
                     accs_batch = (pred.mean - batch_y)**2.
+                if calibration_eval:
+                    probs_batch = pred.probs
+                else:
+                    probs_batch = torch.tensor([])
                 lps_sample.extend(list(lps_batch.cpu().numpy()))
                 accs_sample.extend(list(accs_batch.cpu().numpy()))
+                probs_sample.extend(list(probs_batch.cpu().numpy()))
             lps.append(lps_sample)
             accs.append(accs_sample)
+            probs.append(probs_sample)
             
     lps = t.tensor(lps)    
     lps = lps.logsumexp(0) - math.log(n_samples)
     accs = t.tensor(accs)
     accs = accs.mean(dim=1)
+    
+    if calibration_eval:
+        eces = t.tensor([ece(data.norm.test_y.cpu().numpy(), probs_sample)
+                         for probs_sample in probs])
+        aces = t.tensor([ace(data.norm.test_y.cpu().numpy(), probs_sample)
+                         for probs_sample in probs])
+        rmsces = t.tensor([rmsce(data.norm.test_y.cpu().numpy(), probs_sample)
+                         for probs_sample in probs])
     
     results = {}
     if likelihood_eval:
@@ -140,5 +161,9 @@ def main(config_file, batch_size, n_samples, log_dir, eval_data, data,
         results["acc_mean"] = accs.mean().item()
         results["acc_std"] =  accs.std().item()
         results["acc_stderr"] =  float(accs.std().item()/np.sqrt(len(accs)))
+    if calibration_eval:
+        results["ece"] = eces.mean().item()
+        results["ace"] = aces.mean().item()
+        results["rmsce"] = rmsces.mean().item()
         
     return results
