@@ -76,6 +76,12 @@ def get_model(x_train, y_train, model, width, weight_prior, weight_loc,
              weight_scale, bias_prior, bias_loc, bias_scale, batchnorm)
 
 
+@ex.capture
+def evaluate_model(model, dataloader_test, samples, bn_params, data, n_samples):
+    return exp_utils.evaluate_model(model, dataloader_test, samples, bn_params, n_samples,
+                   eval_data=data, likelihood_eval=True, accuracy_eval=True, calibration_eval=False)
+
+
 @ex.automain
 def main(inference, model, width, n_samples, warmup,
         burnin, skip, cycles, temperature, momentum,
@@ -122,36 +128,4 @@ def main(inference, model, width, n_samples, warmup,
     batch_size = min(batch_size, len(data.norm.test))
     dataloader_test = t.utils.data.DataLoader(data.norm.test, batch_size=batch_size)
 
-    lps = []
-
-    for i in range(n_samples):
-        sample = dict((k, v[i].to(device())) for k, v in samples.items())
-        sampled_state_dict = {**sample, **bn_params}
-        with t.no_grad():
-            # TODO: get model.using_params() to work with batchnorm params
-            model.load_state_dict(sampled_state_dict)
-            lps_sample = []
-            for batch_x, batch_y in dataloader_test:
-                lps_batch = model(batch_x).log_prob(batch_y)
-                lps_sample.extend(list(lps_batch.cpu().numpy()))
-            lps.append(lps_sample)
-
-    lps = t.tensor(lps)
-
-    if save_samples:
-        samples_file = os.path.join(TMPDIR, "samples.pt")
-        bn_file = os.path.join(TMPDIR, "bn_params.pt")
-        t.save(samples, samples_file)
-        t.save(bn_params, bn_file)
-        ex.add_artifact(filename=samples_file)
-        ex.add_artifact(filename=bn_file)
-        os.remove(samples_file)
-        os.remove(bn_file)
-        
-    
-    lps = lps.logsumexp(0) - math.log(n_samples)
-
-    results = {"lp_mean": lps.mean().item(),
-              "lp_std": lps.std().item(),
-              "lp_stderr": float(lps.std().item()/np.sqrt(len(lps)))}
-    return results
+    return evaluate_model(model, dataloader_test, samples, bn_params)

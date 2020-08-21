@@ -105,7 +105,7 @@ def evaluate_model(model, dataloader_test, samples, bn_params, n_samples,
                 if calibration_eval:
                     probs_batch = pred.probs
                 else:
-                    probs_batch = torch.tensor([])
+                    probs_batch = t.tensor([])
                 lps_sample.extend(list(lps_batch.cpu().numpy()))
                 accs_sample.extend(list(accs_batch.cpu().numpy()))
                 probs_sample.extend(list(probs_batch.cpu().numpy()))
