@@ -18,7 +18,7 @@ class GaussianModel(AbstractModel):
         for i in range(N):
             setattr(self, str(i), prior.Normal(torch.Size([D]), mean, std))
 
-    def potential_avg(self):
+    def potential_avg(self, *args, **kwargs):
         return -self.log_prior()
 
     def potential_avg_closure(self):

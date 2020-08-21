@@ -72,8 +72,7 @@ def get_prior(prior_name):
 
 @ex.capture
 def get_model(x_train, y_train, model, width, weight_prior, weight_loc,
-             weight_scale, bias_prior, bias_loc, bias_scale):
-    assert model in ["densenet", "raobdensenet"]
+             weight_scale, bias_prior, bias_loc, bias_scale, batchnorm):
     if weight_prior in ["cauchy"]:
         #TODO: which other distributions should use this? Laplace?
         scaling_fn = lambda std, dim: std/dim
@@ -87,6 +86,19 @@ def get_model(x_train, y_train, model, width, weight_prior, weight_loc,
                         prior_b=bias_prior, loc_b=bias_loc, std_b=bias_scale, scaling_fn=scaling_fn).to(x_train)
     elif model == "raobdensenet":
         net = RaoBDenseNet(x_train, y_train, width, noise_std=LogNormal((), -1., 0.2)).to(x_train)
+    elif model == "resnet18":
+        net = PreActResNet18(prior_w=weight_prior, loc_w=weight_loc, std_w=weight_scale,
+                            prior_b=bias_prior, loc_b=bias_loc, std_b=bias_scale, scaling_fn=scaling_fn,
+                            bn=batchnorm, softmax_temp=1.).to(x_train)
+    elif model == "resnet34":
+        net = PreActResNet34(prior_w=weight_prior, loc_w=weight_loc, std_w=weight_scale,
+                            prior_b=bias_prior, loc_b=bias_loc, std_b=bias_scale, scaling_fn=scaling_fn,
+                            bn=batchnorm, softmax_temp=1.).to(x_train)
+    elif model == "test_gaussian":
+        from testing.test_sgld import GaussianModel
+        net = GaussianModel(50, 100)
+    else:
+        raise ValueError(f"Not a valid model: '{model}'")
     return net
 
 
