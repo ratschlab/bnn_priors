@@ -14,11 +14,15 @@ from sacred import Experiment
 from sacred.utils import apply_backspaces_and_linefeeds
 from sacred.observers import FileStorageObserver
 
-from bnn_priors.data import UCI
-from bnn_priors.models import RaoBDenseNet, DenseNet
+from bnn_priors.data import UCI, CIFAR10
+from bnn_priors.models import RaoBDenseNet, DenseNet, PreActResNet18, PreActResNet34
 from bnn_priors.prior import LogNormal
 from bnn_priors import prior
 import bnn_priors.inference
+
+# Makes CUDA faster
+if t.cuda.is_available():
+    t.backends.cudnn.benchmark = True
 
 ex = Experiment("bnn_training")
 ex.captured_out_filter = apply_backspaces_and_linefeeds
@@ -45,17 +49,33 @@ def config():
     momentum = 0.9
     precond_update = None
     lr = 5e-4
+    batch_size = None
+    batchnorm = True
+    save_samples = False # TODO: allow for saving the generated samples
+    device = "try_cuda"
+
+
+@ex.capture
+def device(device):
+    if device == "try_cuda":
+        if t.cuda.is_available():
+            return t.device("cuda:0")
+        else:
+            return t.device("cpu")
+    return t.device(device)
 
 
 @ex.capture
 def get_data(data):
-    assert data[:3] == "UCI" or data in []
+    assert data[:3] == "UCI" or data in ["cifar10"]
     if data[:3] == "UCI":
         uci_dataset = data.split("_")[1]
         assert uci_dataset in ["boston", "concrete", "energy", "kin8nm",
                                "naval", "power", "protein", "wine", "yacht"]
         # TODO: do we ever use a different split than 0?
-        dataset = UCI(uci_dataset, 0)
+        dataset = UCI(uci_dataset, 0, device=device())
+    elif data == "cifar10":
+        dataset = CIFAR10(device=device())
     return dataset
 
 
@@ -105,7 +125,7 @@ def get_model(x_train, y_train, model, width, weight_prior, weight_loc,
 @ex.automain
 def main(inference, model, width, n_samples, warmup,
          burnin, skip, cycles, temperature, momentum,
-         precond_update, lr, _run):
+         precond_update, lr, batch_size, _run):
     assert inference in ["SGLD", "HMC", "VerletSGLD", "OurHMC"]
     assert width > 0
     assert n_samples > 0
@@ -114,7 +134,6 @@ def main(inference, model, width, n_samples, warmup,
 
     data = get_data()
 
-    device = ('cuda' if t.cuda.is_available() else 'cpu')
     x_train = data.norm.train_X
     y_train = data.norm.train_y
 
@@ -135,32 +154,46 @@ def main(inference, model, width, n_samples, warmup,
             runner_class = bnn_priors.inference.VerletSGLDRunner
         elif inference == "OurHMC":
             runner_class = bnn_priors.inference.HMCRunner
+        else
         sample_epochs = n_samples * skip // cycles
         epochs_per_cycle = warmup + burnin + sample_epochs
-        dataloader = t.utils.data.DataLoader(data.norm.train, batch_size = len(data.norm.train), shuffle=True)
-        mcmc = runner_class(model=model, dataloader=dataloader,
-                            epochs_per_cycle=epochs_per_cycle,
-                            warmup_epochs=warmup, sample_epochs=sample_epochs,
-                            learning_rate=lr, skip=skip, sampling_decay=True,
-                            cycles=cycles, temperature=temperature,
-                            momentum=momentum, precond_update=precond_update,
-                            add_scalar_fn=_run.log_scalar)
+        if batch_size is None:
+            batch_size = len(data.norm.train)
+        dataloader = t.utils.data.DataLoader(data.norm.train, batch_size=batch_size, shuffle=True, drop_last=True)
+        mcmc = SGLDRunner(model=model, dataloader=dataloader, epochs_per_cycle=epochs_per_cycle,
+                          warmup_epochs=warmup, sample_epochs=sample_epochs, learning_rate=lr,
+                          skip=skip, sampling_decay=True, cycles=cycles, temperature=temperature,
+                          momentum=momentum, precond_update=precond_update, add_scalar_fn=_run.log_scalar)
 
     mcmc.run(progressbar=True)
     samples = mcmc.get_samples()
 
-    lps = t.zeros(n_samples, *y_test.shape)
+    bn_params = {k:v for k,v in model.state_dict().items() if "bn" in k}
+    
+    model.eval()
+    
+    batch_size = min(batch_size, len(data.norm.test))
+    dataloader_test = t.utils.data.DataLoader(data.norm.test, batch_size=batch_size)
+
+    lps = []
 
     for i in range(n_samples):
-        sample = dict((k, v[i]) for k, v in samples.items())
-        with t.no_grad(), model.using_params(sample):
-            lps[i] = model(x_test).log_prob(y_test)
+        sample = dict((k, v[i].to(device())) for k, v in samples.items())
+        sampled_state_dict = {**sample, **bn_params}
+        with t.no_grad():
+            # TODO: get model.using_params() to work with batchnorm params
+            model.load_state_dict(sampled_state_dict)
+            lps_sample = []
+            for batch_x, batch_y in dataloader_test:
+                lps_batch = model(batch_x).log_prob(batch_y)
+                lps_sample.extend(list(lps_batch.cpu().numpy()))
+            lps.append(lps_sample)
 
+    lps = t.tensor(lps)
+
+    # TODO: should we save these final params somewhere?
     final_params = dict((k, v[-1]) for k, v in samples.items())
-    with t.no_grad(), model.using_params(sample):
-        P = model(x_test)
-        noise_std = model.noise_std()
-
+    
     lps = lps.logsumexp(0) - math.log(n_samples)
 
     results = {"lp_mean": lps.mean().item(),

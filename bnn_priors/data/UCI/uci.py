@@ -3,24 +3,10 @@ import torch as t
 import numpy as np
 from torch.utils.data import TensorDataset
 
+from bnn_priors.data import Dataset
+
 __all__ = ('UCI',)
 
-
-class Dataset:
-    """
-    Represents the full dataset.  We will have two copies: one normalised, one unnormalized.
-    """
-    def __init__(self, X, y, index_train, index_test):
-        self.X = X
-        self.y = y
-
-        self.train_X = self.X[index_train]
-        self.train_y = self.y[index_train]
-        self.test_X  = self.X[index_test]
-        self.test_y  = self.y[index_test]
-
-        self.train = TensorDataset(self.train_X, self.train_y)
-        self.test  = TensorDataset(self.test_X,  self.test_y)
 
 class UCI:
     """
@@ -33,7 +19,7 @@ class UCI:
     uci.norm.train
     ```
     """
-    def __init__(self, dataset, split, dtype='float32'):
+    def __init__(self, dataset, split, dtype='float32', device="cpu"):
         _ROOT = os.path.abspath(os.path.dirname(__file__))
         dataset_dir = f'{_ROOT}/{dataset}/'
         data = np.loadtxt(f'{dataset_dir}/data.txt').astype(getattr(np, dtype))
@@ -47,7 +33,7 @@ class UCI:
         index_test  = np.loadtxt(f'{dataset_dir}/index_test_{split}.txt').astype(int)
 
         # record unnormalized dataset
-        self.unnorm = Dataset(X_unnorm, y_unnorm, index_train, index_test)
+        self.unnorm = Dataset(X_unnorm, y_unnorm, index_train, index_test, device)
 
         # compute normalization constants based on training set
         self.X_std = t.std(self.unnorm.train_X, 0)
@@ -60,7 +46,7 @@ class UCI:
         X_norm = (self.unnorm.X - self.X_mean)/self.X_std
         y_norm = (self.unnorm.y - self.y_mean)/self.y_std
 
-        self.norm = Dataset(X_norm, y_norm, index_train, index_test)
+        self.norm = Dataset(X_norm, y_norm, index_train, index_test, device)
 
         self.num_train_set = self.unnorm.X.shape[0]
         self.in_features   = self.unnorm.X.shape[1]

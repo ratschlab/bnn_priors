@@ -7,7 +7,7 @@ from typing import List, Sequence, Dict, Union
 from collections import OrderedDict
 import contextlib
 
-__all__ = ('RegressionModel', 'RaoBRegressionModel', 'CategoricalModel', 'AbstractModel')
+__all__ = ('RegressionModel', 'RaoBRegressionModel', 'CategoricalModel', 'ClassificationModel', 'AbstractModel')
 
 
 class AbstractModel(nn.Module, abc.ABC):
@@ -129,6 +129,22 @@ class RegressionModel(AbstractModel):
     def likelihood_dist(self, f: torch.Tensor):
         return torch.distributions.Normal(f, prior.value_or_call(self.noise_std))
 
+
+class ClassificationModel(AbstractModel):
+    """Model for classification using a Categorical likelihood.
+    Arguments:
+       num_data: the total number of data points, for minibatching
+       softmax_temp (float_like or Prior): the temperature of the softmax output
+                 likelihood
+       net: modules to evaluate to get the latent function
+    """
+    def __init__(self, net: nn.Module,
+                 softmax_temp: Union[float, torch.Tensor, prior.Prior]=1.):
+        super().__init__(net)
+        self.softmax_temp = softmax_temp
+
+    def likelihood_dist(self, f: torch.Tensor):
+        return torch.distributions.Categorical(logits=f/prior.value_or_call(self.softmax_temp))
 
 
 class RaoBRegressionModel(AbstractModel):
