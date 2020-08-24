@@ -20,13 +20,13 @@ class MNIST:
     mnist.norm.train
     ```
     """
-    def __init__(self, dtype='float32', device="cpu"):
+    def __init__(self, dtype='float32', device="cpu", download=False):
         _ROOT = os.path.abspath(os.path.dirname(__file__))
         dataset_dir = f'{_ROOT}/mnist/'
         
         # load data
-        data_train = torchvision.datasets.MNIST(dataset_dir, download=True, train=True)
-        data_test = torchvision.datasets.MNIST(dataset_dir, download=True, train=False)
+        data_train = torchvision.datasets.MNIST(dataset_dir, download=download, train=True)
+        data_test = torchvision.datasets.MNIST(dataset_dir, download=download, train=False)
 
         # get data into right shape and type
         X_unnorm = t.from_numpy(np.concatenate([data_train.data, data_test.data]).astype(dtype)).reshape([-1, 784])
@@ -60,13 +60,13 @@ class RotatedMNIST:
     rot_mnist.norm.train
     ```
     """
-    def __init__(self, dtype='float32', device="cpu"):
+    def __init__(self, dtype='float32', device="cpu", download=False):
         _ROOT = os.path.abspath(os.path.dirname(__file__))
         dataset_dir = f'{_ROOT}/mnist/'
         
         # load data
-        data_train = torchvision.datasets.MNIST(dataset_dir, download=True, train=True)
-        data_test = torchvision.datasets.MNIST(dataset_dir, download=True, train=False)
+        data_train = torchvision.datasets.MNIST(dataset_dir, download=download, train=True)
+        data_test = torchvision.datasets.MNIST(dataset_dir, download=download, train=False)
         
         # Rotate the images
         np.random.seed(1337)
