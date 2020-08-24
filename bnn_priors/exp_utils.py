@@ -113,29 +113,29 @@ def evaluate_model(model, dataloader_test, samples, bn_params, n_samples,
             accs.append(accs_sample)
             probs.append(probs_sample)
             
-    lps = t.tensor(lps)    
+    lps = t.tensor(lps, dtype=t.float64)
     lps = lps.logsumexp(0) - math.log(n_samples)
-    accs = t.tensor(accs)
+    accs = t.tensor(accs, dtype=t.float64)
     accs = accs.mean(dim=1)
     
     if calibration_eval:
         labels = dataloader_test.dataset.tensors[1].cpu().numpy()
         eces = t.tensor([ece(labels, probs_sample)
-                         for probs_sample in probs])
+                         for probs_sample in probs], dtype=t.float64)
         aces = t.tensor([ace(labels, probs_sample)
-                         for probs_sample in probs])
+                         for probs_sample in probs], dtype=t.float64)
         rmsces = t.tensor([rmsce(labels, probs_sample)
-                         for probs_sample in probs])
+                           for probs_sample in probs], dtype=t.float64)
     
     results = {}
     if likelihood_eval:
         results["lp_mean"] = lps.mean().item()
         results["lp_std"] =  lps.std().item()
-        results["lp_stderr"] =  float(lps.std().item()/np.sqrt(len(lps)))
+        results["lp_stderr"] = lps.std().item() / math.sqrt(len(lps))
     if accuracy_eval:
         results["acc_mean"] = accs.mean().item()
         results["acc_std"] =  accs.std().item()
-        results["acc_stderr"] =  float(accs.std().item()/np.sqrt(len(accs)))
+        results["acc_stderr"] = accs.std().item() / math.sqrt(len(accs))
     if calibration_eval:
         results["ece"] = eces.mean().item()
         results["ace"] = aces.mean().item()
