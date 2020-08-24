@@ -50,7 +50,12 @@ class VerletSGLD(SGLD):
         assert all(g['temperature'] == temperature for g in self.param_groups),\
             "unclear which `temperature` to use"
 
-        reject = (torch.rand(()).item() > math.exp(-delta_energy / temperature))
+        if temperature == 0.0:
+            return False  # Never reject
+
+        # rand() > min(1., exp(-delta_energy / temperature))
+        log_accept_prob = min(0., -delta_energy / temperature)
+        reject = (math.log(torch.rand(()).item()) > log_accept_prob)
         if reject:
             for p, state in self.state.items():
                 p.data.copy_(state['prev_parameter'])

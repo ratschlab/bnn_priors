@@ -191,16 +191,25 @@ class VerletSGLDRunner(SGLDRunner):
             momentum=self.momentum, temperature=self.temperature)
 
     def step(self, i, x, y, lr_decay=True):
+        if i == 0:
+            self.optimizer.zero_grad()
+            # loss = self.model.potential_avg(x, y, self.eff_num_data)
+            loss = self.model.log_prior() / self.eff_num_data
+            loss.backward()
+            for p in self.optimizer.param_groups[0]["params"]:
+                p.grad.clamp_(min=-self.grad_max, max=self.grad_max)
+            self._initial_loss = loss.item()
+
+        self.optimizer.initial_step()
+
         self.optimizer.zero_grad()
-        loss = self.model.potential_avg(x, y, self.eff_num_data)
+        # loss = self.model.potential_avg(x, y, self.eff_num_data)
+        loss = self.model.log_prior() / self.eff_num_data
         loss.backward()
         for p in self.optimizer.param_groups[0]["params"]:
             p.grad.clamp_(min=-self.grad_max, max=self.grad_max)
 
-        if i == 0:
-            self.optimizer.initial_step()
-        else:
-            self.optimizer.step()
+        self.optimizer.final_step()
 
         if lr_decay:
             self.scheduler.step()
@@ -217,19 +226,17 @@ class VerletSGLDRunner(SGLDRunner):
         loss_ = loss.item()
         self.add_scalar("loss", loss_, i)
 
-        if i == 0:
-            energy = 0
-            self._initial_loss = loss_
-        else:
-            # Because we never `commit` the sampler by calling `self.optimizer.final_step`,
-            # the delta_energy is relative to the initial state.
-            energy = delta_energy = self.optimizer.delta_energy(self._initial_loss, loss_)
-        self.add_scalar("energy", energy, i)
+        # Because we never `commit` the sampler by calling `self.optimizer.final_step`,
+        # the delta_energy is relative to the initial state.
+        delta_energy = self.optimizer.delta_energy(self._initial_loss, loss_)
+        self.optimizer.maybe_reject(delta_energy)
+        self._initial_loss = loss_
+        self.add_scalar("energy", delta_energy, i)
 
         if temperature == 0:
             accept_prob = 1.
         else:
-            accept_prob = min(1., math.exp(-delta_energy / temperature))
+            accept_prob = math.exp(min(0., -delta_energy / temperature))
         self.add_scalar("accept_prob", accept_prob, i)
 
         return loss_

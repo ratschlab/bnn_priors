@@ -26,7 +26,7 @@ if t.cuda.is_available():
 
 ex = Experiment("bnn_training")
 ex.captured_out_filter = apply_backspaces_and_linefeeds
-ex.observers.append(FileStorageObserver('../logs'))
+ex.observers.append(FileStorageObserver(Path(__file__).parent.parent/"logs"))
 
 @ex.config
 def config():
@@ -76,6 +76,8 @@ def get_data(data):
         dataset = UCI(uci_dataset, 0, device=device())
     elif data == "cifar10":
         dataset = CIFAR10(device=device())
+    else:
+        raise ValueError(f"unkown data='{data}'")
     return dataset
 
 
@@ -154,16 +156,15 @@ def main(inference, model, width, n_samples, warmup,
             runner_class = bnn_priors.inference.VerletSGLDRunner
         elif inference == "OurHMC":
             runner_class = bnn_priors.inference.HMCRunner
-        else
         sample_epochs = n_samples * skip // cycles
         epochs_per_cycle = warmup + burnin + sample_epochs
         if batch_size is None:
             batch_size = len(data.norm.train)
         dataloader = t.utils.data.DataLoader(data.norm.train, batch_size=batch_size, shuffle=True, drop_last=True)
-        mcmc = SGLDRunner(model=model, dataloader=dataloader, epochs_per_cycle=epochs_per_cycle,
-                          warmup_epochs=warmup, sample_epochs=sample_epochs, learning_rate=lr,
-                          skip=skip, sampling_decay=True, cycles=cycles, temperature=temperature,
-                          momentum=momentum, precond_update=precond_update, add_scalar_fn=_run.log_scalar)
+        mcmc = runner_class(model=model, dataloader=dataloader, epochs_per_cycle=epochs_per_cycle,
+                            warmup_epochs=warmup, sample_epochs=sample_epochs, learning_rate=lr,
+                            skip=skip, sampling_decay=True, cycles=cycles, temperature=temperature,
+                            momentum=momentum, precond_update=precond_update, add_scalar_fn=_run.log_scalar)
 
     mcmc.run(progressbar=True)
     samples = mcmc.get_samples()
