@@ -130,6 +130,6 @@ dmypy.json
 
 
 # Custom
-logs/*
-results/*
+logs
+results
 bnn_priors/data/CIFAR/cifar10/*
