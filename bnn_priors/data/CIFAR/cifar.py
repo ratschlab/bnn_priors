@@ -57,7 +57,7 @@ class CIFAR10:
         self.out_shape  = self.unnorm.y.shape[1:]
 
         
-class CIFAR10_C:
+class CIFAR10_C(CIFAR10):
     """
     The usage is:
     ```
