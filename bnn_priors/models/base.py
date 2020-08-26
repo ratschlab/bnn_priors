@@ -57,7 +57,7 @@ class AbstractModel(nn.Module, abc.ABC):
         The Wenzel et al. approach is to apply a temperature (here, T) to both the prior and likelihood together.
         However, the VI approach is to in effect replicate each datapoint multiple times (data_mult)
         """
-        return - self.log_likelihood(x, y, eff_num_data) + self.log_prior()
+        return - (self.log_likelihood(x, y, eff_num_data) + self.log_prior())
 
     def potential_avg(self, x, y, eff_num_data):
         "-log p(y, params | x)"
