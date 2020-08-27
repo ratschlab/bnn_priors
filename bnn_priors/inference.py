@@ -154,6 +154,7 @@ class SGLDRunner:
         for p in self.optimizer.param_groups[0]["params"]:
             p.grad.clamp_(min=-self.grad_max, max=self.grad_max)
         self.optimizer.step()
+        self.add_scalar("lr", self.optimizer.param_groups[0]["lr"], i)
         if lr_decay:
             self.scheduler.step()
 
@@ -163,7 +164,6 @@ class SGLDRunner:
             self.add_scalar("est_temperature/"+n, state["est_temperature"], i)
             self.add_scalar("est_config_temp/"+n, state["est_config_temp"], i)
 
-        self.add_scalar("lr", self.optimizer.param_groups[0]["lr"], i)
         loss_ = loss.item()
         self.add_scalar("loss", loss_, i)
         if i == 0:
@@ -193,8 +193,7 @@ class VerletSGLDRunner(SGLDRunner):
     def step(self, i, x, y, lr_decay=True):
         if i == 0:
             self.optimizer.zero_grad()
-            # loss = self.model.potential_avg(x, y, self.eff_num_data)
-            loss = self.model.log_prior() / self.eff_num_data
+            loss = self.model.potential_avg(x, y, self.eff_num_data)
             loss.backward()
             for p in self.optimizer.param_groups[0]["params"]:
                 p.grad.clamp_(min=-self.grad_max, max=self.grad_max)
@@ -203,14 +202,14 @@ class VerletSGLDRunner(SGLDRunner):
         self.optimizer.initial_step()
 
         self.optimizer.zero_grad()
-        # loss = self.model.potential_avg(x, y, self.eff_num_data)
-        loss = self.model.log_prior() / self.eff_num_data
+        loss = self.model.potential_avg(x, y, self.eff_num_data)
         loss.backward()
         for p in self.optimizer.param_groups[0]["params"]:
             p.grad.clamp_(min=-self.grad_max, max=self.grad_max)
 
         self.optimizer.final_step()
 
+        self.add_scalar("lr", self.optimizer.param_groups[0]["lr"], i)
         if lr_decay:
             self.scheduler.step()
 
@@ -220,7 +219,6 @@ class VerletSGLDRunner(SGLDRunner):
             self.add_scalar("est_temperature/"+n, state["est_temperature"], i)
             self.add_scalar("est_config_temp/"+n, state["est_config_temp"], i)
 
-        self.add_scalar("lr", self.optimizer.param_groups[0]["lr"], i)
         temperature = self.optimizer.param_groups[0]["temperature"]
         self.add_scalar("temperature", temperature, i)
         loss_ = loss.item()

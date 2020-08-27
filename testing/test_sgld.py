@@ -18,12 +18,12 @@ class GaussianModel(AbstractModel):
         for i in range(N):
             setattr(self, str(i), prior.Normal(torch.Size([D]), mean, std))
 
-    def potential_avg(self, *args, **kwargs):
-        return -self.log_prior()
+    def log_likelihood(self, x, y, eff_num_data):
+        return 0.
 
     def potential_avg_closure(self):
         self.zero_grad()
-        loss = self.potential_avg()
+        loss = self.potential_avg(None, None, 1.)
         loss.backward()
         return loss
 

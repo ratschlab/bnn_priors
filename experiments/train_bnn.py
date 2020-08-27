@@ -118,7 +118,7 @@ def get_model(x_train, y_train, model, width, weight_prior, weight_loc,
                             bn=batchnorm, softmax_temp=1.).to(x_train)
     elif model == "test_gaussian":
         from testing.test_sgld import GaussianModel
-        net = GaussianModel(50, 100)
+        net = GaussianModel(N=1, D=100)
     else:
         raise ValueError(f"Not a valid model: '{model}'")
     return net

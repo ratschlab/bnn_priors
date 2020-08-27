@@ -166,7 +166,7 @@ class VerletSGLD(SGLD):
         # Temperature diagnostics
         d = p.numel()
         state['est_temperature'] = dot(new_momentum, new_momentum) / d
-        # NOTE: p and p.grad are from the same time step
+        # NOTE: p and p.grad are (and have to be) from the same time step
         state['est_config_temp'] = dot(p, p.grad) * (group['num_data']/d)
 
         state['momentum_buffer'] = new_momentum
