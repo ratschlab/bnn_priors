@@ -44,7 +44,8 @@ def get_prior(prior_name):
              "laplace": prior.Laplace,
              "cauchy": prior.Cauchy,
              "student-t": prior.StudentT,
-             "uniform": prior.Uniform}
+             "uniform": prior.Uniform,
+             "gaussian_gamma": prior.NormalGamma}
     assert prior_name in priors
     return priors[prior_name]
 

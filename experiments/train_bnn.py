@@ -57,6 +57,7 @@ def config():
     batchnorm = True
     save_samples = False
     device = "try_cuda"
+    prior_params = {}  # TODO: pass these on to the priors
 
 
 @ex.capture
