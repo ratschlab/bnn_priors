@@ -22,8 +22,6 @@ class Prior(nn.Module, abc.ABC):
     Arguments:
        shape: (torch.Size, tuple): shape of the parameter
        *args, **kwargs: arguments to construct the underlying class `Prior._dist`
-
-    TODO: register all args as tensors if they're not Parameters or Modules.
     """
     def __init__(self, shape: torch.Size, *args, **kwargs):
         super().__init__()

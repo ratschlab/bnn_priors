@@ -109,12 +109,9 @@ def main(config_file, batch_size, n_samples, log_dir, eval_data, data,
         batch_size = min(batch_size, len(data.norm.test))
     dataloader_test = t.utils.data.DataLoader(data.norm.test, batch_size=batch_size)
     
-    # TODO: refactor this into a method in the exp_utils
-    
     if calibration_eval and not (eval_data[:7] == "cifar10" or eval_data[-5:] == "mnist"):
         raise NotImplementedError("The calibration is not defined for this type of data.")
-    
-    
+
     return evaluate_model(model, dataloader_test, samples, bn_params, eval_data)
     
     
