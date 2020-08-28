@@ -9,7 +9,7 @@ The easiest way is to run them using Python's own test library. Assuming you're
 in the repository root:
 
 ```sh
-python -m unittest discover ./testing
+python -m unittest
 ```
 To run a single test, you have to use module path loading syntax:
 

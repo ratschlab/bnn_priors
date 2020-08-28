@@ -49,8 +49,8 @@ class UCI:
         self.norm = Dataset(X_norm, y_norm, index_train, index_test, device)
 
         self.num_train_set = self.unnorm.X.shape[0]
-        self.in_features   = self.unnorm.X.shape[1]
-        self.out_features  = self.unnorm.y.shape[1]
+        self.in_shape   = self.unnorm.X.shape[1:]
+        self.out_shape  = self.unnorm.y.shape[1:]
 
     def denormalize_y(self, y):
         return self.y_std * y + self.y_mean
