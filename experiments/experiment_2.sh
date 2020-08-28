@@ -1,6 +1,7 @@
 #!/bin/bash
 
-priors=( gaussian uniform laplace student-t cauchy )
+# priors=( gaussian uniform laplace student-t cauchy )
+priors=( improper gaussian_gamma gaussian_uniform horseshoe )
 inference=( SGLD )
 scales=( 0.14 1.41 14.1 )
 temps=( 0.0 0.1 1.0 )
