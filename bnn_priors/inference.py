@@ -63,7 +63,7 @@ class SGLDRunner:
         self.sample_epochs = sample_epochs
 
         self.skip = skip
-        self.metrics_skip = skip
+        self.metrics_skip = metrics_skip
         # num_samples (int): Number of recorded per cycle
         self.num_samples = sample_epochs // skip
         self.learning_rate = learning_rate

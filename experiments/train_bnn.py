@@ -18,7 +18,7 @@ from bnn_priors.data import UCI, CIFAR10
 from bnn_priors.models import RaoBDenseNet, DenseNet, PreActResNet18, PreActResNet34
 from bnn_priors.prior import LogNormal
 from bnn_priors import prior
-from bnn_priors.inference import SGLDRunner
+import bnn_priors.inference
 from bnn_priors import exp_utils
 from bnn_priors.exp_utils import get_prior
 
