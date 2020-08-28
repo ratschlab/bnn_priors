@@ -88,7 +88,7 @@ class VerletSGLDTest(unittest.TestCase):
                     loss = sgld.final_step(model.potential_avg_closure).item()
                     delta_energy = sgld.delta_energy(prev_loss, loss)
                     if do_rejection:
-                        rejected = sgld.maybe_reject(delta_energy)
+                        rejected, _ = sgld.maybe_reject(delta_energy)
                     else:
                         rejected = False
                     if rejected:

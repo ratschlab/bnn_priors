@@ -44,17 +44,17 @@ class VerletSGLD(SGLD):
         return curv * dot(p.grad, p.grad)
 
     @torch.no_grad()
-    def maybe_reject(self, delta_energy: float) -> bool:
+    def maybe_reject(self, delta_energy: float) -> (bool, float):
         "Maybe reject the current parameters, based on the difference in energy"
         temperature = self.param_groups[0]['temperature']
         assert all(g['temperature'] == temperature for g in self.param_groups),\
             "unclear which `temperature` to use"
 
         if temperature == 0.0:
-            return False  # Never reject
+            return False, 0.  # Never reject
 
         # rand() > min(1., exp(-delta_energy / temperature))
-        log_accept_prob = min(0., -delta_energy / temperature)
+        log_accept_prob = -delta_energy / temperature
         reject = (math.log(torch.rand(()).item()) > log_accept_prob)
         if reject:
             for p, state in self.state.items():
@@ -64,7 +64,7 @@ class VerletSGLD(SGLD):
                     state['momentum_buffer'].copy_(state['prev_momentum_buffer'])
                 except KeyError:
                     pass
-        return reject
+        return reject, log_accept_prob
 
     def _save_state(self, group, p, state):
         try:

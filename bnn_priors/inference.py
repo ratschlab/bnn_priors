@@ -8,9 +8,11 @@ from bnn_priors import prior
 
 
 class SGLDRunner:
-    def __init__(self, model, dataloader, epochs_per_cycle, warmup_epochs, sample_epochs, learning_rate=1e-2,
-                 skip=1, temperature=1., data_mult=1., momentum=0., sampling_decay=True,
-                 grad_max=1e6, cycles=1, precond_update=None, add_scalar_fn=None):
+    def __init__(self, model, dataloader, epochs_per_cycle, warmup_epochs,
+                 sample_epochs, learning_rate=1e-2, skip=1, metrics_skip=1,
+                 temperature=1., data_mult=1., momentum=0., sampling_decay=True,
+                 grad_max=1e6, cycles=1, precond_update=None,
+                 add_scalar_fn=None):
         """Stochastic Gradient Langevin Dynamics for posterior sampling.
 
         On calling `run`, this class runs SGLD for `cycles` sampling cycles. In
@@ -38,6 +40,7 @@ class SGLDRunner:
 
             learning_rate (float): Initial learning rate
             skip (int): Number of samples to skip between saved samples during the sampling phase. Sometimes called "thinning".
+            metrics_skip (int): Number of samples to skip between saved metrics of the sampler
             temperature (float): Temperature for tempering the posterior
             data_mult (float): Effective replication of each datapoint (which is the usual approach to tempering in VI).
             momentum (float): Momentum decay parameter for SGLD
@@ -60,6 +63,7 @@ class SGLDRunner:
         self.sample_epochs = sample_epochs
 
         self.skip = skip
+        self.metrics_skip = skip
         # num_samples (int): Number of recorded per cycle
         self.num_samples = sample_epochs // skip
         self.learning_rate = learning_rate
@@ -102,6 +106,7 @@ class SGLDRunner:
         epochs_since_start = -1
         step = 0  # only used for `add_scalar`, must start at 0 and never reset
         for cycle in range(self.cycles):
+            metrics_step = 0  # Used for metrics skip
 
             if progressbar:
                 epochs = tqdm(range(self.epochs_per_cycle), position=0,
@@ -116,8 +121,10 @@ class SGLDRunner:
                     g['temperature'] = 0 if epoch < self.descent_epochs else self.temperature
 
                 for (x, y) in self.dataloader:
-                    self.step(step, x, y)
+                    store_metrics = (metrics_step % self.metrics_skip == 0)
+                    self.step(step, x, y, store_metrics)
                     step += 1
+                    metrics_step += 1
 
                 if self.precond_update is not None and epoch % self.precond_update == 0:
                     self.optimizer.update_preconditioner()
@@ -136,7 +143,7 @@ class SGLDRunner:
         if self.add_scalar_fn is not None:
             self.add_scalar_fn(name, value, step)
 
-    def step(self, i, x, y, lr_decay=True):
+    def step(self, i, x, y, store_metrics, lr_decay=True):
         """
         Perform one step of SGLD on the model.
 
@@ -154,21 +161,21 @@ class SGLDRunner:
         for p in self.optimizer.param_groups[0]["params"]:
             p.grad.clamp_(min=-self.grad_max, max=self.grad_max)
         self.optimizer.step()
-        self.add_scalar("lr", self.optimizer.param_groups[0]["lr"], i)
+
+        lr = self.optimizer.param_groups[0]["lr"]
         if lr_decay:
             self.scheduler.step()
 
-        for n, p in zip(self.param_names, self.optimizer.param_groups[0]["params"]):
-            state = self.optimizer.state[p]
-            self.add_scalar("preconditioner/"+n, state["preconditioner"], i)
-            self.add_scalar("est_temperature/"+n, state["est_temperature"], i)
-            self.add_scalar("est_config_temp/"+n, state["est_config_temp"], i)
-
         loss_ = loss.item()
-        self.add_scalar("loss", loss_, i)
-        if i == 0:
-            self._initial_loss = loss_
-        self.add_scalar("log_prob_accept", self._initial_loss - loss_, i)
+        if store_metrics:
+            for n, p in zip(self.param_names, self.optimizer.param_groups[0]["params"]):
+                state = self.optimizer.state[p]
+                self.add_scalar("preconditioner/"+n, state["preconditioner"], i)
+                self.add_scalar("est_temperature/"+n, state["est_temperature"], i)
+                self.add_scalar("est_config_temp/"+n, state["est_config_temp"], i)
+
+            self.add_scalar("loss", loss_, i)
+            self.add_scalar("lr", lr, i)
 
         return loss_
 
@@ -190,7 +197,7 @@ class VerletSGLDRunner(SGLDRunner):
             lr=self.learning_rate, num_data=self.eff_num_data,
             momentum=self.momentum, temperature=self.temperature)
 
-    def step(self, i, x, y, lr_decay=True):
+    def step(self, i, x, y, store_metrics, lr_decay=True):
         if i == 0:
             self.optimizer.zero_grad()
             loss = self.model.potential_avg(x, y, self.eff_num_data)
@@ -209,34 +216,43 @@ class VerletSGLDRunner(SGLDRunner):
 
         self.optimizer.final_step()
 
-        self.add_scalar("lr", self.optimizer.param_groups[0]["lr"], i)
+        lr = self.optimizer.param_groups[0]["lr"]
         if lr_decay:
             self.scheduler.step()
 
-        for n, p in zip(self.param_names, self.optimizer.param_groups[0]["params"]):
-            state = self.optimizer.state[p]
-            self.add_scalar("preconditioner/"+n, state["preconditioner"], i)
-            self.add_scalar("est_temperature/"+n, state["est_temperature"], i)
-            self.add_scalar("est_config_temp/"+n, state["est_config_temp"], i)
-
-        temperature = self.optimizer.param_groups[0]["temperature"]
-        self.add_scalar("temperature", temperature, i)
         loss_ = loss.item()
-        self.add_scalar("loss", loss_, i)
-
+        delta_energy = self.optimizer.delta_energy(self._initial_loss, loss_)
         # Because we never `commit` the sampler by calling `self.optimizer.final_step`,
         # the delta_energy is relative to the initial state.
-        delta_energy = self.optimizer.delta_energy(self._initial_loss, loss_)
-        self.optimizer.maybe_reject(delta_energy)
+        rejected, log_accept_prob = self.optimizer.maybe_reject(delta_energy)
+        if isinstance(self.optimizer, mcmc.HMC):
+            self.optimizer.resample_momentum()
         self._initial_loss = loss_
-        self.add_scalar("energy", delta_energy, i)
 
-        if temperature == 0:
-            accept_prob = 1.
-        else:
-            accept_prob = math.exp(min(0., -delta_energy / temperature))
-        self.add_scalar("accept_prob", accept_prob, i)
+        if store_metrics:
+            est_temperature_all = 0.
+            est_config_temp_all = 0.
+            all_numel = 0
+            for n, p in zip(self.param_names, self.optimizer.param_groups[0]["params"]):
+                state = self.optimizer.state[p]
+                self.add_scalar("preconditioner/"+n, state["preconditioner"], i)
+                self.add_scalar("est_temperature/"+n, state["est_temperature"], i)
+                self.add_scalar("est_config_temp/"+n, state["est_config_temp"], i)
 
+                state_temperature_all += state["est_temperature"] * p.numel()
+                state_config_temp_all += state["est_config_temp"] * p.numel()
+                all_numel += p.numel()
+            self.add_scalar("est_temperature/all", est_temperature_all, i)
+            self.add_scalar("est_config_temp/all", est_config_temp_all, i)
+
+            temperature = self.optimizer.param_groups[0]["temperature"]
+            self.add_scalar("temperature", temperature, i)
+            self.add_scalar("loss", loss_, i)
+            self.add_scalar("lr", lr, i)
+            self.add_scalar("energy", delta_energy, i)
+
+            self.add_scalar("acceptance/log_prob", log_accept_prob, i)
+            self.add_scalar("acceptance/rejected", int(rejected), i)
         return loss_
 
 class HMCRunner(VerletSGLDRunner):

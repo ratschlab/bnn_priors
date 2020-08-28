@@ -44,6 +44,7 @@ def config():
     warmup = 2000
     burnin = 2000
     skip = 5
+    metrics_skip = 1
     cycles =  5
     temperature = 1.0
     momentum = 0.9
@@ -126,7 +127,7 @@ def get_model(x_train, y_train, model, width, weight_prior, weight_loc,
 
 @ex.automain
 def main(inference, model, width, n_samples, warmup,
-         burnin, skip, cycles, temperature, momentum,
+         burnin, skip, metrics_skip, cycles, temperature, momentum,
          precond_update, lr, batch_size, _run):
     assert inference in ["SGLD", "HMC", "VerletSGLD", "OurHMC"]
     assert width > 0
@@ -163,7 +164,7 @@ def main(inference, model, width, n_samples, warmup,
         dataloader = t.utils.data.DataLoader(data.norm.train, batch_size=batch_size, shuffle=True, drop_last=True)
         mcmc = runner_class(model=model, dataloader=dataloader, epochs_per_cycle=epochs_per_cycle,
                             warmup_epochs=warmup, sample_epochs=sample_epochs, learning_rate=lr,
-                            skip=skip, sampling_decay=True, cycles=cycles, temperature=temperature,
+                            skip=skip, metrics_skip=metrics_skip, sampling_decay=True, cycles=cycles, temperature=temperature,
                             momentum=momentum, precond_update=precond_update, add_scalar_fn=_run.log_scalar)
 
     mcmc.run(progressbar=True)
