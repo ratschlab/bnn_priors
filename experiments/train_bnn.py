@@ -25,7 +25,7 @@ from bnn_priors.exp_utils import get_prior
 # Makes CUDA faster
 if t.cuda.is_available():
     t.backends.cudnn.benchmark = True
-    
+
 TMPDIR = "/tmp"
 
 ex = Experiment("bnn_training")
@@ -91,7 +91,7 @@ def main(inference, model, width, n_samples, warmup,
     assert width > 0
     assert n_samples > 0
     assert cycles > 0
-    assert temperature > 0
+    assert temperature >= 0
 
     data = get_data()
 
@@ -123,9 +123,9 @@ def main(inference, model, width, n_samples, warmup,
     samples = mcmc.get_samples()
 
     bn_params = {k:v for k,v in model.state_dict().items() if "bn" in k}
-    
+
     model.eval()
-    
+
     batch_size = min(batch_size, len(data.norm.test))
     dataloader_test = t.utils.data.DataLoader(data.norm.test, batch_size=batch_size)
 
