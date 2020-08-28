@@ -168,17 +168,8 @@ class SGLDRunner:
 
         loss_ = loss.item()
         if store_metrics:
-            for n, p in zip(self.param_names, self.optimizer.param_groups[0]["params"]):
-                state = self.optimizer.state[p]
-                self.add_scalar("preconditioner/"+n, state["preconditioner"], i)
-                self.add_scalar("est_temperature/"+n, state["est_temperature"], i)
-                self.add_scalar("est_config_temp/"+n, state["est_config_temp"], i)
-
-            self.add_scalar("loss", loss_, i)
-            self.add_scalar("lr", lr, i)
-
+            self.store_metrics(i=i, loss_=loss_, lr=lr)
         return loss_
-
 
     def get_samples(self):
         """
@@ -188,6 +179,32 @@ class SGLDRunner:
             samples (dict): Dictionary of torch.tensors with num_samples*cycles samples for each parameter of the model
         """
         return self._samples
+
+    def store_metrics(self, i, loss_, lr, delta_energy=None, log_accept_prob=None, rejected=None):
+        est_temperature_all = 0.
+        est_config_temp_all = 0.
+        all_numel = 0
+        for n, p in zip(self.param_names, self.optimizer.param_groups[0]["params"]):
+            state = self.optimizer.state[p]
+            self.add_scalar("preconditioner/"+n, state["preconditioner"], i)
+            self.add_scalar("est_temperature/"+n, state["est_temperature"], i)
+            self.add_scalar("est_config_temp/"+n, state["est_config_temp"], i)
+
+            est_temperature_all += state["est_temperature"] * p.numel()
+            est_config_temp_all += state["est_config_temp"] * p.numel()
+            all_numel += p.numel()
+        self.add_scalar("est_temperature/all", est_temperature_all / all_numel, i)
+        self.add_scalar("est_config_temp/all", est_config_temp_all / all_numel, i)
+
+        temperature = self.optimizer.param_groups[0]["temperature"]
+        self.add_scalar("temperature", temperature, i)
+        self.add_scalar("loss", loss_, i)
+        self.add_scalar("lr", lr, i)
+
+        if delta_energy is not None:
+            self.add_scalar("energy", delta_energy, i)
+            self.add_scalar("acceptance/log_prob", log_accept_prob, i)
+            self.add_scalar("acceptance/rejected", int(rejected), i)
 
 
 class VerletSGLDRunner(SGLDRunner):
@@ -226,37 +243,19 @@ class VerletSGLDRunner(SGLDRunner):
         # the delta_energy is relative to the initial state.
         rejected, log_accept_prob = self.optimizer.maybe_reject(delta_energy)
         if isinstance(self.optimizer, mcmc.HMC):
-            self.optimizer.resample_momentum()
+            self.optimizer.sample_momentum()
         self._initial_loss = loss_
 
         if store_metrics:
-            est_temperature_all = 0.
-            est_config_temp_all = 0.
-            all_numel = 0
-            for n, p in zip(self.param_names, self.optimizer.param_groups[0]["params"]):
-                state = self.optimizer.state[p]
-                self.add_scalar("preconditioner/"+n, state["preconditioner"], i)
-                self.add_scalar("est_temperature/"+n, state["est_temperature"], i)
-                self.add_scalar("est_config_temp/"+n, state["est_config_temp"], i)
-
-                state_temperature_all += state["est_temperature"] * p.numel()
-                state_config_temp_all += state["est_config_temp"] * p.numel()
-                all_numel += p.numel()
-            self.add_scalar("est_temperature/all", est_temperature_all, i)
-            self.add_scalar("est_config_temp/all", est_config_temp_all, i)
-
-            temperature = self.optimizer.param_groups[0]["temperature"]
-            self.add_scalar("temperature", temperature, i)
-            self.add_scalar("loss", loss_, i)
-            self.add_scalar("lr", lr, i)
-            self.add_scalar("energy", delta_energy, i)
-
-            self.add_scalar("acceptance/log_prob", log_accept_prob, i)
-            self.add_scalar("acceptance/rejected", int(rejected), i)
+            self.store_metrics(i=i, loss_=loss_, lr=lr, delta_energy=delta_energy,
+                               log_accept_prob=log_accept_prob,
+                               rejected=rejected)
         return loss_
 
 class HMCRunner(VerletSGLDRunner):
     def _make_optimizer(self, params):
+        assert self.temperature == 1.0, "HMC only implemented for temperature=1."
+        assert self.momentum == 1.0, "HMC only works with momentum=1."
         return mcmc.HMC(
             params=params,
             lr=self.learning_rate, num_data=self.eff_num_data)
