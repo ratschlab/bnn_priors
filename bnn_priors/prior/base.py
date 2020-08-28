@@ -1,6 +1,5 @@
 import torch
 import torch.nn as nn
-import itertools
 import abc
 from typing import Dict, Sequence
 import contextlib
@@ -25,14 +24,14 @@ class Prior(nn.Module, abc.ABC):
 
     TODO: register all args as tensors if they're not Parameters or Modules.
     """
-    def __init__(self, shape: torch.Size, *args, **kwargs):
+    def __init__(self, shape: torch.Size, **kwargs):
         super().__init__()
-        self.args = args
-        self.kwargs = kwargs
-        self.p = nn.Parameter(self._sample_value(shape))
-
-        for key, arg in itertools.chain(enumerate(args), kwargs.items()):
+        self.kwargs_keys = list(kwargs.keys())
+        for key, arg in kwargs.items():
             assert str(key) != "p", "repeated name of parameter"
+            if isinstance(arg, float):
+                arg = torch.tensor(arg)
+
             if isinstance(arg, nn.Module):
                 self.add_module(str(key), arg)
             elif isinstance(arg, nn.Parameter):
@@ -42,6 +41,9 @@ class Prior(nn.Module, abc.ABC):
             else:
                 setattr(self, str(key), arg)
 
+        # `self._sample_value` uses kwargs
+        self.p = nn.Parameter(self._sample_value(shape))
+
 
     @staticmethod
     @abc.abstractmethod
@@ -49,8 +51,8 @@ class Prior(nn.Module, abc.ABC):
         pass
 
     def _dist_obj(self):
-        return self._dist(*map(value_or_call, self.args),
-                          **{k: value_or_call(v) for k, v in self.kwargs.items()})
+        return self._dist(**{k: value_or_call(getattr(self, k))
+                             for k in self.kwargs_keys})
 
     def log_prob(self) -> float:
         return self._dist_obj().log_prob(self.p).sum()
