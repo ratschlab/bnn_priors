@@ -47,7 +47,8 @@ def get_prior(prior_name):
              "uniform": prior.Uniform,
              "improper": prior.Improper,
              "gaussian_gamma": prior.NormalGamma,
-             "gaussian_uniform": prior.NormalUniform}
+             "gaussian_uniform": prior.NormalUniform,
+             "horseshoe": prior.Horseshoe}
     assert prior_name in priors
     return priors[prior_name]
 

@@ -4,10 +4,10 @@ import math
 from gpytorch.utils.transforms import inv_softplus
 
 from .base import Prior
-from .transformed import Gamma, Uniform
+from .transformed import Gamma, Uniform, HalfCauchy
 
 __all__ = ('LocScale', 'Normal', 'Laplace', 'Cauchy', 'StudentT', 'LogNormal',
-           'Improper', 'NormalGamma', 'NormalUniform')
+           'Improper', 'NormalGamma', 'NormalUniform', 'Horseshoe')
 
 
 class LocScale(Prior):
@@ -79,6 +79,25 @@ class NormalUniform(Normal):
         scale_prior = Uniform(shape=[], low=0., high=scale*2.)
         with torch.no_grad():
             scale_prior.p.data = torch.tensor(0.)
+        super().__init__(shape, loc, scale_prior)
+        self.scale.p.register_hook(self.hook)
+        self.clip = gradient_clip
+        
+    def log_prob(self):
+        # TODO: it seems like the log prob is too high compared to the other loss terms...
+        return super().log_prob() + self.scale.log_prob()
+    
+    def hook(self, grad):
+        # TODO: This somehow affects the downstream gradients of the parameters, which it shouldn't
+        # It should only affect the actual scale.p parameter
+        return torch.clamp(grad, -self.clip, self.clip)
+    
+    
+class Horseshoe(Normal):
+    def __init__(self, shape, loc, scale, hyperscale=1., gradient_clip=1.):
+        scale_prior = HalfCauchy(shape=[], scale=hyperscale, multiplyer=scale)
+        with torch.no_grad():
+            scale_prior.p.data = inv_softplus(torch.tensor(1.))
         super().__init__(shape, loc, scale_prior)
         self.scale.p.register_hook(self.hook)
         self.clip = gradient_clip
