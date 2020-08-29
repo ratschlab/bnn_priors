@@ -124,6 +124,16 @@ def main(inference, model, width, n_samples, warmup,
 
     bn_params = {k:v for k,v in model.state_dict().items() if "bn" in k}
 
+    if save_samples:
+        samples_file = os.path.join(TMPDIR, "samples.pt")
+        bn_file = os.path.join(TMPDIR, "bn_params.pt")
+        t.save(samples, samples_file)
+        t.save(bn_params, bn_file)
+        ex.add_artifact(filename=samples_file)
+        ex.add_artifact(filename=bn_file)
+        os.remove(samples_file)
+        os.remove(bn_file)
+
     model.eval()
 
     batch_size = min(batch_size, len(data.norm.test))
