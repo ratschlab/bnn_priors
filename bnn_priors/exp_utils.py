@@ -1,7 +1,8 @@
 import math
 import numpy as np
+from sklearn.metrics import average_precision_score, roc_auc_score
 import torch as t
-from bnn_priors.data import UCI, CIFAR10, CIFAR10_C, MNIST, RotatedMNIST
+from bnn_priors.data import UCI, CIFAR10, CIFAR10_C, MNIST, RotatedMNIST, FashionMNIST
 from bnn_priors.models import RaoBDenseNet, DenseNet, PreActResNet18, PreActResNet34, ClassificationDenseNet
 from bnn_priors.prior import LogNormal
 from bnn_priors import prior
@@ -18,8 +19,7 @@ def device(device):
 
 
 def get_data(data, device):
-    assert data[:3] == "UCI" or data[:8] == "cifar10c" or data in ["cifar10",
-                        "mnist", "rotated_mnist"], f"Unknown data set {data}"
+    assert data[:3] == "UCI" or data[:7] == "cifar10" or data[-5:] == "mnist", f"Unknown data set {data}"
     if data[:3] == "UCI":
         uci_dataset = data.split("_")[1]
         assert uci_dataset in ["boston", "concrete", "energy", "kin8nm",
@@ -35,6 +35,8 @@ def get_data(data, device):
         dataset = MNIST(device=device)
     elif data == "rotated_mnist":
         dataset = RotatedMNIST(device=device)
+    elif data == "fashion_mnist":
+        dataset = FashionMNIST(device=device)
     return dataset
 
 
@@ -145,4 +147,47 @@ def evaluate_model(model, dataloader_test, samples, bn_params, n_samples,
         results["ace"] = aces.mean().item()
         results["rmsce"] = rmsces.mean().item()
         
+    return results
+
+
+def evaluate_ood(model, dataloader_train, dataloader_test, samples, bn_params, n_samples):
+
+    loaders = {"train": dataloader_train, "eval": dataloader_test}
+    probs = {"train": [], "eval": []}
+    aurocs = []
+    auprcs = []
+
+    for i in range(n_samples):
+        sample = dict((k, v[i]) for k, v in samples.items())
+        sampled_state_dict = {**sample, **bn_params}
+        with t.no_grad():
+            # TODO: get model.using_params() to work with batchnorm params
+            model.load_state_dict(sampled_state_dict)
+            for dataset in ["train", "eval"]:
+                probs_sample = []
+                for batch_x, batch_y in loaders[dataset]:
+                    pred = model(batch_x)
+                    probs_batch, _ = pred.probs.max(dim=1)
+                    probs_sample.extend(list(probs_batch.cpu().numpy()))
+                probs[dataset].extend(probs_sample)
+            
+    
+        labels = np.concatenate([np.ones_like(probs["train"]), np.zeros_like(probs["eval"])])
+        probs_cat = np.concatenate([probs["train"], probs["eval"]])
+        aurocs.append(roc_auc_score(labels, probs_cat))
+        auprcs.append(average_precision_score(labels, probs_cat))
+        
+    aurocs = t.tensor(aurocs)
+    auprcs = t.tensor(auprcs)
+    
+    results = {}
+
+    results["auroc_mean"] = aurocs.mean().item()
+    results["auroc_std"] =  aurocs.std().item()
+    results["auroc_stderr"] = aurocs.std().item() / math.sqrt(len(aurocs))
+    
+    results["auprc_mean"] = auprcs.mean().item()
+    results["auprc_std"] =  auprcs.std().item()
+    results["auprc_stderr"] = auprcs.std().item() / math.sqrt(len(auprcs))
+    
     return results
