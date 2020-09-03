@@ -1,9 +1,9 @@
 #!/bin/bash
 
-priors=( gaussian uniform laplace student-t cauchy improper gaussian_gamma gaussian_uniform horseshoe )
+priors=( gaussian uniform laplace student-t cauchy improper gaussian_gamma gaussian_uniform horseshoe laplace_gamma laplace_normal student-t_gamma student-t_normal mixture )
 datasets=( boston wine energy naval concrete kin8nm power yacht protein )
 inference=( SGLD )  # add HMC if needed
-scales=( 0.14 1.41 14.1 )
+scales=( 0.7 1.41 2.41 )
 temps=( 0.0 0.1 1.0 )
 
 for prior in "${priors[@]}"

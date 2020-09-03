@@ -32,10 +32,12 @@ def get_prior(prior_name):
 
 
 class Mixture(LocScale):
-    def __init__(self, shape, loc, scale, components):
+    def __init__(self, shape, loc, scale, components=None):
+        if components is None:
+            components = ["gaussian", "laplace", "student-t", "cauchy"]
         assert len(components) > 0, "Too few mixture components"
         super().__init__(shape, loc, scale)
-        self.mixture_weights = torch.nn.Parameter(torch.ones(len(components)))
+        self.mixture_weights = torch.nn.Parameter(torch.zeros(len(components)))
         self.components = [get_prior(comp)(shape, loc, scale)
                            for comp in components]
         for comp in self.components:
