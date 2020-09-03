@@ -41,22 +41,10 @@ def get_data(data, device):
 
 
 def get_prior(prior_name):
-    priors = {"gaussian": prior.Normal,
-             "lognormal": prior.LogNormal,
-             "laplace": prior.Laplace,
-             "cauchy": prior.Cauchy,
-             "student-t": prior.StudentT,
-             "uniform": prior.Uniform,
-             "improper": prior.Improper,
-             "gaussian_gamma": prior.NormalGamma,
-             "gaussian_uniform": prior.NormalUniform,
-             "horseshoe": prior.Horseshoe,
-             "laplace_gamma": prior.LaplaceGamma,
-             "laplace_uniform": prior.LaplaceUniform,
-             "student-t_gamma": prior.StudentTGamma,
-             "student-t_uniform": prior.StudentTUniform}
-    assert prior_name in priors
-    return priors[prior_name]
+    if prior_name == "mixture":
+        return prior.Mixture
+    else:
+        return prior.get_prior(prior_name)
 
 
 def get_model(x_train, y_train, model, width, weight_prior, weight_loc,

@@ -5,6 +5,7 @@ import abc
 from typing import Dict, Sequence
 import contextlib
 
+
 __all__ = ('value_or_call', 'Prior', 'named_priors', 'named_params_with_prior',
            'params_with_prior')
 
