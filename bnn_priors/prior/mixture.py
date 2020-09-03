@@ -35,18 +35,19 @@ class Mixture(LocScale):
     def __init__(self, shape, loc, scale, components):
         assert len(components) > 0, "Too few mixture components"
         super().__init__(shape, loc, scale)
+        self.mixture_weights = torch.nn.Parameter(torch.ones(len(components)))
         self.components = [get_prior(comp)(shape, loc, scale)
                            for comp in components]
-        for i, comp in enumerate(self.components):
-            self.add_module(f"component_{i}", comp)
         for comp in self.components:
             comp.p = self.p
-        # import pdb; pdb.set_trace()
+        for i, comp in enumerate(self.components):
+            self.add_module(f"component_{i}", comp)
         
     _dist = td.Normal
     
     def log_prob(self):
-        probs = [comp.log_prob() for comp in self.components]
+        weights = torch.nn.functional.softmax(self.mixture_weights, dim=0)
+        probs = [weight*comp.log_prob() for weight, comp in zip(weights, self.components)]
         return sum(probs)
     
     

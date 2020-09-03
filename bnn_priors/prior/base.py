@@ -83,7 +83,11 @@ def named_priors(mod: nn.Module):
 def named_params_with_prior(mod: nn.Module):
     """iterate over all parameters that have a `Prior` specified, and their names
     """
-    return ((k+("p" if k == "" else ".p"), v.p) for (k, v) in named_priors(mod))
+    # TODO: think of a more elegant way of doing this
+    gen_p = ((k+("p" if k == "" else ".p"), v.p) for (k, v) in named_priors(mod))
+    gen_weights = ((k+("mixture_weights" if k == "" else ".mixture_weights"), v.mixture_weights)
+                   for (k, v) in named_priors(mod) if "mixture_weights" in v.state_dict())
+    return itertools.chain(gen_p, gen_weights)
 
 
 def params_with_prior(mod: nn.Module):

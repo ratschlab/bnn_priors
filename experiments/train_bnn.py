@@ -107,7 +107,7 @@ def main(inference, model, width, n_samples, warmup,
     y_test = data.norm.test_y
 
     model = get_model(x_train=x_train, y_train=y_train)
-
+            
     if inference == "HMC":
         kernel = HMC(potential_fn=lambda p: model.get_potential(x_train, y_train, eff_num_data=1*x_train.shape[0])(p),
              adapt_step_size=False, adapt_mass_matrix=False,
@@ -126,7 +126,7 @@ def main(inference, model, width, n_samples, warmup,
 
     mcmc.run(progressbar=True)
     samples = mcmc.get_samples()
-
+    
     bn_params = {k:v for k,v in model.state_dict().items() if "bn" in k}
 
     if save_samples:
