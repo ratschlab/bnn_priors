@@ -50,7 +50,11 @@ def get_prior(prior_name):
              "improper": prior.Improper,
              "gaussian_gamma": prior.NormalGamma,
              "gaussian_uniform": prior.NormalUniform,
-             "horseshoe": prior.Horseshoe}
+             "horseshoe": prior.Horseshoe,
+             "laplace_gamma": prior.LaplaceGamma,
+             "laplace_uniform": prior.LaplaceUniform,
+             "student-t_gamma": prior.StudentTGamma,
+             "student-t_uniform": prior.StudentTUniform}
     assert prior_name in priors
     return priors[prior_name]
 
