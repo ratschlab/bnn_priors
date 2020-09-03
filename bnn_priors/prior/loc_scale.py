@@ -65,7 +65,6 @@ class NormalGamma(Normal):
         self.clip = gradient_clip
         
     def log_prob(self):
-        # TODO: it seems like the log prob is too high compared to the other loss terms...
         return super().log_prob() + self.scale.log_prob()
     
     def hook(self, grad):
@@ -84,7 +83,6 @@ class NormalUniform(Normal):
         self.clip = gradient_clip
         
     def log_prob(self):
-        # TODO: it seems like the log prob is too high compared to the other loss terms...
         return super().log_prob() + self.scale.log_prob()
     
     def hook(self, grad):
@@ -103,7 +101,6 @@ class Horseshoe(Normal):
         self.clip = gradient_clip
         
     def log_prob(self):
-        # TODO: it seems like the log prob is too high compared to the other loss terms...
         return super().log_prob() + self.scale.log_prob()
     
     def hook(self, grad):

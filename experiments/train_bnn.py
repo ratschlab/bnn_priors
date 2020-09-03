@@ -45,6 +45,8 @@ def config():
     weight_scale = 2.**0.5
     bias_loc = 0.
     bias_scale = 1.
+    weight_prior_params = {}
+    bias_prior_params = {}
     n_samples = 1000
     warmup = 2000
     burnin = 2000
@@ -59,8 +61,7 @@ def config():
     save_samples = False
     device = "try_cuda"
     run_id = uuid.uuid4().hex
-    prior_params = {}  # TODO: pass these on to the priors
-
+    
 
 @ex.capture
 def device(device):
@@ -74,9 +75,11 @@ def get_data(data):
 
 @ex.capture
 def get_model(x_train, y_train, model, width, weight_prior, weight_loc,
-             weight_scale, bias_prior, bias_loc, bias_scale, batchnorm):
+             weight_scale, bias_prior, bias_loc, bias_scale, batchnorm,
+             weight_prior_params, bias_prior_params):
     return exp_utils.get_model(x_train, y_train, model, width, weight_prior, weight_loc,
-             weight_scale, bias_prior, bias_loc, bias_scale, batchnorm)
+             weight_scale, bias_prior, bias_loc, bias_scale, batchnorm, weight_prior_params,
+                               bias_prior_params)
 
 
 @ex.capture
@@ -127,7 +130,6 @@ def main(inference, model, width, n_samples, warmup,
     bn_params = {k:v for k,v in model.state_dict().items() if "bn" in k}
 
     if save_samples:
-        # TODO: fix this race condition
         samples_file = os.path.join(TMPDIR, f"samples_{run_id}.pt")
         bn_file = os.path.join(TMPDIR, f"bn_params_{run_id}.pt")
         t.save(samples, samples_file)

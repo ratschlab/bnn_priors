@@ -12,51 +12,58 @@ def LinearNealNormal(in_dim: int, out_dim: int, std_w: float, std_b: float) -> n
 
 
 def LinearPrior(in_dim, out_dim, prior_w=prior.Normal, loc_w=0., std_w=1.,
-                     prior_b=prior.Normal, loc_b=0., std_b=1., scaling_fn=None):
+                     prior_b=prior.Normal, loc_b=0., std_b=1., scaling_fn=None,
+               weight_prior_params={}, bias_prior_params={}):
     if scaling_fn is None:
         def scaling_fn(std, dim):
             return std/dim**0.5
-    return Linear(prior_w((out_dim, in_dim), loc_w, scaling_fn(std_w, in_dim)),
-                  prior_b((out_dim,), 0., std_b))
+    return Linear(prior_w((out_dim, in_dim), loc_w, scaling_fn(std_w, in_dim), **weight_prior_params),
+                  prior_b((out_dim,), 0., std_b), **bias_prior_params)
 
 
 def DenseNet(in_features, out_features, width, noise_std=1.,
              prior_w=prior.Normal, loc_w=0., std_w=2**.5,
              prior_b=prior.Normal, loc_b=0., std_b=1.,
-            scaling_fn=None):
+            scaling_fn=None, weight_prior_params={}, bias_prior_params={}):
     return RegressionModel(
         nn.Sequential(
             LinearPrior(in_features, width, prior_w=prior_w, loc_w=loc_w,
                        std_w=std_w, prior_b=prior_b, loc_b=loc_b, std_b=std_b,
-                       scaling_fn=scaling_fn),
+                       scaling_fn=scaling_fn, weight_prior_params=weight_prior_params,
+                        bias_prior_params=bias_prior_params),
             nn.ReLU(),
             LinearPrior(width, width, prior_w=prior_w, loc_w=loc_w,
                        std_w=std_w, prior_b=prior_b, loc_b=loc_b, std_b=std_b,
-                       scaling_fn=scaling_fn),
+                       scaling_fn=scaling_fn, weight_prior_params=weight_prior_params,
+                        bias_prior_params=bias_prior_params),
             nn.ReLU(),
             LinearPrior(width, out_features, prior_w=prior_w, loc_w=loc_w,
                        std_w=std_w, prior_b=prior_b, loc_b=loc_b, std_b=std_b,
-                       scaling_fn=scaling_fn)
+                       scaling_fn=scaling_fn, weight_prior_params=weight_prior_params,
+                        bias_prior_params=bias_prior_params)
         ), noise_std)
 
 
 def ClassificationDenseNet(in_features, out_features, width, softmax_temp=1.,
              prior_w=prior.Normal, loc_w=0., std_w=2**.5,
              prior_b=prior.Normal, loc_b=0., std_b=1.,
-            scaling_fn=None):
+            scaling_fn=None, weight_prior_params={}, bias_prior_params={}):
     return ClassificationModel(
         nn.Sequential(
             LinearPrior(in_features, width, prior_w=prior_w, loc_w=loc_w,
                        std_w=std_w, prior_b=prior_b, loc_b=loc_b, std_b=std_b,
-                       scaling_fn=scaling_fn),
+                       scaling_fn=scaling_fn, weight_prior_params=weight_prior_params,
+                        bias_prior_params=bias_prior_params),
             nn.ReLU(),
             LinearPrior(width, width, prior_w=prior_w, loc_w=loc_w,
                        std_w=std_w, prior_b=prior_b, loc_b=loc_b, std_b=std_b,
-                       scaling_fn=scaling_fn),
+                       scaling_fn=scaling_fn, weight_prior_params=weight_prior_params,
+                        bias_prior_params=bias_prior_params),
             nn.ReLU(),
             LinearPrior(width, out_features, prior_w=prior_w, loc_w=loc_w,
                        std_w=std_w, prior_b=prior_b, loc_b=loc_b, std_b=std_b,
-                       scaling_fn=scaling_fn)
+                       scaling_fn=scaling_fn, weight_prior_params=weight_prior_params,
+                        bias_prior_params=bias_prior_params)
         ), softmax_temp)
 
 
