@@ -4,6 +4,7 @@ Training script for the BNN experiments with different data sets and priors.
 
 import os
 import math
+import uuid
 
 import numpy as np
 import torch as t
@@ -57,6 +58,7 @@ def config():
     batchnorm = True
     save_samples = False
     device = "try_cuda"
+    run_id = uuid.uuid4().hex
     prior_params = {}  # TODO: pass these on to the priors
 
 
@@ -86,7 +88,7 @@ def evaluate_model(model, dataloader_test, samples, bn_params, data, n_samples):
 @ex.automain
 def main(inference, model, width, n_samples, warmup,
         burnin, skip, cycles, temperature, momentum,
-        precond_update, lr, batch_size, save_samples):
+        precond_update, lr, batch_size, save_samples, run_id):
     assert inference in ["SGLD", "HMC"]
     assert width > 0
     assert n_samples > 0
@@ -125,12 +127,13 @@ def main(inference, model, width, n_samples, warmup,
     bn_params = {k:v for k,v in model.state_dict().items() if "bn" in k}
 
     if save_samples:
-        samples_file = os.path.join(TMPDIR, "samples.pt")
-        bn_file = os.path.join(TMPDIR, "bn_params.pt")
+        # TODO: fix this race condition
+        samples_file = os.path.join(TMPDIR, f"samples_{run_id}.pt")
+        bn_file = os.path.join(TMPDIR, f"bn_params_{run_id}.pt")
         t.save(samples, samples_file)
         t.save(bn_params, bn_file)
-        ex.add_artifact(filename=samples_file)
-        ex.add_artifact(filename=bn_file)
+        ex.add_artifact(filename=samples_file, name="samples.pt")
+        ex.add_artifact(filename=bn_file, name="bn_params.pt")
         os.remove(samples_file)
         os.remove(bn_file)
 
