@@ -191,3 +191,23 @@ def evaluate_ood(model, dataloader_train, dataloader_test, samples, bn_params, n
     results["auprc_stderr"] = auprcs.std().item() / math.sqrt(len(auprcs))
     
     return results
+
+
+def evaluate_marglik(model, samples, bn_params, n_samples):
+    log_priors = []
+
+    for i in range(n_samples):
+        sample = dict((k, v[i]) for k, v in samples.items())
+        sampled_state_dict = {**sample, **bn_params}
+        with t.no_grad():
+            # TODO: get model.using_params() to work with batchnorm params
+            model.load_state_dict(sampled_state_dict)
+            log_prior = model.log_prior().item()
+            log_priors.append(log_prior)
+        
+    log_priors = t.tensor(log_priors)
+    
+    results = {}
+    results["simple_marglik"] = log_priors.mean().item()
+    
+    return results
