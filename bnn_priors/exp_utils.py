@@ -2,7 +2,7 @@ import math
 import numpy as np
 from sklearn.metrics import average_precision_score, roc_auc_score
 import torch as t
-from bnn_priors.data import UCI, CIFAR10, CIFAR10_C, MNIST, RotatedMNIST, FashionMNIST
+from bnn_priors.data import UCI, CIFAR10, CIFAR10_C, MNIST, RotatedMNIST, FashionMNIST, SVHN
 from bnn_priors.models import RaoBDenseNet, DenseNet, PreActResNet18, PreActResNet34, ClassificationDenseNet
 from bnn_priors.prior import LogNormal
 from bnn_priors import prior
@@ -19,7 +19,8 @@ def device(device):
 
 
 def get_data(data, device):
-    assert data[:3] == "UCI" or data[:7] == "cifar10" or data[-5:] == "mnist", f"Unknown data set {data}"
+    assert (data[:3] == "UCI" or data[:7] == "cifar10" or data[-5:] == "mnist"
+            or data in ["svhn"]), f"Unknown data set {data}"
     if data[:3] == "UCI":
         uci_dataset = data.split("_")[1]
         assert uci_dataset in ["boston", "concrete", "energy", "kin8nm",
@@ -37,6 +38,8 @@ def get_data(data, device):
         dataset = RotatedMNIST(device=device)
     elif data == "fashion_mnist":
         dataset = FashionMNIST(device=device)
+    elif data == "svhn":
+        dataset = SVHN(device=device)
     return dataset
 
 
