@@ -31,7 +31,7 @@ TMPDIR = "/tmp"
 
 ex = Experiment("bnn_training")
 ex.captured_out_filter = apply_backspaces_and_linefeeds
-ex.observers.append(FileStorageObserver('../logs'))
+
 
 @ex.config
 def config():
@@ -61,6 +61,10 @@ def config():
     save_samples = False
     device = "try_cuda"
     run_id = uuid.uuid4().hex
+    log_dir = "../logs"
+    if log_dir is not None:
+        os.makedirs(log_dir, exist_ok=True)
+        ex.observers.append(FileStorageObserver(log_dir))
     
 
 @ex.capture
