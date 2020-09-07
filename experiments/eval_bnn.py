@@ -93,8 +93,8 @@ def evaluate_ood(model, dataloader_train, dataloader_test, samples, bn_params, n
 
 
 @ex.capture
-def evaluate_marglik(model, samples, bn_params, n_samples, skip_first):
-    return exp_utils.evaluate_marglik(model, samples, bn_params, n_samples-skip_first)
+def evaluate_marglik(model, train_samples, eval_samples, bn_params, n_samples, skip_first):
+    return exp_utils.evaluate_marglik(model, train_samples, eval_samples, bn_params, n_samples-skip_first)
 
 
 @ex.automain
@@ -153,7 +153,9 @@ def main(config_file, batch_size, n_samples, run_dir, eval_data, data, skip_firs
             eval_samples = samples
         else:
             eval_samples = t.load(eval_samples)
-        marglik_results = evaluate_marglik(model, eval_samples, bn_params)
+            eval_samples = {param: sample[skip_first:]
+                            for param, sample in eval_samples.items()}
+        marglik_results = evaluate_marglik(model, samples, eval_samples, bn_params)
         results = {**results, **marglik_results}
         
     return results

@@ -125,6 +125,7 @@ def evaluate_model(model, dataloader_test, samples, bn_params, n_samples,
     accs = accs.mean(dim=1)
     
     if calibration_eval:
+        # TODO: should this be done differently? should it average over samples or so?
         labels = dataloader_test.dataset.tensors[1].cpu().numpy()
         eces = t.tensor([ece(labels, probs_sample)
                          for probs_sample in probs], dtype=t.float64)
@@ -152,6 +153,7 @@ def evaluate_model(model, dataloader_test, samples, bn_params, n_samples,
 
 def evaluate_ood(model, dataloader_train, dataloader_test, samples, bn_params, n_samples):
 
+    # TODO: should this be done differently? should it average over samples or so?
     loaders = {"train": dataloader_train, "eval": dataloader_test}
     probs = {"train": [], "eval": []}
     aurocs = []
@@ -193,12 +195,13 @@ def evaluate_ood(model, dataloader_train, dataloader_test, samples, bn_params, n
     return results
 
 
-def evaluate_marglik(model, samples, bn_params, n_samples):
+def evaluate_marglik(model, train_samples, eval_samples, bn_params, n_samples):
     log_priors = []
 
     for i in range(n_samples):
-        sample = dict((k, v[i]) for k, v in samples.items())
-        sampled_state_dict = {**sample, **bn_params}
+        train_sample = dict((k, v[i]) for k, v in train_samples.items())
+        eval_sample = dict((k, v[i]) for k, v in eval_samples.items())
+        sampled_state_dict = {**train_sample, **bn_params, **eval_sample}
         with t.no_grad():
             # TODO: get model.using_params() to work with batchnorm params
             model.load_state_dict(sampled_state_dict)
