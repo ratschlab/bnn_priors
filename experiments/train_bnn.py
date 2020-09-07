@@ -77,8 +77,8 @@ def get_model(x_train, y_train, model, width, weight_prior, weight_loc,
 
 
 @ex.capture
-def evaluate_model(model, dataloader_test, samples, bn_params, data, n_samples):
-    return exp_utils.evaluate_model(model, dataloader_test, samples, bn_params, n_samples,
+def evaluate_model(model, dataloader_test, samples, data, n_samples):
+    return exp_utils.evaluate_model(model, dataloader_test, samples, n_samples,
                    eval_data=data, likelihood_eval=True, accuracy_eval=True, calibration_eval=False)
 
 
@@ -120,12 +120,9 @@ def main(inference, model, width, n_samples, warmup,
 
     mcmc.run(progressbar=True)
     samples = mcmc.get_samples()
-
-    bn_params = {k:v for k,v in model.state_dict().items() if "bn" in k}
-
     model.eval()
 
     batch_size = min(batch_size, len(data.norm.test))
     dataloader_test = t.utils.data.DataLoader(data.norm.test, batch_size=batch_size)
 
-    return evaluate_model(model, dataloader_test, samples, bn_params)
+    return evaluate_model(model, dataloader_test, samples)

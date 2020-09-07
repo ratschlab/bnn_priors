@@ -53,7 +53,7 @@ def get_model(x_train, y_train, model, width, weight_prior, weight_loc,
              weight_scale, bias_prior, bias_loc, bias_scale, batchnorm):
     assert model in ["densenet", "raobdensenet", "resnet18", "resnet34", "classificationdensenet"]
     if weight_prior in ["cauchy"]:
-        #TODO: which other distributions should use this? Laplace?
+        # NOTE: Cauchy and anything with infinite variance should use this
         scaling_fn = lambda std, dim: std/dim
     else:
         scaling_fn = lambda std, dim: std/dim**0.5
@@ -80,7 +80,7 @@ def get_model(x_train, y_train, model, width, weight_prior, weight_loc,
     return net
 
 
-def evaluate_model(model, dataloader_test, samples, bn_params, n_samples,
+def evaluate_model(model, dataloader_test, samples, n_samples,
                    eval_data, likelihood_eval, accuracy_eval, calibration_eval):
     lps = []
     accs = []
@@ -88,10 +88,7 @@ def evaluate_model(model, dataloader_test, samples, bn_params, n_samples,
 
     for i in range(n_samples):
         sample = dict((k, v[i]) for k, v in samples.items())
-        sampled_state_dict = {**sample, **bn_params}
-        with t.no_grad():
-            # TODO: get model.using_params() to work with batchnorm params
-            model.load_state_dict(sampled_state_dict)
+        with t.no_grad(), model.using_params(sample):
             lps_sample = []
             accs_sample = []
             probs_sample = []

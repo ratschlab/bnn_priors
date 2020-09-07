@@ -69,9 +69,9 @@ def get_model(x_train, y_train, model, width, weight_prior, weight_loc,
 
 
 @ex.capture
-def evaluate_model(model, dataloader_test, samples, bn_params, eval_data, n_samples,
+def evaluate_model(model, dataloader_test, samples, eval_data, n_samples,
                    likelihood_eval, accuracy_eval, calibration_eval):
-    return exp_utils.evaluate_model(model, dataloader_test, samples, bn_params, n_samples,
+    return exp_utils.evaluate_model(model, dataloader_test, samples, n_samples,
                    eval_data, likelihood_eval, accuracy_eval, calibration_eval)
 
 
@@ -83,11 +83,8 @@ def main(config_file, batch_size, n_samples, log_dir, eval_data, data,
         run_data = json.load(infile)
 
     assert "samples.pt" in run_data["artifacts"], "No samples found"
-    assert "bn_params.pt" in run_data["artifacts"], "No bn_params found"
-
     samples = t.load(os.path.join(log_dir, "samples.pt"))
-    bn_params = t.load(os.path.join(log_dir, "bn_params.pt"))
-    
+
     if eval_data is None:
         eval_data = data
     
@@ -112,6 +109,4 @@ def main(config_file, batch_size, n_samples, log_dir, eval_data, data,
     if calibration_eval and not (eval_data[:7] == "cifar10" or eval_data[-5:] == "mnist"):
         raise NotImplementedError("The calibration is not defined for this type of data.")
 
-    return evaluate_model(model, dataloader_test, samples, bn_params, eval_data)
-    
-    
+    return evaluate_model(model, dataloader_test, samples, eval_data)
