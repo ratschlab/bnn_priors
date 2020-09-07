@@ -125,14 +125,11 @@ def evaluate_model(model, dataloader_test, samples, bn_params, n_samples,
     accs = accs.mean(dim=1)
     
     if calibration_eval:
-        # TODO: should this be done differently? should it average over samples or so?
         labels = dataloader_test.dataset.tensors[1].cpu().numpy()
-        eces = t.tensor([ece(labels, probs_sample)
-                         for probs_sample in probs], dtype=t.float64)
-        aces = t.tensor([ace(labels, probs_sample)
-                         for probs_sample in probs], dtype=t.float64)
-        rmsces = t.tensor([rmsce(labels, probs_sample)
-                           for probs_sample in probs], dtype=t.float64)
+        probs_mean = t.tensor(probs).mean(dim=0)
+        eces = ece(labels, probs_mean)
+        aces = ace(labels, probs_mean)
+        rmsces = rmsce(labels, probs_mean)
     
     results = {}
     if likelihood_eval:
@@ -153,7 +150,6 @@ def evaluate_model(model, dataloader_test, samples, bn_params, n_samples,
 
 def evaluate_ood(model, dataloader_train, dataloader_test, samples, bn_params, n_samples):
 
-    # TODO: should this be done differently? should it average over samples or so?
     loaders = {"train": dataloader_train, "eval": dataloader_test}
     probs = {"train": [], "eval": []}
     aurocs = []
@@ -171,26 +167,20 @@ def evaluate_ood(model, dataloader_train, dataloader_test, samples, bn_params, n
                     pred = model(batch_x)
                     probs_batch, _ = pred.probs.max(dim=1)
                     probs_sample.extend(list(probs_batch.cpu().numpy()))
-                probs[dataset].extend(probs_sample)
-            
-    
-        labels = np.concatenate([np.ones_like(probs["train"]), np.zeros_like(probs["eval"])])
-        probs_cat = np.concatenate([probs["train"], probs["eval"]])
-        aurocs.append(roc_auc_score(labels, probs_cat))
-        auprcs.append(average_precision_score(labels, probs_cat))
+                probs[dataset].append(probs_sample)
+
+    for dataset in ["train", "eval"]:
+        probs[dataset] = t.tensor(probs[dataset]).mean(dim=0).numpy()
         
-    aurocs = t.tensor(aurocs)
-    auprcs = t.tensor(auprcs)
+    labels = np.concatenate([np.ones_like(probs["train"]), np.zeros_like(probs["eval"])])
+    probs_cat = np.concatenate([probs["train"], probs["eval"]])
+    auroc = roc_auc_score(labels, probs_cat)
+    auprc = average_precision_score(labels, probs_cat)
     
     results = {}
 
-    results["auroc_mean"] = aurocs.mean().item()
-    results["auroc_std"] =  aurocs.std().item()
-    results["auroc_stderr"] = aurocs.std().item() / math.sqrt(len(aurocs))
-    
-    results["auprc_mean"] = auprcs.mean().item()
-    results["auprc_std"] =  auprcs.std().item()
-    results["auprc_stderr"] = auprcs.std().item() / math.sqrt(len(auprcs))
+    results["auroc"] = auroc
+    results["auprc"] = auprc
     
     return results
 
@@ -211,6 +201,7 @@ def evaluate_marglik(model, train_samples, eval_samples, bn_params, n_samples):
     log_priors = t.tensor(log_priors)
     
     results = {}
-    results["simple_marglik"] = log_priors.mean().item()
+    results["simple_marglik"] = log_priors.exp().mean().item()
+    results["simple_logmarglik"] = log_priors.mean().item()
     
     return results
