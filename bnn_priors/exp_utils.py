@@ -179,8 +179,8 @@ def evaluate_ood(model, dataloader_train, dataloader_test, samples, bn_params, n
     
     results = {}
 
-    results["auroc"] = auroc
-    results["auprc"] = auprc
+    results["auroc"] = float(auroc)
+    results["auprc"] = float(auprc)
     
     return results
 

@@ -40,7 +40,7 @@ def config():
     model = "densenet"
     width = 50
     weight_prior = "gaussian"
-    bias_prior = "gaussian"
+    bias_prior = "gaussian"  # TODO: is that a reasonable default?
     weight_loc = 0.
     weight_scale = 2.**0.5
     bias_loc = 0.
