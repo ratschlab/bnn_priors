@@ -5,6 +5,7 @@ Training script for the BNN experiments with different data sets and priors.
 import os
 import math
 import uuid
+import json
 
 import numpy as np
 import torch as t
@@ -47,6 +48,11 @@ def config():
     bias_scale = 1.
     weight_prior_params = {}
     bias_prior_params = {}
+    if not isinstance(weight_prior_params, dict):
+        print(weight_prior_params)
+        weight_prior_params = json.loads(weight_prior_params)
+    if not isinstance(bias_prior_params, dict):
+        bias_prior_params = json.loads(bias_prior_params)
     n_samples = 1000
     warmup = 2000
     burnin = 2000
