@@ -51,7 +51,8 @@ def get_prior(prior_name):
 
 def get_model(x_train, y_train, model, width, weight_prior, weight_loc,
              weight_scale, bias_prior, bias_loc, bias_scale, batchnorm):
-    assert model in ["densenet", "raobdensenet", "resnet18", "resnet34", "classificationdensenet"]
+    assert model in ["densenet", "raobdensenet", "resnet18", "resnet34",
+                     "classificationdensenet", "test_gaussian"]
     if weight_prior in ["cauchy"]:
         #TODO: which other distributions should use this? Laplace?
         scaling_fn = lambda std, dim: std/dim
@@ -77,6 +78,9 @@ def get_model(x_train, y_train, model, width, weight_prior, weight_loc,
         net = PreActResNet34(prior_w=weight_prior, loc_w=weight_loc, std_w=weight_scale,
                             prior_b=bias_prior, loc_b=bias_loc, std_b=bias_scale, scaling_fn=scaling_fn,
                             bn=batchnorm, softmax_temp=1.).to(x_train)
+    elif model == "test_gaussian":
+        from testing.test_sgld import GaussianModel
+        net = GaussianModel(N=1, D=100)
     return net
 
 
