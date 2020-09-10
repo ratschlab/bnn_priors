@@ -40,8 +40,15 @@ class Mixture(LocScale):
                            for comp in components]
         for comp in self.components:
             comp.p = self.p
+            comp._old_log_prob = comp.log_prob
+            # Prevent the sum over priors from double-counting this one
+            comp.log_prob = (lambda: 0.)
+
         for i, comp in enumerate(self.components):
             self.add_module(f"component_{i}", comp)
+
+        # Now that all parameters are initialized, sample properly
+        self.sample()
         
 
     _dist = td.Normal

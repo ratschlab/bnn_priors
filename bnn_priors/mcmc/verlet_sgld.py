@@ -44,13 +44,18 @@ class VerletSGLD(SGLD):
         return curv * dot(p.grad, p.grad)
 
     @torch.no_grad()
-    def maybe_reject(self, delta_energy: float) -> bool:
+    def maybe_reject(self, delta_energy: float) -> (bool, float):
         "Maybe reject the current parameters, based on the difference in energy"
         temperature = self.param_groups[0]['temperature']
         assert all(g['temperature'] == temperature for g in self.param_groups),\
             "unclear which `temperature` to use"
 
-        reject = (torch.rand(()).item() > math.exp(-delta_energy / temperature))
+        if temperature == 0.0:
+            return False, 0.  # Never reject
+
+        # rand() > min(1., exp(-delta_energy / temperature))
+        log_accept_prob = -delta_energy / temperature
+        reject = (math.log(torch.rand(()).item()) > log_accept_prob)
         if reject:
             for p, state in self.state.items():
                 p.data.copy_(state['prev_parameter'])
@@ -59,7 +64,7 @@ class VerletSGLD(SGLD):
                     state['momentum_buffer'].copy_(state['prev_momentum_buffer'])
                 except KeyError:
                     pass
-        return reject
+        return reject, log_accept_prob
 
     def _save_state(self, group, p, state):
         try:
@@ -152,17 +157,16 @@ class VerletSGLD(SGLD):
         c_gm = -.5 * group['bhn'] * M_rsqrt
         if is_initial:
             state['delta_energy'] = -self._point_energy(group, p, state)
-            state['delta_energy'] += c_gm * dot(p.grad, new_momentum)
-        elif is_final:
-            state['delta_energy'] += c_gm * dot(p.grad, old_momentum)
         else:
-            state['delta_energy'] += c_gm * dot(p.grad, old_momentum.add_(new_momentum))
+            state['delta_energy'] += state['prev_new_momentum_delta']
+            state['delta_energy'] += c_gm * dot(p.grad, old_momentum)
         del old_momentum
+        state['prev_new_momentum_delta'] = c_gm * dot(p.grad, new_momentum)
 
         # Temperature diagnostics
         d = p.numel()
         state['est_temperature'] = dot(new_momentum, new_momentum) / d
-        # NOTE: p and p.grad are from the same time step
+        # NOTE: p and p.grad are (and have to be) from the same time step
         state['est_config_temp'] = dot(p, p.grad) * (group['num_data']/d)
 
         state['momentum_buffer'] = new_momentum

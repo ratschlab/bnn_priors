@@ -59,7 +59,7 @@ class Gamma(Prior):
         return torch.nn.functional.softplus(self.p)
 
     def log_prob(self):
-        return self._dist_obj().log_prob(self()).sum().to(self.p)
+        return self._dist_obj().log_prob(self()).sum()
     
     
 class HalfCauchy(Prior):
@@ -76,4 +76,4 @@ class HalfCauchy(Prior):
         return torch.nn.functional.softplus(self.p) * self.multiplyer
 
     def log_prob(self):
-        return self._dist_obj().log_prob(self()).sum().to(self.p)
+        return self._dist_obj().log_prob(self()).sum()
