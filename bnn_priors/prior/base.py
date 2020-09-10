@@ -4,6 +4,7 @@ import abc
 from typing import Dict, Sequence
 import contextlib
 
+
 __all__ = ('value_or_call', 'Prior', 'named_priors', 'named_params_with_prior',
            'params_with_prior')
 
@@ -54,7 +55,7 @@ class Prior(nn.Module, abc.ABC):
         return self._dist(**{k: value_or_call(getattr(self, k))
                              for k in self.kwargs_keys})
 
-    def log_prob(self) -> float:
+    def log_prob(self) -> torch.Tensor:
         return self._dist_obj().log_prob(self.p).sum()
 
     def _sample_value(self, shape: torch.Size):

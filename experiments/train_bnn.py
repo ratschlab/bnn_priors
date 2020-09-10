@@ -4,6 +4,7 @@ Training script for the BNN experiments with different data sets and priors.
 
 import os
 import math
+import uuid
 
 import numpy as np
 import torch as t
@@ -30,7 +31,6 @@ TMPDIR = "/tmp"
 
 ex = Experiment("bnn_training")
 ex.captured_out_filter = apply_backspaces_and_linefeeds
-ex.observers.append(FileStorageObserver(Path(__file__).parent.parent/"logs"))
 
 @ex.config
 def config():
@@ -44,6 +44,8 @@ def config():
     weight_scale = 2.**0.5
     bias_loc = 0.
     bias_scale = 1.
+    weight_prior_params = {}
+    bias_prior_params = {}
     n_samples = 1000
     warmup = 2000
     burnin = 2000
@@ -57,7 +59,12 @@ def config():
     batch_size = None
     batchnorm = True
     device = "try_cuda"
-
+    run_id = uuid.uuid4().hex
+    log_dir = Path(__file__).parent.parent/"logs"
+    if log_dir is not None:
+        os.makedirs(log_dir, exist_ok=True)
+        ex.observers.append(FileStorageObserver(log_dir))
+    
 
 @ex.capture
 def device(device):
@@ -71,9 +78,11 @@ def get_data(data):
 
 @ex.capture
 def get_model(x_train, y_train, model, width, weight_prior, weight_loc,
-             weight_scale, bias_prior, bias_loc, bias_scale, batchnorm):
+             weight_scale, bias_prior, bias_loc, bias_scale, batchnorm,
+             weight_prior_params, bias_prior_params):
     return exp_utils.get_model(x_train, y_train, model, width, weight_prior, weight_loc,
-             weight_scale, bias_prior, bias_loc, bias_scale, batchnorm)
+             weight_scale, bias_prior, bias_loc, bias_scale, batchnorm, weight_prior_params,
+                               bias_prior_params)
 
 
 @ex.capture
@@ -85,6 +94,7 @@ def evaluate_model(model, dataloader_test, samples, bn_params, data, n_samples):
 @ex.automain
 def main(inference, model, width, n_samples, warmup,
          burnin, skip, metrics_skip, cycles, temperature, momentum,
+         precond_update, lr, batch_size, save_samples, run_id):
          precond_update, lr, batch_size, _run):
     assert inference in ["SGLD", "HMC", "VerletSGLD", "OurHMC"]
     assert width > 0
@@ -101,7 +111,7 @@ def main(inference, model, width, n_samples, warmup,
     y_test = data.norm.test_y
 
     model = get_model(x_train=x_train, y_train=y_train)
-
+            
     if inference == "HMC":
         kernel = HMC(potential_fn=lambda p: model.get_potential(x_train, y_train, eff_num_data=1*x_train.shape[0])(p),
              adapt_step_size=False, adapt_mass_matrix=False,
@@ -126,8 +136,18 @@ def main(inference, model, width, n_samples, warmup,
 
     mcmc.run(progressbar=True)
     samples = mcmc.get_samples()
-
+    
     bn_params = {k:v for k,v in model.state_dict().items() if "bn" in k}
+
+    if save_samples:
+        samples_file = os.path.join(TMPDIR, f"samples_{run_id}.pt")
+        bn_file = os.path.join(TMPDIR, f"bn_params_{run_id}.pt")
+        t.save(samples, samples_file)
+        t.save(bn_params, bn_file)
+        ex.add_artifact(filename=samples_file, name="samples.pt")
+        ex.add_artifact(filename=bn_file, name="bn_params.pt")
+        os.remove(samples_file)
+        os.remove(bn_file)
 
     model.eval()
 

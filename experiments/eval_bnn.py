@@ -26,7 +26,7 @@ from bnn_priors.exp_utils import get_prior
 # Makes CUDA faster
 if t.cuda.is_available():
     t.backends.cudnn.benchmark = True
-    
+
 TMPDIR = "/tmp"
 
 ex = Experiment("bnn_evaluation")
@@ -39,7 +39,9 @@ def config():
     likelihood_eval = True
     accuracy_eval = True
     calibration_eval = False
-    
+    ood_eval = False
+    skip_first = 0
+
     assert config_file is not None, "No config_file provided"
     ex.add_config(config_file)
     log_dir = os.path.dirname(config_file)
@@ -54,30 +56,44 @@ def device(device):
 
 
 @ex.capture
-def get_data(data, eval_data):
+def get_eval_data(data, eval_data):
     if eval_data is not None:
         return exp_utils.get_data(eval_data, device())
     else:
         return exp_utils.get_data(data, device())
+    
+    
+@ex.capture
+def get_train_data(data):
+    return exp_utils.get_data(data, device())
 
 
 @ex.capture
 def get_model(x_train, y_train, model, width, weight_prior, weight_loc,
-             weight_scale, bias_prior, bias_loc, bias_scale, batchnorm):
+             weight_scale, bias_prior, bias_loc, bias_scale, batchnorm,
+             weight_prior_params, bias_prior_params):
     return exp_utils.get_model(x_train, y_train, model, width, weight_prior, weight_loc,
-             weight_scale, bias_prior, bias_loc, bias_scale, batchnorm)
+             weight_scale, bias_prior, bias_loc, bias_scale, batchnorm, weight_prior_params,
+                               bias_prior_params)
 
 
 @ex.capture
 def evaluate_model(model, dataloader_test, samples, bn_params, eval_data, n_samples,
-                   likelihood_eval, accuracy_eval, calibration_eval):
-    return exp_utils.evaluate_model(model, dataloader_test, samples, bn_params, n_samples,
+                   skip_first, likelihood_eval, accuracy_eval, calibration_eval):
+    return exp_utils.evaluate_model(model, dataloader_test, samples, bn_params, n_samples-skip_first,
                    eval_data, likelihood_eval, accuracy_eval, calibration_eval)
 
 
+@ex.capture
+def evaluate_ood(model, dataloader_train, dataloader_test, samples, bn_params, n_samples, skip_first):
+    return exp_utils.evaluate_ood(model, dataloader_train, dataloader_test,
+                                  samples, bn_params, n_samples-skip_first)
+
+
 @ex.automain
-def main(config_file, batch_size, n_samples, log_dir, eval_data, data,
-        likelihood_eval, accuracy_eval, calibration_eval):
+def main(config_file, batch_size, n_samples, log_dir, eval_data, data, skip_first,
+        likelihood_eval, accuracy_eval, calibration_eval, ood_eval):
+    assert skip_first < n_samples, "We don't have that many samples to skip"
     runfile = os.path.join(log_dir, "run.json")
     with open(runfile) as infile:
         run_data = json.load(infile)
@@ -88,10 +104,12 @@ def main(config_file, batch_size, n_samples, log_dir, eval_data, data,
     samples = t.load(os.path.join(log_dir, "samples.pt"))
     bn_params = t.load(os.path.join(log_dir, "bn_params.pt"))
     
+    samples = {param: sample[skip_first:] for param, sample in samples.items()}
+    
     if eval_data is None:
         eval_data = data
-    
-    data = get_data()
+
+    data = get_eval_data()
 
     x_train = data.norm.train_X
     y_train = data.norm.train_y
@@ -100,21 +118,27 @@ def main(config_file, batch_size, n_samples, log_dir, eval_data, data,
     y_test = data.norm.test_y
 
     model = get_model(x_train=x_train, y_train=y_train)
-    
+
     model.eval()
-        
+
     if batch_size is None:
         batch_size = len(data.norm.test)
     else:
         batch_size = min(batch_size, len(data.norm.test))
     dataloader_test = t.utils.data.DataLoader(data.norm.test, batch_size=batch_size)
-    
-    # TODO: refactor this into a method in the exp_utils
-    
+
     if calibration_eval and not (eval_data[:7] == "cifar10" or eval_data[-5:] == "mnist"):
         raise NotImplementedError("The calibration is not defined for this type of data.")
+        
+    if ood_eval and not (eval_data[:7] == "cifar10" or eval_data[-5:] == "mnist"):
+        raise NotImplementedError("The OOD error is not defined for this type of data.")
+
+    results = evaluate_model(model, dataloader_test, samples, bn_params, eval_data)
     
-    
-    return evaluate_model(model, dataloader_test, samples, bn_params, eval_data)
-    
-    
+    if ood_eval:
+        train_data = get_train_data()
+        dataloader_train = t.utils.data.DataLoader(train_data.norm.test, batch_size=batch_size)
+        ood_results = evaluate_ood(model, dataloader_train, dataloader_test, samples, bn_params)
+        results = {**results, **ood_results}
+        
+    return results

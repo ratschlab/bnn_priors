@@ -1,10 +1,13 @@
 import torch.distributions as td
 import torch
 import math
+from gpytorch.utils.transforms import inv_softplus
 
 from .base import Prior
+from .transformed import Gamma, Uniform, HalfCauchy
 
-__all__ = ('LocScale', 'Normal', 'Laplace', 'Cauchy', 'StudentT', 'LogNormal', 'Improper')
+__all__ = ('LocScale', 'Normal', 'Laplace', 'Cauchy', 'StudentT', 'LogNormal',
+           'Improper')
 
 
 class LocScale(Prior):
