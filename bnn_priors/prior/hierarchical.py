@@ -11,23 +11,12 @@ from .transformed import Gamma, Uniform, HalfCauchy
 __all__ = ('NormalGamma', 'NormalUniform', 'Horseshoe', 'LaplaceGamma',
           'LaplaceUniform', 'StudentTGamma', 'StudentTUniform')
 
-class _ClipHookMixin:
-    def _init(self, clip):
-        self.scale.p.register_hook(self.hook)
-        self.clip = clip
-
-    def hook(self, grad):
-        # TODO: This somehow affects the downstream gradients of the parameters, which it shouldn't
-        # It should only affect the actual scale.p parameter
-        return torch.clamp(grad, -self.clip, self.clip)
-
-class NormalGamma(Normal, _ClipHookMixin):
+class NormalGamma(Normal):
     def __init__(self, shape, loc, scale, rate=1., gradient_clip=1.):
         scale_prior = Gamma(shape=[], concentration=scale, rate=rate)
         with torch.no_grad():
             scale_prior.p.data = inv_softplus(torch.tensor(scale))
         super().__init__(shape, loc, scale_prior)
-        _ClipHookMixin._init(self, gradient_clip)
 
 
 class NormalUniform(Normal):
@@ -36,8 +25,6 @@ class NormalUniform(Normal):
         with torch.no_grad():
             scale_prior.p.data = torch.tensor(0.)
         super().__init__(shape, loc, scale_prior)
-        _ClipHookMixin._init(self, gradient_clip)
-
 
     
 class LaplaceGamma(Laplace):
@@ -46,7 +33,6 @@ class LaplaceGamma(Laplace):
         with torch.no_grad():
             scale_prior.p.data = inv_softplus(torch.tensor(scale))
         super().__init__(shape, loc, scale_prior)
-        _ClipHookMixin._init(self, gradient_clip)
 
     
 class LaplaceUniform(Laplace):
@@ -55,7 +41,6 @@ class LaplaceUniform(Laplace):
         with torch.no_grad():
             scale_prior.p.data = torch.tensor(0.)
         super().__init__(shape, loc, scale_prior)
-        _ClipHookMixin._init(self, gradient_clip)
 
 
 class StudentTGamma(StudentT):
@@ -64,7 +49,6 @@ class StudentTGamma(StudentT):
         with torch.no_grad():
             scale_prior.p.data = inv_softplus(torch.tensor(scale))
         super().__init__(shape, loc, scale_prior, df=df)
-        _ClipHookMixin._init(self, gradient_clip)
 
     
 class StudentTUniform(StudentT):
@@ -73,7 +57,6 @@ class StudentTUniform(StudentT):
         with torch.no_grad():
             scale_prior.p.data = torch.tensor(0.)
         super().__init__(shape, loc, scale_prior, df=df)
-        _ClipHookMixin._init(self, gradient_clip)
 
     
 class Horseshoe(Normal):
@@ -82,4 +65,3 @@ class Horseshoe(Normal):
         with torch.no_grad():
             scale_prior.p.data = inv_softplus(torch.tensor(1.))
         super().__init__(shape, loc, scale_prior)
-        _ClipHookMixin._init(self, gradient_clip)
