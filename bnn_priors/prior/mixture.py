@@ -42,14 +42,28 @@ class Mixture(LocScale):
                            for comp in components]
         for comp in self.components:
             comp.p = self.p
+            comp._old_log_prob = comp.log_prob
+            # Prevent the sum over priors from double-counting this one
+            comp.log_prob = (lambda: 0.)
+
         for i, comp in enumerate(self.components):
             self.add_module(f"component_{i}", comp)
+
+        # Now that all parameters are initialized, sample properly
+        self.sample()
         
-    _dist = td.Normal
-    
+    _dist = NotImplemented
     def log_prob(self):
-        weights = torch.nn.functional.softmax(self.mixture_weights, dim=0)
-        probs = [weight*comp.log_prob() for weight, comp in zip(weights, self.components)]
-        return sum(probs)
-    
-    
+        normaliser = torch.logsumexp(self.mixture_weights, dim=0)
+        log_ps = torch.stack([comp._old_log_prob() for comp in self.components])
+        return torch.logsumexp(self.mixture_weights + log_ps, dim=0) - normaliser
+
+    def _sample_value(self, shape: torch.Size):
+        try:
+            mixture_weights = self.mixture_weights
+            components = self.components
+        except AttributeError:
+            return torch.randn(shape)  # Called before initialization of parameters
+
+        idx = td.Categorical(logits=mixture_weights).sample().item()
+        return components[idx]._sample_value(shape)
