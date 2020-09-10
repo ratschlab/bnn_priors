@@ -5,6 +5,7 @@ Training script for the BNN experiments with different data sets and priors.
 import os
 import math
 import uuid
+import json
 
 import numpy as np
 import torch as t
@@ -39,13 +40,18 @@ def config():
     model = "densenet"
     width = 50
     weight_prior = "gaussian"
-    bias_prior = "gaussian"
+    bias_prior = "gaussian"  # TODO: is that a reasonable default?
     weight_loc = 0.
     weight_scale = 2.**0.5
     bias_loc = 0.
     bias_scale = 1.
     weight_prior_params = {}
     bias_prior_params = {}
+    if not isinstance(weight_prior_params, dict):
+        print(weight_prior_params)
+        weight_prior_params = json.loads(weight_prior_params)
+    if not isinstance(bias_prior_params, dict):
+        bias_prior_params = json.loads(bias_prior_params)
     n_samples = 1000
     warmup = 2000
     burnin = 2000

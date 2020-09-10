@@ -32,9 +32,8 @@ def get_prior(prior_name):
 
 
 class Mixture(LocScale):
-    def __init__(self, shape, loc, scale, components=None):
-        if components is None:
-            components = ["gaussian", "laplace", "student-t", "cauchy"]
+    def __init__(self, shape, loc, scale, components="g_l_s_c"):
+        components=self.get_components(components)
         assert len(components) > 0, "Too few mixture components"
         super().__init__(shape, loc, scale)
         self.mixture_weights = torch.nn.Parameter(torch.zeros(len(components)))
@@ -51,7 +50,7 @@ class Mixture(LocScale):
 
         # Now that all parameters are initialized, sample properly
         self.sample()
-        
+
     _dist = NotImplemented
     def log_prob(self):
         """
@@ -74,6 +73,30 @@ class Mixture(LocScale):
             components = self.components
         except AttributeError:
             return torch.randn(shape)  # Called before initialization of parameters
-
         idx = td.Categorical(logits=mixture_weights).sample().item()
         return components[idx]._sample_value(shape)
+
+    @staticmethod
+    def get_components(comp_string):
+        """
+        Parse the component string into the components.
+        """
+        comp_dict = {"g": "gaussian",
+                    "ln": "lognormal",
+                    "l": "laplace",
+                    "c": "cauchy",
+                    "s": "student-t",
+                    "u": "uniform",
+                    "i": "improper",
+                    "gg": "gaussian_gamma",
+                    "gu": "gaussian_uniform",
+                    "h": "horseshoe",
+                    "lg": "laplace_gamma",
+                    "lu": "laplace_uniform",
+                    "sg": "student-t_gamma",
+                    "su": "student-t_uniform"}
+        abrvs = comp_string.split("_")
+        assert all([abrv in comp_dict for abrv
+                    in abrvs]), "Unknown mixture components"
+        components = [comp_dict[abrv] for abrv in abrvs]
+        return components

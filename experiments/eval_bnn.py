@@ -36,16 +36,18 @@ ex.captured_out_filter = apply_backspaces_and_linefeeds
 def config():
     config_file = None
     eval_data = None
+    eval_samples = None
     likelihood_eval = True
     accuracy_eval = True
     calibration_eval = False
     ood_eval = False
+    marglik_eval = False
     skip_first = 0
 
     assert config_file is not None, "No config_file provided"
     ex.add_config(config_file)
-    log_dir = os.path.dirname(config_file)
-    eval_dir = os.path.join(log_dir, "eval")
+    run_dir = os.path.dirname(config_file)
+    eval_dir = os.path.join(run_dir, "eval")
     os.makedirs(eval_dir, exist_ok=True)
     ex.observers.append(FileStorageObserver(eval_dir))
 
@@ -87,22 +89,27 @@ def evaluate_model(model, dataloader_test, samples, bn_params, eval_data, n_samp
 @ex.capture
 def evaluate_ood(model, dataloader_train, dataloader_test, samples, bn_params, n_samples, skip_first):
     return exp_utils.evaluate_ood(model, dataloader_train, dataloader_test,
-                                  samples, bn_params, n_samples-skip_first)
+                                  samples, bn_params, n_samples-skip_first)#
+
+
+@ex.capture
+def evaluate_marglik(model, train_samples, eval_samples, bn_params, n_samples, skip_first):
+    return exp_utils.evaluate_marglik(model, train_samples, eval_samples, bn_params, n_samples-skip_first)
 
 
 @ex.automain
-def main(config_file, batch_size, n_samples, log_dir, eval_data, data, skip_first,
-        likelihood_eval, accuracy_eval, calibration_eval, ood_eval):
+def main(config_file, batch_size, n_samples, run_dir, eval_data, data, skip_first, eval_samples,
+        likelihood_eval, accuracy_eval, calibration_eval, ood_eval, marglik_eval):
     assert skip_first < n_samples, "We don't have that many samples to skip"
-    runfile = os.path.join(log_dir, "run.json")
+    runfile = os.path.join(run_dir, "run.json")
     with open(runfile) as infile:
         run_data = json.load(infile)
 
     assert "samples.pt" in run_data["artifacts"], "No samples found"
     assert "bn_params.pt" in run_data["artifacts"], "No bn_params found"
 
-    samples = t.load(os.path.join(log_dir, "samples.pt"))
-    bn_params = t.load(os.path.join(log_dir, "bn_params.pt"))
+    samples = t.load(os.path.join(run_dir, "samples.pt"))
+    bn_params = t.load(os.path.join(run_dir, "bn_params.pt"))
     
     samples = {param: sample[skip_first:] for param, sample in samples.items()}
     
@@ -140,5 +147,15 @@ def main(config_file, batch_size, n_samples, log_dir, eval_data, data, skip_firs
         dataloader_train = t.utils.data.DataLoader(train_data.norm.test, batch_size=batch_size)
         ood_results = evaluate_ood(model, dataloader_train, dataloader_test, samples, bn_params)
         results = {**results, **ood_results}
+        
+    if marglik_eval:
+        if eval_samples is None:
+            eval_samples = samples
+        else:
+            eval_samples = t.load(eval_samples)
+            eval_samples = {param: sample[skip_first:]
+                            for param, sample in eval_samples.items()}
+        marglik_results = evaluate_marglik(model, samples, eval_samples, bn_params)
+        results = {**results, **marglik_results}
         
     return results
