@@ -34,6 +34,7 @@ def get_prior(prior_name):
 class Mixture(LocScale):
     def __init__(self, shape, loc, scale, components="g_l_s_c"):
         components=self.get_components(components)
+        assert len(components) > 0, "Too few mixture components"
         super().__init__(shape, loc, scale)
         self.mixture_weights = torch.nn.Parameter(torch.zeros(len(components)))
         self.components = [get_prior(comp)(shape, loc, scale)
@@ -49,19 +50,31 @@ class Mixture(LocScale):
 
         # Now that all parameters are initialized, sample properly
         self.sample()
-        
 
-    _dist = td.Normal
-    
-
+    _dist = NotImplemented
     def log_prob(self):
         """
-        Return weighted sum of the components' log probs.
+        The mixture probability is defined without logs:
+
+        prob(self) = sum(w * exp(comp._old_log_prob(self.p))
+                         for w, comp in zip(self.mixture_weights, self.components))
+
+        which we can rewrite as
+
+        log_prob(self) = log_sum_exp(log_w + comp.old_log_prob(self.p)) - log_sum_exp(log_w)
         """
-        weights = torch.nn.functional.softmax(self.mixture_weights, dim=0)
-        probs = [weight*comp.log_prob() for weight, comp in zip(weights, self.components)]
-        return sum(probs)
-    
+        normaliser = torch.logsumexp(self.mixture_weights, dim=0)
+        log_ps = torch.stack([comp._old_log_prob() for comp in self.components])
+        return torch.logsumexp(self.mixture_weights + log_ps, dim=0) - normaliser
+
+    def _sample_value(self, shape: torch.Size):
+        try:
+            mixture_weights = self.mixture_weights
+            components = self.components
+        except AttributeError:
+            return torch.randn(shape)  # Called before initialization of parameters
+        idx = td.Categorical(logits=mixture_weights).sample().item()
+        return components[idx]._sample_value(shape)
 
     @staticmethod
     def get_components(comp_string):
