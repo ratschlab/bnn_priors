@@ -2,7 +2,7 @@ import numpy as np
 from tqdm import tqdm
 import torch
 from .utils import get_cosine_schedule
-from .mcmc import SGLD
+from . import mcmc
 import math
 from bnn_priors import prior
 import itertools
@@ -10,13 +10,15 @@ import itertools
 
 def _named_params_and_buffers(model):
     return itertools.chain(
-        prior.named_params_with_prior(model),
+        model.named_parameters(),
         model.named_buffers())
 
 class SGLDRunner:
-    def __init__(self, model, dataloader, epochs_per_cycle, warmup_epochs, sample_epochs, learning_rate=1e-2,
-                 skip=1, temperature=1., data_mult=1., momentum=0., sampling_decay=True,
-                 grad_max=1e6, cycles=1, precond_update=None, summary_writer=None):
+    def __init__(self, model, dataloader, epochs_per_cycle, warmup_epochs,
+                 sample_epochs, learning_rate=1e-2, skip=1, metrics_skip=1,
+                 temperature=1., data_mult=1., momentum=0., sampling_decay=True,
+                 grad_max=1e6, cycles=1, precond_update=None,
+                 add_scalar_fn=None):
         """Stochastic Gradient Langevin Dynamics for posterior sampling.
 
         On calling `run`, this class runs SGLD for `cycles` sampling cycles. In
@@ -44,6 +46,7 @@ class SGLDRunner:
 
             learning_rate (float): Initial learning rate
             skip (int): Number of samples to skip between saved samples during the sampling phase. Sometimes called "thinning".
+            metrics_skip (int): Number of samples to skip between saved metrics of the sampler
             temperature (float): Temperature for tempering the posterior
             data_mult (float): Effective replication of each datapoint (which is the usual approach to tempering in VI).
             momentum (float): Momentum decay parameter for SGLD
@@ -51,7 +54,7 @@ class SGLDRunner:
             grad_max (float): maximum absolute magnitude of an element of the gradient
             cycles (int): Number of warmup and sampling cycles to perform
             precond_update (int): Number of steps after which the preconditioner should be updated. None disables the preconditioner.
-            summary_writer (optional, tensorboardX.SummaryWriter): where to write the self.metrics
+            add_scalar_fn (optional, (str, float, int) -> None): function to log metric with a certain name and value
 
         """
         self.model = model
@@ -66,6 +69,7 @@ class SGLDRunner:
         self.sample_epochs = sample_epochs
 
         self.skip = skip
+        self.metrics_skip = metrics_skip
         # num_samples (int): Number of recorded per cycle
         self.num_samples = sample_epochs // skip
         self.learning_rate = learning_rate
@@ -76,6 +80,7 @@ class SGLDRunner:
         self.grad_max = grad_max
         self.cycles = cycles
         self.precond_update = precond_update
+        self.add_scalar_fn = add_scalar_fn
         self.summary_writer = summary_writer
 
         self.param_names, self._params = zip(*prior.named_params_with_prior(model))
@@ -88,6 +93,12 @@ class SGLDRunner:
                          for name, p_or_b in _named_params_and_buffers(model)}
         self.metrics = {}
 
+    def _make_optimizer(self, params):
+        return mcmc.SGLD(
+            params=params,
+            lr=self.learning_rate, num_data=self.eff_num_data,
+            momentum=self.momentum, temperature=self.temperature)
+
     def run(self, progressbar=False):
         """
         Runs the sampling on the model.
@@ -97,10 +108,7 @@ class SGLDRunner:
             y (torch.tensor): Training labels
             progressbar (bool): Flag that controls whether a progressbar is printed
         """
-        self.optimizer = SGLD(
-            params=self._params,
-            lr=self.learning_rate, num_data=self.eff_num_data,
-            momentum=self.momentum, temperature=self.temperature)
+        self.optimizer = self._make_optimizer(self._params)
         self.optimizer.sample_momentum()
 
         schedule = get_cosine_schedule(len(self.dataloader) * self.epochs_per_cycle)
@@ -108,8 +116,9 @@ class SGLDRunner:
             optimizer=self.optimizer, lr_lambda=schedule)
 
         epochs_since_start = -1
+        step = 0  # only used for `add_scalar`, must start at 0 and never reset
         for cycle in range(self.cycles):
-            step = 0
+            metrics_step = 0  # Used for metrics skip
 
             if progressbar:
                 epochs = tqdm(range(self.epochs_per_cycle), position=0,
@@ -124,8 +133,10 @@ class SGLDRunner:
                     g['temperature'] = 0 if epoch < self.descent_epochs else self.temperature
 
                 for (x, y) in self.dataloader:
-                    self.step(step, x, y)
+                    store_metrics = (metrics_step % self.metrics_skip == 0)
+                    self.step(step, x, y, store_metrics)
                     step += 1
+                    metrics_step += 1
 
                 if self.precond_update is not None and epoch % self.precond_update == 0:
                     self.optimizer.update_preconditioner()
@@ -141,10 +152,10 @@ class SGLDRunner:
         except KeyError:
             self.metrics[name] = []
             self.metrics[name].append(value)
-        if self.summary_writer is not None:
-            self.summary_writer.add_scalar(name, value, step)
+        if self.add_scalar_fn is not None:
+            self.add_scalar_fn(name, value, step)
 
-    def step(self, i, x, y, lr_decay=True):
+    def step(self, i, x, y, store_metrics, lr_decay=True):
         """
         Perform one step of SGLD on the model.
 
@@ -162,24 +173,15 @@ class SGLDRunner:
         for p in self.optimizer.param_groups[0]["params"]:
             p.grad.clamp_(min=-self.grad_max, max=self.grad_max)
         self.optimizer.step()
+
+        lr = self.optimizer.param_groups[0]["lr"]
         if lr_decay:
             self.scheduler.step()
 
-        for n, p in zip(self.param_names, self.optimizer.param_groups[0]["params"]):
-            state = self.optimizer.state[p]
-            self.add_scalar("preconditioner/"+n, state["preconditioner"], i)
-            self.add_scalar("est_temperature/"+n, state["est_temperature"], i)
-            self.add_scalar("est_config_temp/"+n, state["est_config_temp"], i)
-
-        self.add_scalar("lr", self.optimizer.param_groups[0]["lr"], i)
         loss_ = loss.item()
-        self.add_scalar("loss", loss_, i)
-        if i > 0:
-            self.add_scalar("log_prob_accept", self.prev_loss - loss_, i-1)
-
-        self.prev_loss = loss_
+        if store_metrics:
+            self.store_metrics(i=i, loss_=loss_, lr=lr)
         return loss_
-
 
     def get_samples(self):
         """
@@ -189,3 +191,83 @@ class SGLDRunner:
             samples (dict): Dictionary of torch.tensors with num_samples*cycles samples for each parameter of the model
         """
         return self._samples
+
+    def store_metrics(self, i, loss_, lr, delta_energy=None, log_accept_prob=None, rejected=None):
+        est_temperature_all = 0.
+        est_config_temp_all = 0.
+        all_numel = 0
+        for n, p in zip(self.param_names, self.optimizer.param_groups[0]["params"]):
+            state = self.optimizer.state[p]
+            self.add_scalar("preconditioner/"+n, state["preconditioner"], i)
+            self.add_scalar("est_temperature/"+n, state["est_temperature"], i)
+            self.add_scalar("est_config_temp/"+n, state["est_config_temp"], i)
+
+            est_temperature_all += state["est_temperature"] * p.numel()
+            est_config_temp_all += state["est_config_temp"] * p.numel()
+            all_numel += p.numel()
+        self.add_scalar("est_temperature/all", est_temperature_all / all_numel, i)
+        self.add_scalar("est_config_temp/all", est_config_temp_all / all_numel, i)
+
+        temperature = self.optimizer.param_groups[0]["temperature"]
+        self.add_scalar("temperature", temperature, i)
+        self.add_scalar("loss", loss_, i)
+        self.add_scalar("lr", lr, i)
+
+        if delta_energy is not None:
+            self.add_scalar("energy", delta_energy, i)
+            self.add_scalar("acceptance/log_prob", log_accept_prob, i)
+            self.add_scalar("acceptance/rejected", int(rejected), i)
+
+
+class VerletSGLDRunner(SGLDRunner):
+    def _make_optimizer(self, params):
+        return mcmc.VerletSGLD(
+            params=params,
+            lr=self.learning_rate, num_data=self.eff_num_data,
+            momentum=self.momentum, temperature=self.temperature)
+
+    def step(self, i, x, y, store_metrics, lr_decay=True):
+        if i == 0:
+            self.optimizer.zero_grad()
+            loss = self.model.potential_avg(x, y, self.eff_num_data)
+            loss.backward()
+            for p in self.optimizer.param_groups[0]["params"]:
+                p.grad.clamp_(min=-self.grad_max, max=self.grad_max)
+            self._initial_loss = loss.item()
+
+        self.optimizer.initial_step()
+
+        self.optimizer.zero_grad()
+        loss = self.model.potential_avg(x, y, self.eff_num_data)
+        loss.backward()
+        for p in self.optimizer.param_groups[0]["params"]:
+            p.grad.clamp_(min=-self.grad_max, max=self.grad_max)
+
+        self.optimizer.final_step()
+
+        lr = self.optimizer.param_groups[0]["lr"]
+        if lr_decay:
+            self.scheduler.step()
+
+        loss_ = loss.item()
+        delta_energy = self.optimizer.delta_energy(self._initial_loss, loss_)
+        # Because we never `commit` the sampler by calling `self.optimizer.final_step`,
+        # the delta_energy is relative to the initial state.
+        rejected, log_accept_prob = self.optimizer.maybe_reject(delta_energy)
+        if isinstance(self.optimizer, mcmc.HMC):
+            self.optimizer.sample_momentum()
+        self._initial_loss = loss_
+
+        if store_metrics:
+            self.store_metrics(i=i, loss_=loss_, lr=lr, delta_energy=delta_energy,
+                               log_accept_prob=log_accept_prob,
+                               rejected=rejected)
+        return loss_
+
+class HMCRunner(VerletSGLDRunner):
+    def _make_optimizer(self, params):
+        assert self.temperature == 1.0, "HMC only implemented for temperature=1."
+        assert self.momentum == 1.0, "HMC only works with momentum=1."
+        return mcmc.HMC(
+            params=params,
+            lr=self.learning_rate, num_data=self.eff_num_data)

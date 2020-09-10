@@ -5,7 +5,7 @@ import numpy as np
 from bnn_priors.data import Dataset
 
 
-__all__ = ('CIFAR10','CIFAR10_C')
+__all__ = ('CIFAR10','CIFAR10_C', 'SVHN')
 
 
 class CIFAR10:
@@ -31,9 +31,9 @@ class CIFAR10:
 
         self._save_datasets(data_train.data, data_test.data, data_train.targets, data_test.targets)
 
-    def _save_datasets(self, inputs_train, inputs_test, labels_train, labels_test):
+    def _save_datasets(self, inputs_train, inputs_test, labels_train, labels_test, permutation=(0,3,1,2)):
         # get data into right shape and type
-        X_unnorm = t.from_numpy(np.concatenate([inputs_train, inputs_test]).astype(self.dtype)).permute(0,3,1,2)
+        X_unnorm = t.from_numpy(np.concatenate([inputs_train, inputs_test]).astype(self.dtype)).permute(permutation)
         y = t.from_numpy(np.concatenate([labels_train, labels_test]).astype('int'))
         # alternative version to yield one-hot vectors
         # y = t.from_numpy(np.eye(10)[np.concatenate([data_train.targets, data_test.targets])].astype(dtype))
@@ -107,3 +107,27 @@ class CIFAR10_C(CIFAR10):
         labels = np.load(os.path.join(dataset_dir_corrupted, f"labels.npy"))
 
         self._save_datasets(data_train.data, data_test, data_train.targets, labels)
+
+        
+class SVHN(CIFAR10):
+    """
+    The usage is:
+    ```
+    svhn = SVHN()
+    ```
+    e.g. normalized training dataset:
+    ```
+    svhn.norm.train
+    ```
+    """
+    def __init__(self, dtype='float32', device="cpu", download=False):
+        super().__init__(dtype, device)
+        _ROOT = os.path.abspath(os.path.dirname(__file__))
+        dataset_dir = f'{_ROOT}/svhn/'
+        
+        # load data
+        data_train = torchvision.datasets.SVHN(root=dataset_dir, download=download, split="train")
+        data_test = torchvision.datasets.SVHN(root=dataset_dir, download=download, split="test")
+
+        self._save_datasets(data_train.data, data_test.data, data_train.labels,
+                            data_test.labels, permutation=(0,1,2,3))

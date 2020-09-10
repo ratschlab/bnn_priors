@@ -31,6 +31,12 @@ class HMC(VerletSGLD):
     def _point_energy(self, group, p, state):
         return .5 * dot(state['momentum_buffer'], state['momentum_buffer'])
 
+    def _update_group_fn(self, g):
+        # Ensure momentum and temperature are correct at every step
+        # No matter what modifications are done before `self.step`.
+        g['momentum'] = g['temperature'] = 1.
+        return super()._update_group_fn(g)
+
     def _step_fn(self, group, p, state, is_initial=False, is_final=False, save_state=False):
         if save_state:
             self._save_state(group, p, state)

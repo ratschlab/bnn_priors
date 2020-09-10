@@ -6,7 +6,7 @@ from scipy import ndimage
 from bnn_priors.data import Dataset
 
 
-__all__ = ('MNIST','RotatedMNIST')
+__all__ = ('MNIST','RotatedMNIST', 'FashionMNIST')
 
 
 class MNIST:
@@ -98,6 +98,46 @@ class RotatedMNIST:
         # train / test split
         index_train = np.arange(len(data_train))
         index_test = np.arange(len(data_train), len(data_train) + 3*len(data_test))
+        
+        # create unnormalized data set
+        self.unnorm = Dataset(X_unnorm, y, index_train, index_test, device)
+        
+        # create normalized data set
+        X_norm = self.unnorm.X / 255.
+        self.norm = Dataset(X_norm, y, index_train, index_test, device)
+
+        # save some data shapes
+        self.num_train_set = self.unnorm.X.shape[0]
+        self.in_shape   = self.unnorm.X.shape[1:]
+        self.out_shape  = self.unnorm.y.shape[1:]
+
+        
+class FashionMNIST:
+    """
+    The usage is:
+    ```
+    fmnist = FashionMNIST()
+    ```
+    e.g. normalized training dataset:
+    ```
+    fmnist.norm.train
+    ```
+    """
+    def __init__(self, dtype='float32', device="cpu", download=False):
+        _ROOT = os.path.abspath(os.path.dirname(__file__))
+        dataset_dir = f'{_ROOT}/mnist/'
+        
+        # load data
+        data_train = torchvision.datasets.FashionMNIST(dataset_dir, download=download, train=True)
+        data_test = torchvision.datasets.FashionMNIST(dataset_dir, download=download, train=False)
+
+        # get data into right shape and type
+        X_unnorm = t.from_numpy(np.concatenate([data_train.data, data_test.data]).astype(dtype)).reshape([-1, 784])
+        y = t.from_numpy(np.concatenate([data_train.targets, data_test.targets]).astype('int'))
+        
+        # train / test split
+        index_train = np.arange(len(data_train))
+        index_test = np.arange(len(data_train), len(data_train) + len(data_test))
         
         # create unnormalized data set
         self.unnorm = Dataset(X_unnorm, y, index_train, index_test, device)
