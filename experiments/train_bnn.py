@@ -60,7 +60,7 @@ def config():
     batchnorm = True
     device = "try_cuda"
     run_id = uuid.uuid4().hex
-    log_dir = "../logs"
+    log_dir = Path(__file__).parent.parent/"logs"
     if log_dir is not None:
         os.makedirs(log_dir, exist_ok=True)
         ex.observers.append(FileStorageObserver(log_dir))

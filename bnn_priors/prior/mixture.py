@@ -54,6 +54,16 @@ class Mixture(LocScale):
         
     _dist = NotImplemented
     def log_prob(self):
+        """
+        The mixture probability is defined without logs:
+
+        prob(self) = sum(w * exp(comp._old_log_prob(self.p))
+                         for w, comp in zip(self.mixture_weights, self.components))
+
+        which we can rewrite as
+
+        log_prob(self) = log_sum_exp(log_w + comp.old_log_prob(self.p)) - log_sum_exp(log_w)
+        """
         normaliser = torch.logsumexp(self.mixture_weights, dim=0)
         log_ps = torch.stack([comp._old_log_prob() for comp in self.components])
         return torch.logsumexp(self.mixture_weights + log_ps, dim=0) - normaliser
