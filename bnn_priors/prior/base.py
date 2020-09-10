@@ -5,8 +5,8 @@ import abc
 from typing import Dict, Sequence
 import contextlib
 
-__all__ = ('value_or_call', 'Prior', 'named_priors', 'named_params_with_prior',
-           'params_with_prior')
+
+__all__ = ('value_or_call', 'Prior', 'named_priors', 'named_params_with_prior')
 
 
 def value_or_call(vs):
@@ -81,8 +81,3 @@ def named_params_with_prior(mod: nn.Module):
     """iterate over all parameters that have a `Prior` specified, and their names
     """
     return ((k+("p" if k == "" else ".p"), v.p) for (k, v) in named_priors(mod))
-
-
-def params_with_prior(mod: nn.Module):
-    "iterate over all parameters that have a `Prior` specified"
-    return (v.p for _, v in named_priors(mod))

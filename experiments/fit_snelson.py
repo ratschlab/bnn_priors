@@ -48,7 +48,7 @@ def main(warmup_steps, num_samples):
     kernel = NUTS(potential_fn=model.get_potential(x_train, y_train),
                   adapt_step_size=True, step_size=0.1)
     mcmc = MCMC(kernel, num_samples=num_samples, warmup_steps=warmup_steps,
-                initial_params=model.params_with_prior_dict())
+                initial_params=model.params_dict())
     mcmc.run()
 
     samples = mcmc.get_samples()

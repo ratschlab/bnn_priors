@@ -65,8 +65,8 @@ class AbstractModel(nn.Module, abc.ABC):
         "-log p(y, params | x)"
         return self.potential(x, y, eff_num_data) / eff_num_data
 
-    def params_with_prior_dict(self):
-        return OrderedDict(prior.named_params_with_prior(self))
+    def params_dict(self):
+        return OrderedDict(self.named_parameters())
 
     def sample_all_priors(self):
         for _, v in prior.named_priors(self):

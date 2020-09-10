@@ -106,7 +106,7 @@ def main(inference, model, width, n_samples, warmup,
         kernel = HMC(potential_fn=lambda p: model.get_potential(x_train, y_train, eff_num_data=1*x_train.shape[0])(p),
              adapt_step_size=False, adapt_mass_matrix=False,
              step_size=1e-3, num_steps=32)
-        mcmc = MCMC(kernel, num_samples=n_samples, warmup_steps=warmup, initial_params=model.params_with_prior_dict())
+        mcmc = MCMC(kernel, num_samples=n_samples, warmup_steps=warmup, initial_params=model.params_dict())
     elif inference == "SGLD":
         sample_epochs = n_samples * skip // cycles
         epochs_per_cycle = warmup + burnin + sample_epochs
