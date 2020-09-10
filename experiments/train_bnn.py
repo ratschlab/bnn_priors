@@ -19,7 +19,7 @@ from bnn_priors.data import UCI, CIFAR10
 from bnn_priors.models import RaoBDenseNet, DenseNet, PreActResNet18, PreActResNet34
 from bnn_priors.prior import LogNormal
 from bnn_priors import prior
-from bnn_priors.inference import SGLDRunner
+import bnn_priors.inference
 from bnn_priors import exp_utils
 from bnn_priors.exp_utils import get_prior
 
@@ -31,7 +31,6 @@ TMPDIR = "/tmp"
 
 ex = Experiment("bnn_training")
 ex.captured_out_filter = apply_backspaces_and_linefeeds
-
 
 @ex.config
 def config():
@@ -51,6 +50,7 @@ def config():
     warmup = 2000
     burnin = 2000
     skip = 5
+    metrics_skip = 1
     cycles =  5
     temperature = 1.0
     momentum = 0.9
@@ -58,7 +58,6 @@ def config():
     lr = 5e-4
     batch_size = None
     batchnorm = True
-    save_samples = False
     device = "try_cuda"
     run_id = uuid.uuid4().hex
     log_dir = "../logs"
@@ -94,9 +93,10 @@ def evaluate_model(model, dataloader_test, samples, bn_params, data, n_samples):
 
 @ex.automain
 def main(inference, model, width, n_samples, warmup,
-        burnin, skip, cycles, temperature, momentum,
-        precond_update, lr, batch_size, save_samples, run_id):
-    assert inference in ["SGLD", "HMC"]
+         burnin, skip, metrics_skip, cycles, temperature, momentum,
+         precond_update, lr, batch_size, save_samples, run_id):
+         precond_update, lr, batch_size, _run):
+    assert inference in ["SGLD", "HMC", "VerletSGLD", "OurHMC"]
     assert width > 0
     assert n_samples > 0
     assert cycles > 0
@@ -117,16 +117,22 @@ def main(inference, model, width, n_samples, warmup,
              adapt_step_size=False, adapt_mass_matrix=False,
              step_size=1e-3, num_steps=32)
         mcmc = MCMC(kernel, num_samples=n_samples, warmup_steps=warmup, initial_params=model.params_with_prior_dict())
-    elif inference == "SGLD":
+    else:
+        if inference == "SGLD":
+            runner_class = bnn_priors.inference.SGLDRunner
+        elif inference == "VerletSGLD":
+            runner_class = bnn_priors.inference.VerletSGLDRunner
+        elif inference == "OurHMC":
+            runner_class = bnn_priors.inference.HMCRunner
         sample_epochs = n_samples * skip // cycles
         epochs_per_cycle = warmup + burnin + sample_epochs
         if batch_size is None:
             batch_size = len(data.norm.train)
         dataloader = t.utils.data.DataLoader(data.norm.train, batch_size=batch_size, shuffle=True, drop_last=True)
-        mcmc = SGLDRunner(model=model, dataloader=dataloader, epochs_per_cycle=epochs_per_cycle,
-                  warmup_epochs=warmup, sample_epochs=sample_epochs, learning_rate=lr,
-                  skip=skip, sampling_decay=True, cycles=cycles, temperature=temperature,
-                  momentum=momentum, precond_update=precond_update)
+        mcmc = runner_class(model=model, dataloader=dataloader, epochs_per_cycle=epochs_per_cycle,
+                            warmup_epochs=warmup, sample_epochs=sample_epochs, learning_rate=lr,
+                            skip=skip, metrics_skip=metrics_skip, sampling_decay=True, cycles=cycles, temperature=temperature,
+                            momentum=momentum, precond_update=precond_update, add_scalar_fn=_run.log_scalar)
 
     mcmc.run(progressbar=True)
     samples = mcmc.get_samples()
