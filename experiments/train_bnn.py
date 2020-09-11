@@ -99,10 +99,6 @@ def evaluate_model(model, dataloader_test, samples, data, n_samples):
                    eval_data=data, likelihood_eval=True, accuracy_eval=True, calibration_eval=False)
 
 
-def he_initialize(model):
-    import pdb; pdb.set_trace()
-
-
 @ex.automain
 def main(inference, model, width, n_samples, warmup, he_init,
          burnin, skip, metrics_skip, cycles, temperature, momentum,
@@ -124,7 +120,7 @@ def main(inference, model, width, n_samples, warmup, he_init,
     model = get_model(x_train=x_train, y_train=y_train)
     
     if he_init:
-        he_initialize(model)
+        exp_utils.he_initialize(model)
             
     if inference == "HMC":
         kernel = HMC(potential_fn=lambda p: model.get_potential(x_train, y_train, eff_num_data=1*x_train.shape[0])(p),
