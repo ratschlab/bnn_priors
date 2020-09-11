@@ -24,7 +24,7 @@ def LinearPrior(in_dim, out_dim, prior_w=prior.Normal, loc_w=0., std_w=1.,
 def DenseNet(in_features, out_features, width, noise_std=1.,
              prior_w=prior.Normal, loc_w=0., std_w=2**.5,
              prior_b=prior.Normal, loc_b=0., std_b=1.,
-            scaling_fn=None, weight_prior_params={}, bias_prior_params={}):
+             scaling_fn=None, weight_prior_params={}, bias_prior_params={}):
     return RegressionModel(
         nn.Sequential(
             LinearPrior(in_features, width, prior_w=prior_w, loc_w=loc_w,
@@ -45,9 +45,9 @@ def DenseNet(in_features, out_features, width, noise_std=1.,
 
 
 def ClassificationDenseNet(in_features, out_features, width, softmax_temp=1.,
-             prior_w=prior.Normal, loc_w=0., std_w=2**.5,
-             prior_b=prior.Normal, loc_b=0., std_b=1.,
-            scaling_fn=None, weight_prior_params={}, bias_prior_params={}):
+                           prior_w=prior.Normal, loc_w=0., std_w=2**.5,
+                           prior_b=prior.Normal, loc_b=0., std_b=1.,
+                           scaling_fn=None, weight_prior_params={}, bias_prior_params={}):
     return ClassificationModel(
         nn.Sequential(
             LinearPrior(in_features, width, prior_w=prior_w, loc_w=loc_w,
@@ -67,15 +67,21 @@ def ClassificationDenseNet(in_features, out_features, width, softmax_temp=1.,
         ), softmax_temp)
 
 
-def RaoBDenseNet(x_train: Tensor, y_train: Tensor, width: int, noise_std: float=1.) -> nn.Module:
-    # TODO: also add priors here
-    in_dim = x_train.size(-1)
-    out_dim = y_train.size(-1)
+def RaoBDenseNet(x_train: Tensor, y_train: Tensor, width: int,
+                 noise_std: float=1.,
+                 prior_w=prior.Normal, loc_w=0., std_w=2**.5,
+                 prior_b=prior.Normal, loc_b=0., std_b=1.,
+                 scaling_fn=None) -> nn.Module:
+    in_features = x_train.size(-1)
     return RaoBRegressionModel(
         x_train, y_train, noise_std,
         last_layer_std=(2/width)**.5,
         net=nn.Sequential(
-            LinearNealNormal(in_dim, width, 2**.5, 1.0),
+            LinearPrior(in_features, width, prior_w=prior_w, loc_w=loc_w,
+                       std_w=std_w, prior_b=prior_b, loc_b=loc_b, std_b=std_b,
+                       scaling_fn=scaling_fn),
             nn.ReLU(),
-            LinearNealNormal(width, width, 2**.5, 1.0),
+            LinearPrior(width, width, prior_w=prior_w, loc_w=loc_w,
+                       std_w=std_w, prior_b=prior_b, loc_b=loc_b, std_b=std_b,
+                       scaling_fn=scaling_fn),
             nn.ReLU()))

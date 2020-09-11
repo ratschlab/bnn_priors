@@ -5,8 +5,7 @@ from typing import Dict, Sequence
 import contextlib
 
 
-__all__ = ('value_or_call', 'Prior', 'named_priors', 'named_params_with_prior',
-           'params_with_prior')
+__all__ = ('value_or_call', 'Prior', 'named_priors', 'named_params_with_prior')
 
 
 def value_or_call(vs):
@@ -22,8 +21,6 @@ class Prior(nn.Module, abc.ABC):
     Arguments:
        shape: (torch.Size, tuple): shape of the parameter
        *args, **kwargs: arguments to construct the underlying class `Prior._dist`
-
-    TODO: register all args as tensors if they're not Parameters or Modules.
     """
     def __init__(self, shape: torch.Size, **kwargs):
         super().__init__()
@@ -86,8 +83,3 @@ def named_params_with_prior(mod: nn.Module):
     """iterate over all parameters that have a `Prior` specified, and their names
     """
     return ((k+("p" if k == "" else ".p"), v.p) for (k, v) in named_priors(mod))
-
-
-def params_with_prior(mod: nn.Module):
-    "iterate over all parameters that have a `Prior` specified"
-    return (v.p for _, v in named_priors(mod))

@@ -6,6 +6,8 @@ import abc
 from typing import List, Sequence, Dict, Union
 from collections import OrderedDict
 import contextlib
+import collections
+import itertools
 
 __all__ = ('RegressionModel', 'RaoBRegressionModel', 'CategoricalModel', 'ClassificationModel', 'AbstractModel')
 
@@ -63,8 +65,8 @@ class AbstractModel(nn.Module, abc.ABC):
         "-log p(y, params | x)"
         return self.potential(x, y, eff_num_data) / eff_num_data
 
-    def params_with_prior_dict(self):
-        return OrderedDict(prior.named_params_with_prior(self))
+    def params_dict(self):
+        return OrderedDict(self.named_parameters())
 
     def sample_all_priors(self):
         for _, v in prior.named_priors(self):
@@ -83,6 +85,7 @@ class AbstractModel(nn.Module, abc.ABC):
                 return self.potential(x, y, eff_num_data)
         return potential_fn
 
+    _PmdItem = collections.namedtuple("_PmdItem", ("name", "mod", "is_param", "param_or_buffer"))
     @contextlib.contextmanager
     def using_params(self, param_dict: Dict[str, torch.Tensor]):
         try:
@@ -90,20 +93,29 @@ class AbstractModel(nn.Module, abc.ABC):
         except AttributeError:
             pmd = self._prior_mod_dict = OrderedDict()
             for prefix, mod in self.named_modules():
-                for name, p in mod.named_parameters(recurse=False):
+                for name, param in mod.named_parameters(recurse=False):
                     full_name = prefix + ("" if prefix == "" else ".") + name
-                    print(repr(full_name), repr(name), mod, p)
-                    pmd[full_name] = (name, mod, p)
+                    pmd[full_name] = _PmdItem(name, mod, True, param)
+
+                for name, buffer in mod.named_buffers(recurse=False):
+                    full_name = prefix + ("" if prefix == "" else ".") + name
+                    pmd[full_name] = _PmdItem(name, mod, False, buffer)
 
         assert len(param_dict) == len(pmd)
         try:      # assign `torch.Tensor`s to `nn.Module`s
             for k, param in param_dict.items():
-                name, mod, _ = pmd[k]
-                mod._parameters[name] = param
+                name, mod, is_param, _ = pmd[k]
+                if is_param:
+                    mod._parameters[name] = param_or_buffer
+                else:
+                    mod._buffers[name] = param_or_buffer
             yield
         finally:  # Restore `nn.Parameter`s
-            for _, (name, mod, p) in pmd.items():
-                mod._parameters[name] = p
+            for _, (name, mod, is_param, param_or_buffer) in pmd.items():
+                if is_param:
+                    mod._parameters[name] = param_or_buffer
+                else:
+                    mod._parameters[name] = param_or_buffer
 
 
 

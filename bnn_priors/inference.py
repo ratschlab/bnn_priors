@@ -7,6 +7,13 @@ import math
 from bnn_priors import prior
 
 
+# def _named_params_and_buffers(model):
+#     # TODO don't copy parameters twice
+#     # See issue #76 , https://github.com/ratschlab/projects2020_BNN-priors/issues/76
+#     return itertools.chain(
+#         model.named_parameters(),
+#         model.named_buffers())
+
 class SGLDRunner:
     def __init__(self, model, dataloader, epochs_per_cycle, warmup_epochs,
                  sample_epochs, learning_rate=1e-2, skip=1, metrics_skip=1,
@@ -75,9 +82,10 @@ class SGLDRunner:
         self.cycles = cycles
         self.precond_update = precond_update
         self.add_scalar_fn = add_scalar_fn
-        self._samples = {name: torch.zeros(torch.Size([self.num_samples*cycles])+param.shape)
-                         for name, param in prior.named_params_with_prior(model)}
 
+        self.param_names, self._params = zip(*model.named_parameters())
+        self._samples = {name: torch.zeros(torch.Size([self.num_samples*cycles])+p_or_b.shape)
+                         for name, p_or_b in model.state_dict().items()}
         self.metrics = {}
 
     def _make_optimizer(self, params):
@@ -95,8 +103,7 @@ class SGLDRunner:
             y (torch.tensor): Training labels
             progressbar (bool): Flag that controls whether a progressbar is printed
         """
-        self.param_names, params = zip(*prior.named_params_with_prior(self.model))
-        self.optimizer = self._make_optimizer(params)
+        self.optimizer = self._make_optimizer(self._params)
         self.optimizer.sample_momentum()
 
         schedule = get_cosine_schedule(len(self.dataloader) * self.epochs_per_cycle)
@@ -131,7 +138,7 @@ class SGLDRunner:
 
                 sampling_epoch = epoch - (self.descent_epochs + self.warmup_epochs)
                 if (0 <= sampling_epoch) and (sampling_epoch % self.skip == 0):
-                    for name, param in prior.named_params_with_prior(self.model):
+                    for name, param in self.model.state_dict().items():
                         self._samples[name][(self.num_samples*cycle)+(sampling_epoch//self.skip)] = param
 
     def add_scalar(self, name, value, step):

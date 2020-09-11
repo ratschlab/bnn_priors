@@ -59,11 +59,11 @@ class VerletSGLDTest(unittest.TestCase):
         temperature = 3/4
         model = GaussianModel(N=n_vars, D=n_dim, mean=mean, std=std)
         # `num_data=1` to prevent scaling the Gaussian potential
-        sgld = VerletSGLD(prior.params_with_prior(model), lr=1/32, num_data=1,
+        sgld = VerletSGLD(model.parameters(), lr=1/32, num_data=1,
                           momentum=0.9, temperature=temperature)
         model.sample_all_priors()
         with torch.no_grad():
-            for p in prior.params_with_prior(model):
+            for p in model.parameters():
                 p.sub_(mean).mul_(temperature**.5).add_(mean)
 
         success = {}

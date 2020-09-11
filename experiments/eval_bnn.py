@@ -45,7 +45,7 @@ def config():
     skip_first = 0
 
     assert config_file is not None, "No config_file provided"
-    ex.add_config(config_file)
+    ex.add_config(config_file)  # Adds config entries from the previous script
     run_dir = os.path.dirname(config_file)
     eval_dir = os.path.join(run_dir, "eval")
     os.makedirs(eval_dir, exist_ok=True)
@@ -80,21 +80,21 @@ def get_model(x_train, y_train, model, width, weight_prior, weight_loc,
 
 
 @ex.capture
-def evaluate_model(model, dataloader_test, samples, bn_params, eval_data, n_samples,
+def evaluate_model(model, dataloader_test, samples, eval_data, n_samples,
                    skip_first, likelihood_eval, accuracy_eval, calibration_eval):
-    return exp_utils.evaluate_model(model, dataloader_test, samples, bn_params, n_samples-skip_first,
+    return exp_utils.evaluate_model(model, dataloader_test, samples, n_samples-skip_first,
                    eval_data, likelihood_eval, accuracy_eval, calibration_eval)
 
 
 @ex.capture
-def evaluate_ood(model, dataloader_train, dataloader_test, samples, bn_params, n_samples, skip_first):
+def evaluate_ood(model, dataloader_train, dataloader_test, samples, n_samples, skip_first):
     return exp_utils.evaluate_ood(model, dataloader_train, dataloader_test,
-                                  samples, bn_params, n_samples-skip_first)#
+                                  samples, n_samples-skip_first)#
 
 
 @ex.capture
-def evaluate_marglik(model, train_samples, eval_samples, bn_params, n_samples, skip_first):
-    return exp_utils.evaluate_marglik(model, train_samples, eval_samples, bn_params, n_samples-skip_first)
+def evaluate_marglik(model, train_samples, eval_samples, n_samples, skip_first):
+    return exp_utils.evaluate_marglik(model, train_samples, eval_samples, n_samples-skip_first)
 
 
 @ex.automain
@@ -106,11 +106,9 @@ def main(config_file, batch_size, n_samples, run_dir, eval_data, data, skip_firs
         run_data = json.load(infile)
 
     assert "samples.pt" in run_data["artifacts"], "No samples found"
-    assert "bn_params.pt" in run_data["artifacts"], "No bn_params found"
 
     samples = t.load(os.path.join(run_dir, "samples.pt"))
-    bn_params = t.load(os.path.join(run_dir, "bn_params.pt"))
-    
+
     samples = {param: sample[skip_first:] for param, sample in samples.items()}
     
     if eval_data is None:
@@ -137,15 +135,15 @@ def main(config_file, batch_size, n_samples, run_dir, eval_data, data, skip_firs
     if calibration_eval and not (eval_data[:7] == "cifar10" or eval_data[-5:] == "mnist"):
         raise NotImplementedError("The calibration is not defined for this type of data.")
         
-    if ood_eval and not (eval_data[:7] == "cifar10" or eval_data[-5:] == "mnist"):
+    if ood_eval and not (eval_data[:7] == "cifar10" or eval_data[-5:] == "mnist" or eval_data == "svhn"):
         raise NotImplementedError("The OOD error is not defined for this type of data.")
 
-    results = evaluate_model(model, dataloader_test, samples, bn_params, eval_data)
+    results = evaluate_model(model, dataloader_test, samples, eval_data)
     
     if ood_eval:
         train_data = get_train_data()
         dataloader_train = t.utils.data.DataLoader(train_data.norm.test, batch_size=batch_size)
-        ood_results = evaluate_ood(model, dataloader_train, dataloader_test, samples, bn_params)
+        ood_results = evaluate_ood(model, dataloader_train, dataloader_test, samples)
         results = {**results, **ood_results}
         
     if marglik_eval:
@@ -155,7 +153,7 @@ def main(config_file, batch_size, n_samples, run_dir, eval_data, data, skip_firs
             eval_samples = t.load(eval_samples)
             eval_samples = {param: sample[skip_first:]
                             for param, sample in eval_samples.items()}
-        marglik_results = evaluate_marglik(model, samples, eval_samples, bn_params)
+        marglik_results = evaluate_marglik(model, samples, eval_samples)
         results = {**results, **marglik_results}
         
     return results

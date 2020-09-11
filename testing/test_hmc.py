@@ -19,7 +19,7 @@ class HMCTest(unittest.TestCase):
     def test_reversible(self, N=10):
         model, loss = new_model_loss(N=N)
 
-        sgld = HMC(prior.params_with_prior(model), lr=0.01, num_data=N,
+        sgld = HMC(model.parameters(), lr=0.01, num_data=N,
                    raise_on_nan=True, raise_on_no_grad=True)
 
         # Set the preconditioner randomly
@@ -72,7 +72,7 @@ class HMCTest(unittest.TestCase):
         torch.manual_seed(122)
         mean, std = 1., 2.,
         model = GaussianModel(N=n_vars, D=n_dim, mean=mean, std=std)
-        sgld = HMC(prior.params_with_prior(model), lr=1/32, num_data=1)
+        sgld = HMC(model.parameters(), lr=1/32, num_data=1)
         model.sample_all_priors()
 
         # Set the preconditioner randomly

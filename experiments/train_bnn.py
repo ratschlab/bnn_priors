@@ -67,7 +67,7 @@ def config():
     device = "try_cuda"
     save_samples = True
     run_id = uuid.uuid4().hex
-    log_dir = Path(__file__).parent.parent/"logs"
+    log_dir = Path(__file__).resolve().parent.parent/"logs"
     if log_dir is not None:
         os.makedirs(log_dir, exist_ok=True)
         ex.observers.append(FileStorageObserver(log_dir))
@@ -93,8 +93,8 @@ def get_model(x_train, y_train, model, width, weight_prior, weight_loc,
 
 
 @ex.capture
-def evaluate_model(model, dataloader_test, samples, bn_params, data, n_samples):
-    return exp_utils.evaluate_model(model, dataloader_test, samples, bn_params, n_samples,
+def evaluate_model(model, dataloader_test, samples, data, n_samples):
+    return exp_utils.evaluate_model(model, dataloader_test, samples, n_samples,
                    eval_data=data, likelihood_eval=True, accuracy_eval=True, calibration_eval=False)
 
 
@@ -122,7 +122,7 @@ def main(inference, model, width, n_samples, warmup,
         kernel = HMC(potential_fn=lambda p: model.get_potential(x_train, y_train, eff_num_data=1*x_train.shape[0])(p),
              adapt_step_size=False, adapt_mass_matrix=False,
              step_size=1e-3, num_steps=32)
-        mcmc = MCMC(kernel, num_samples=n_samples, warmup_steps=warmup, initial_params=model.params_with_prior_dict())
+        mcmc = MCMC(kernel, num_samples=n_samples, warmup_steps=warmup, initial_params=model.params_dict())
     else:
         if inference == "SGLD":
             runner_class = bnn_priors.inference.SGLDRunner
@@ -130,6 +130,7 @@ def main(inference, model, width, n_samples, warmup,
             runner_class = bnn_priors.inference.VerletSGLDRunner
         elif inference == "OurHMC":
             runner_class = bnn_priors.inference.HMCRunner
+
         sample_epochs = n_samples * skip // cycles
         epochs_per_cycle = warmup + burnin + sample_epochs
         if batch_size is None:
@@ -142,22 +143,16 @@ def main(inference, model, width, n_samples, warmup,
 
     mcmc.run(progressbar=True)
     samples = mcmc.get_samples()
-    
-    bn_params = {k:v for k,v in model.state_dict().items() if "bn" in k}
 
     if save_samples:
         samples_file = os.path.join(TMPDIR, f"samples_{run_id}.pt")
-        bn_file = os.path.join(TMPDIR, f"bn_params_{run_id}.pt")
         t.save(samples, samples_file)
-        t.save(bn_params, bn_file)
-        ex.add_artifact(filename=samples_file, name="samples.pt")
-        ex.add_artifact(filename=bn_file, name="bn_params.pt")
+        _run.add_artifact(filename=samples_file, name="samples.pt")
         os.remove(samples_file)
-        os.remove(bn_file)
 
     model.eval()
 
     batch_size = min(batch_size, len(data.norm.test))
     dataloader_test = t.utils.data.DataLoader(data.norm.test, batch_size=batch_size)
 
-    return evaluate_model(model, dataloader_test, samples, bn_params)
+    return evaluate_model(model, dataloader_test, samples)

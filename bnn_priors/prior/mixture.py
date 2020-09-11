@@ -9,7 +9,7 @@ from .transformed import *
 from .hierarchical import *
 
 
-__all__ = ('Mixture', 'get_prior')
+__all__ = ('Mixture', 'get_prior', 'ScaleMixture')
 
 
 def get_prior(prior_name):
@@ -100,3 +100,24 @@ class Mixture(LocScale):
                     in abrvs]), "Unknown mixture components"
         components = [comp_dict[abrv] for abrv in abrvs]
         return components
+
+
+class ScaleMixture(Mixture):
+    def __init__(self, shape, loc, scale, base_dist="gaussian", scales=None):
+        if scales is None:
+            scales = [scale/4, scale/2, scale, scale*2, scale*4]
+        super().__init__(shape, loc, scale)
+        self.mixture_weights = torch.nn.Parameter(torch.zeros(len(scales)))
+        self.components = [get_prior(base_dist)(shape, loc, scl)
+                           for scl in scales]
+        for comp in self.components:
+            comp.p = self.p
+            comp._old_log_prob = comp.log_prob
+            # Prevent the sum over priors from double-counting this one
+            comp.log_prob = (lambda: 0.)
+
+        for i, comp in enumerate(self.components):
+            self.add_module(f"component_{i}", comp)
+
+        # Now that all parameters are initialized, sample properly
+        self.sample()

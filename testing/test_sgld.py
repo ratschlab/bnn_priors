@@ -35,11 +35,11 @@ class SGLDTest(unittest.TestCase):
         mean, std = 1., 2.
         temperature = 3/4
         model = GaussianModel(N=n_vars, D=n_dim, mean=mean, std=std)
-        sgld = SGLD(prior.params_with_prior(model), lr=1/512, num_data=1,
+        sgld = SGLD(model.parameters(), lr=1/512, num_data=1,
                     momentum=0.9, temperature=temperature)
         model.sample_all_priors()
         with torch.no_grad():
-            for p in prior.params_with_prior(model):
+            for p in model.parameters():
                 p.sub_(mean).mul_(temperature**.5).add_(mean)
 
         # Set the preconditioner randomly
