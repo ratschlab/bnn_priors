@@ -150,6 +150,14 @@ class SGLDRunner:
         if self.add_scalar_fn is not None:
             self.add_scalar_fn(name, value, step)
 
+    def _model_potential_and_grad(self, x, y):
+        self.optimizer.zero_grad()
+        loss, log_prior, potential = self.model.split_potential_avg(x, y, self.eff_num_data)
+        potential.backward()
+        for p in self.optimizer.param_groups[0]["params"]:
+            p.grad.clamp_(min=-self.grad_max, max=self.grad_max)
+        return loss.item(), log_prior.item(), potential.item()
+
     def step(self, i, x, y, store_metrics, lr_decay=True):
         """
         Perform one step of SGLD on the model.
@@ -162,20 +170,16 @@ class SGLDRunner:
         Returns:
             loss (float): The current loss of the model for x and y
         """
-        self.optimizer.zero_grad()
-        loss = self.model.potential_avg(x, y, self.eff_num_data)
-        loss.backward()
-        for p in self.optimizer.param_groups[0]["params"]:
-            p.grad.clamp_(min=-self.grad_max, max=self.grad_max)
+        loss, log_prior, potential = self._model_potential_and_grad(x, y)
         self.optimizer.step()
 
         lr = self.optimizer.param_groups[0]["lr"]
         if lr_decay:
             self.scheduler.step()
 
-        loss_ = loss.item()
         if store_metrics:
-            self.store_metrics(i=i, loss_=loss_, lr=lr)
+            self.store_metrics(i=i, loss=loss, log_prior=log_prior,
+                               potential=potential, lr=lr)
         return loss_
 
     def get_samples(self):
@@ -187,7 +191,8 @@ class SGLDRunner:
         """
         return self._samples
 
-    def store_metrics(self, i, loss_, lr, delta_energy=None, log_accept_prob=None, rejected=None):
+    def store_metrics(self, i, loss, log_prior, potential, lr,
+                      delta_energy=None, total_energy=None, rejected=None):
         est_temperature_all = 0.
         est_config_temp_all = 0.
         all_numel = 0
@@ -205,12 +210,16 @@ class SGLDRunner:
 
         temperature = self.optimizer.param_groups[0]["temperature"]
         self.add_scalar("temperature", temperature, i)
-        self.add_scalar("loss", loss_, i)
+        self.add_scalar("loss", loss, i)
+        self.add_scalar("log_prior", log_prior, i)
+        self.add_scalar("potential", potential, i)
         self.add_scalar("lr", lr, i)
 
         if delta_energy is not None:
-            self.add_scalar("energy", delta_energy, i)
-            self.add_scalar("acceptance/log_prob", log_accept_prob, i)
+            self.add_scalar("delta_energy", delta_energy, i)
+            self.add_scalar("total_energy", total_energy, i)
+            self.add_scalar("acceptance/log_prob", -delta_energy/temperature, i)
+        if rejected is not None:
             self.add_scalar("acceptance/rejected", int(rejected), i)
 
 
@@ -223,41 +232,34 @@ class VerletSGLDRunner(SGLDRunner):
 
     def step(self, i, x, y, store_metrics, lr_decay=True):
         if i == 0:
-            self.optimizer.zero_grad()
-            loss = self.model.potential_avg(x, y, self.eff_num_data)
-            loss.backward()
-            for p in self.optimizer.param_groups[0]["params"]:
-                p.grad.clamp_(min=-self.grad_max, max=self.grad_max)
-            self._initial_loss = loss.item()
+            loss, _, _ = self._model_potential_and_grad(x, y)
+            self._initial_loss = loss
 
         self.optimizer.initial_step()
 
-        self.optimizer.zero_grad()
-        loss = self.model.potential_avg(x, y, self.eff_num_data)
-        loss.backward()
-        for p in self.optimizer.param_groups[0]["params"]:
-            p.grad.clamp_(min=-self.grad_max, max=self.grad_max)
-
+        loss, log_prior, potential = self._model_potential_and_grad(x, y)
         self.optimizer.final_step()
 
         lr = self.optimizer.param_groups[0]["lr"]
         if lr_decay:
             self.scheduler.step()
 
-        loss_ = loss.item()
         delta_energy = self.optimizer.delta_energy(self._initial_loss, loss_)
         # Because we never `commit` the sampler by calling `self.optimizer.final_step`,
         # the delta_energy is relative to the initial state.
-        rejected, log_accept_prob = self.optimizer.maybe_reject(delta_energy)
+        total_energy = delta_energy
+
         if isinstance(self.optimizer, mcmc.HMC):
             self.optimizer.sample_momentum()
-        self._initial_loss = loss_
+        self._initial_loss = loss
 
         if store_metrics:
-            self.store_metrics(i=i, loss_=loss_, lr=lr, delta_energy=delta_energy,
-                               log_accept_prob=log_accept_prob,
-                               rejected=rejected)
-        return loss_
+            self.store_metrics(i=i, loss=loss, log_prior=log_prior,
+                               potential=potential, lr=lr,
+                               delta_energy=delta_energy,
+                               total_energy=total_energy,
+                               rejected=None)
+        return loss
 
 class HMCRunner(VerletSGLDRunner):
     def _make_optimizer(self, params):

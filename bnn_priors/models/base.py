@@ -42,16 +42,16 @@ class AbstractModel(nn.Module, abc.ABC):
         unbiased minibatch estimate of log-likelihood
         log p(y | x, self.parameters)
         """
-        # compute batch size using zeroth dim of inputs (log_prob_batch doesn't work with RaoB).
-        assert x.shape[0] == y.shape[0]
-        batch_size = x.shape[0]
-        return self(x).log_prob(y).sum() * (eff_num_data/batch_size)
+        return self.log_likelihood_avg(x, y) * eff_num_data
 
-    def log_likelihood_avg(self, x: torch.Tensor, y: torch.Tensor, eff_num_data):
+    def log_likelihood_avg(self, x: torch.Tensor, y: torch.Tensor):
         """
         unbiased minibatch estimate of log-likelihood per datapoint
         """
-        return self.log_likelihood(x, y, eff_num_data)/eff_num_data
+        # compute batch size using zeroth dim of inputs (log_prob_batch doesn't work with RaoB).
+        assert x.shape[0] == y.shape[0]
+        batch_size = x.shape[0]
+        return self(x).log_prob(y).sum() / batch_size
 
     def potential(self, x, y, eff_num_data):
         """
@@ -61,9 +61,15 @@ class AbstractModel(nn.Module, abc.ABC):
         """
         return - (self.log_likelihood(x, y, eff_num_data) + self.log_prior())
 
+    def split_potential_avg(self, x, y, eff_num_data):
+        loss = self.log_likelihood_avg(x, y).neg()
+        log_prior = self.log_prior()
+        return loss, log_prior, loss - log_prior/eff_num_data
+
+
     def potential_avg(self, x, y, eff_num_data):
         "-log p(y, params | x)"
-        return self.potential(x, y, eff_num_data) / eff_num_data
+        return -(self.log_likelihood_avg(x, y) + self.log_prior()/eff_num_data)
 
     def params_dict(self):
         return OrderedDict(self.named_parameters())
