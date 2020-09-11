@@ -46,6 +46,8 @@ def get_data(data, device):
 def get_prior(prior_name):
     if prior_name == "mixture":
         return prior.Mixture
+    elif prior_name == "scalemixture":
+        return prior.ScaleMixture
     else:
         return prior.get_prior(prior_name)
 

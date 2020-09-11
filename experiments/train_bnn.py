@@ -67,7 +67,7 @@ def config():
     device = "try_cuda"
     save_samples = True
     run_id = uuid.uuid4().hex
-    log_dir = Path(__file__).parent.parent/"logs"
+    log_dir = Path(__file__).resolve().parent.parent/"logs"
     if log_dir is not None:
         os.makedirs(log_dir, exist_ok=True)
         ex.observers.append(FileStorageObserver(log_dir))
@@ -147,7 +147,7 @@ def main(inference, model, width, n_samples, warmup,
     if save_samples:
         samples_file = os.path.join(TMPDIR, f"samples_{run_id}.pt")
         t.save(samples, samples_file)
-        ex.add_artifact(filename=samples_file, name="samples.pt")
+        _run.add_artifact(filename=samples_file, name="samples.pt")
         os.remove(samples_file)
 
     model.eval()
