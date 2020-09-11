@@ -26,7 +26,9 @@ def get_prior(prior_name):
              "laplace_gamma": LaplaceGamma,
              "laplace_uniform": LaplaceUniform,
              "student-t_gamma": StudentTGamma,
-             "student-t_uniform": StudentTUniform}
+             "student-t_uniform": StudentTUniform,
+             "gennorm": GenNorm,
+             "gennorm_uniform": GenNormUniform}
     assert prior_name in priors
     return priors[prior_name]
 
@@ -94,7 +96,9 @@ class Mixture(LocScale):
                     "lg": "laplace_gamma",
                     "lu": "laplace_uniform",
                     "sg": "student-t_gamma",
-                    "su": "student-t_uniform"}
+                    "su": "student-t_uniform",
+                    "gn": "gennorm",
+                    "gnu": "gennorm_uniform"}
         abrvs = comp_string.split("_")
         assert all([abrv in comp_dict for abrv
                     in abrvs]), "Unknown mixture components"
