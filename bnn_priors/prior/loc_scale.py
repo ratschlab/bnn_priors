@@ -5,9 +5,11 @@ from gpytorch.utils.transforms import inv_softplus
 
 from .base import Prior
 from .transformed import Gamma, Uniform, HalfCauchy
+from .distributions import GeneralizedNormal
+
 
 __all__ = ('LocScale', 'Normal', 'Laplace', 'Cauchy', 'StudentT', 'LogNormal',
-           'Improper')
+           'Improper', 'GenNorm')
 
 
 class LocScale(Prior):
@@ -39,6 +41,12 @@ class StudentT(LocScale):
     _dist = td.StudentT
     def __init__(self, shape, loc, scale, df=2):
         Prior.__init__(self, shape, df=df, loc=loc, scale=scale)
+        
+        
+class GenNorm(LocScale):
+    _dist = GeneralizedNormal
+    def __init__(self, shape, loc, scale, beta=0.5):
+        Prior.__init__(self, shape, loc=loc, scale=scale, beta=beta)
 
 
 class LogNormal(LocScale):
