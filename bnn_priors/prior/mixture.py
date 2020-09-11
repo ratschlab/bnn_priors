@@ -30,7 +30,10 @@ def get_prior(prior_name):
              "student-t_uniform": StudentTUniform,
              "gennorm": GenNorm,
              "gennorm_uniform": GenNormUniform,
-             "gaussian_empirical": NormalEmpirical}
+             "gaussian_empirical": NormalEmpirical,
+             "laplace_empirical": LaplaceEmpirical,
+             "student-t_empirical": StudentTEmpirical,
+             "gennorm_empirical": GenNormEmpirical}
     assert prior_name in priors
     return priors[prior_name]
 
@@ -100,7 +103,11 @@ class Mixture(LocScale):
                     "sg": "student-t_gamma",
                     "su": "student-t_uniform",
                     "gn": "gennorm",
-                    "gnu": "gennorm_uniform"}
+                    "gnu": "gennorm_uniform",
+                    "ge": "gaussian_empirical",
+                    "le": "laplace_empirical",
+                    "se": "student-t_empirical",
+                    "gne": "gennorm_empirical"}
         abrvs = comp_string.split("_")
         assert all([abrv in comp_dict for abrv
                     in abrvs]), "Unknown mixture components"

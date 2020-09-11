@@ -9,7 +9,7 @@ from .distributions import GeneralizedNormal
 
 
 __all__ = ('LocScale', 'Normal', 'Laplace', 'Cauchy', 'StudentT', 'LogNormal',
-           'Improper', 'GenNorm')
+           'Improper', 'PositiveImproper', 'GenNorm')
 
 
 class LocScale(Prior):
@@ -61,3 +61,9 @@ class Improper(Normal):
     "Improper prior that samples like a Normal"
     def log_prob(self):
         return 0.0
+    
+
+class PositiveImproper(Improper):
+    """Improper prior for positive things."""
+    def forward(self):
+        return torch.nn.functional.softplus(self.p)
