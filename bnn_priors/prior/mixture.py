@@ -7,6 +7,7 @@ from .base import *
 from .loc_scale import *
 from .transformed import *
 from .hierarchical import *
+from .empirical_bayes import *
 
 
 __all__ = ('Mixture', 'get_prior', 'ScaleMixture')
@@ -28,7 +29,8 @@ def get_prior(prior_name):
              "student-t_gamma": StudentTGamma,
              "student-t_uniform": StudentTUniform,
              "gennorm": GenNorm,
-             "gennorm_uniform": GenNormUniform}
+             "gennorm_uniform": GenNormUniform,
+             "gaussian_empirical": NormalEmpirical}
     assert prior_name in priors
     return priors[prior_name]
 

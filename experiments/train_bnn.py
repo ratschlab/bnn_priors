@@ -62,7 +62,7 @@ def config():
     momentum = 0.9
     precond_update = None
     lr = 5e-4
-    he_init = False
+    he_init = True
     batch_size = None
     batchnorm = True
     device = "try_cuda"
