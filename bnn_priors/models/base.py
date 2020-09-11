@@ -97,7 +97,7 @@ class AbstractModel(nn.Module, abc.ABC):
                     full_name = prefix + ("" if prefix == "" else ".") + name
                     pmd[full_name] = _PmdItem(name, mod, True, param)
 
-                for name, buffer in mod.named_parameters(recurse=False):
+                for name, buffer in mod.named_buffers(recurse=False):
                     full_name = prefix + ("" if prefix == "" else ".") + name
                     pmd[full_name] = _PmdItem(name, mod, False, buffer)
 

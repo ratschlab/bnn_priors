@@ -5,11 +5,11 @@ from .utils import get_cosine_schedule
 from . import mcmc
 import math
 from bnn_priors import prior
-import itertools
 
 
 # def _named_params_and_buffers(model):
-#     # TODO: this doesn't work yet (unused)
+#     # TODO don't copy parameters twice
+#     # See issue #76 , https://github.com/ratschlab/projects2020_BNN-priors/issues/76
 #     return itertools.chain(
 #         model.named_parameters(),
 #         model.named_buffers())
