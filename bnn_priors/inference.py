@@ -81,16 +81,13 @@ class SGLDRunner:
         self.cycles = cycles
         self.precond_update = precond_update
         self.add_scalar_fn = add_scalar_fn
-        self.summary_writer = summary_writer
 
-        self.param_names, self._params = zip(*prior.named_params_with_prior(model))
-        if set(self._params) != set(model.parameters()):
-            raise NotImplementedError(
-                "Some parameters don't have a prior assigned, I don't know what "
-                "to do. Should I optimise them?")
-
+        self.param_names, self._params = zip(*model.named_parameters())
         self._samples = {name: torch.zeros(torch.Size([self.num_samples*cycles])+p_or_b.shape)
-                         for name, p_or_b in _named_params_and_buffers(model)}
+                         for name, p_or_b in model.state_dict().items()}
+        assert (set(self._samples.keys()) ==
+                set(name for name, _ in _named_params_and_buffers(self.model))),\
+                "_named_params_and_buffers is incorrect"
         self.metrics = {}
 
     def _make_optimizer(self, params):
@@ -143,7 +140,7 @@ class SGLDRunner:
 
                 sampling_epoch = epoch - (self.descent_epochs + self.warmup_epochs)
                 if (0 <= sampling_epoch) and (sampling_epoch % self.skip == 0):
-                    for name, param in _named_params_and_buffers(model):
+                    for name, param in _named_params_and_buffers(self.model):
                         self._samples[name][(self.num_samples*cycle)+(sampling_epoch//self.skip)] = param
 
     def add_scalar(self, name, value, step):

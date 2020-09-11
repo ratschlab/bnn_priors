@@ -135,7 +135,7 @@ def main(config_file, batch_size, n_samples, run_dir, eval_data, data, skip_firs
     if calibration_eval and not (eval_data[:7] == "cifar10" or eval_data[-5:] == "mnist"):
         raise NotImplementedError("The calibration is not defined for this type of data.")
         
-    if ood_eval and not (eval_data[:7] == "cifar10" or eval_data[-5:] == "mnist"):
+    if ood_eval and not (eval_data[:7] == "cifar10" or eval_data[-5:] == "mnist" or eval_data == "svhn"):
         raise NotImplementedError("The OOD error is not defined for this type of data.")
 
     results = evaluate_model(model, dataloader_test, samples, eval_data)
