@@ -64,16 +64,15 @@ class Gamma(Prior):
     
 class HalfCauchy(Prior):
     _dist = td.HalfCauchy
-    def __init__(self, shape, scale=1., multiplyer=1.):
-        super().__init__(shape, scale)
-        self.multiplyer = multiplyer
+    def __init__(self, shape, scale=1., multiplier=1.):
+        super().__init__(shape, scale=scale, multiplier=multiplier)
 
     def _sample_value(self, shape: torch.Size):
         x = super()._sample_value(shape)
         return inv_softplus(x)
 
     def forward(self):
-        return torch.nn.functional.softplus(self.p) * self.multiplyer
+        return torch.nn.functional.softplus(self.p) * self.multiplier
 
     def log_prob(self):
         return self._dist_obj().log_prob(self()).sum()
