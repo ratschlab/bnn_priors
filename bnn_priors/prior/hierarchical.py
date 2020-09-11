@@ -69,7 +69,7 @@ class GenNormUniform(GenNorm):
     
 class Horseshoe(Normal):
     def __init__(self, shape, loc, scale, hyperscale=1., gradient_clip=1.):
-        scale_prior = HalfCauchy(shape=[], scale=hyperscale, multiplyer=scale)
+        scale_prior = HalfCauchy(shape=[], scale=hyperscale, multiplier=scale)
         with torch.no_grad():
             scale_prior.p.data = inv_softplus(torch.tensor(1.))
         super().__init__(shape, loc, scale_prior)
