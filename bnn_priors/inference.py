@@ -1,4 +1,5 @@
 import numpy as np
+import warnings
 from tqdm import tqdm
 import torch
 from .utils import get_cosine_schedule
@@ -242,7 +243,10 @@ class VerletSGLDRunner(SGLDRunner):
 
         lr = self.optimizer.param_groups[0]["lr"]
         if lr_decay:
-            self.scheduler.step()
+            with warnings.catch_warnings():
+                # TODO: PyTorch complains about calling the LR step before the optimizer step
+                warnings.simplefilter("ignore")
+                self.scheduler.step()
 
         loss_ = loss.item()
         delta_energy = self.optimizer.delta_energy(self._initial_loss, loss_)

@@ -43,6 +43,14 @@ def get_data(data, device):
     return dataset
 
 
+def he_initialize(model):
+    for name, param in model.named_parameters():
+        if "weight_prior.p" in name:
+            t.nn.init.kaiming_normal_(param.data, mode='fan_in', nonlinearity='relu')
+        elif "bias_prior.p" in name:
+            t.nn.init.zeros_(param.data)
+
+
 def get_prior(prior_name):
     if prior_name == "mixture":
         return prior.Mixture
