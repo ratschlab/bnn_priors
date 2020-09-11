@@ -144,17 +144,11 @@ def main(inference, model, width, n_samples, warmup,
     mcmc.run(progressbar=True)
     samples = mcmc.get_samples()
 
-    bn_params = {k:v for k,v in model.state_dict().items() if "bn" in k}
-
     if save_samples:
         samples_file = os.path.join(TMPDIR, f"samples_{run_id}.pt")
-        bn_file = os.path.join(TMPDIR, f"bn_params_{run_id}.pt")
         t.save(samples, samples_file)
-        t.save(bn_params, bn_file)
         ex.add_artifact(filename=samples_file, name="samples.pt")
-        ex.add_artifact(filename=bn_file, name="bn_params.pt")
         os.remove(samples_file)
-        os.remove(bn_file)
 
     model.eval()
 

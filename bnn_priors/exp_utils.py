@@ -97,7 +97,8 @@ def evaluate_model(model, dataloader_test, samples, n_samples,
 
     for i in range(n_samples):
         sample = dict((k, v[i]) for k, v in samples.items())
-        with t.no_grad(), model.using_params(sample):
+        with t.no_grad():
+            model.load_state_dict(sample)
             lps_sample = []
             accs_sample = []
             probs_sample = []
@@ -105,9 +106,10 @@ def evaluate_model(model, dataloader_test, samples, n_samples,
                 pred = model(batch_x)
                 lps_batch = pred.log_prob(batch_y)
                 if eval_data[:7] == "cifar10" or eval_data[-5:] == "mnist":
+                    # shape: batch_size
                     accs_batch = (t.argmax(pred.probs, dim=1) == batch_y).float()
                 else:
-                    accs_batch = (pred.mean - batch_y)**2.
+                    accs_batch = (pred.mean - batch_y)**2.  # shape: batch_size
                 if calibration_eval:
                     probs_batch = pred.probs
                 else:
@@ -119,8 +121,8 @@ def evaluate_model(model, dataloader_test, samples, n_samples,
             accs.append(accs_sample)
             probs.append(probs_sample)
             
-    lps = t.tensor(lps, dtype=t.float64)
-    lps = lps.logsumexp(0) - math.log(n_samples)
+    lps = t.tensor(lps, dtype=t.float64)  # n_samples,len(dataset)
+    lps = lps.logsumexp(1) - math.log(lps.size(1))
     accs = t.tensor(accs, dtype=t.float64)
     accs = accs.mean(dim=1)
     
@@ -133,7 +135,12 @@ def evaluate_model(model, dataloader_test, samples, n_samples,
     
     results = {}
     if likelihood_eval:
-        results["lp_mean"] = lps.mean().item()
+        results["lp_ensemble"] = lps.logsumexp(0).item() - math.log(len(lps))
+        # lps.exp().square().mean(0).sqrt().log() / math.sqrt(len(lps))
+        results["lp_ensemble_std"] = lps.mul(2.).logsumexp(0).div(2.).item()
+        results["lp_ensemble_stderr"] = results["lp_ensemble_std"] / math.sqrt(len(lps))
+
+        results["lp_mean"] =  lps.mean().item()
         results["lp_std"] =  lps.std().item()
         results["lp_stderr"] = lps.std().item() / math.sqrt(len(lps))
     if accuracy_eval:
@@ -142,13 +149,21 @@ def evaluate_model(model, dataloader_test, samples, n_samples,
         results["acc_stderr"] = accs.std().item() / math.sqrt(len(accs))
     if calibration_eval:
         results["ece"] = eces.mean().item()
+        results["ece_std"] = eces.std().item()
+        results["ece_stderr"] = eces.std().item()  / math.sqrt(len(accs))
+
         results["ace"] = aces.mean().item()
+        results["ace_std"] = aces.std().item()
+        results["ace_stderr"] = aces.std().item()  / math.sqrt(len(accs))
+
         results["rmsce"] = rmsces.mean().item()
-        
+        results["rmsce_std"] = rmsces.std().item()
+        results["rmsce_stderr"] = rmsces.std().item()  / math.sqrt(len(accs))
+
     return results
 
 
-def evaluate_ood(model, dataloader_train, dataloader_test, samples, bn_params, n_samples):
+def evaluate_ood(model, dataloader_train, dataloader_test, samples, n_samples):
 
     loaders = {"train": dataloader_train, "eval": dataloader_test}
     probs = {"train": [], "eval": []}
@@ -157,20 +172,23 @@ def evaluate_ood(model, dataloader_train, dataloader_test, samples, bn_params, n
 
     for i in range(n_samples):
         sample = dict((k, v[i]) for k, v in samples.items())
-        sampled_state_dict = {**sample, **bn_params}
         with t.no_grad():
-            # TODO: get model.using_params() to work with batchnorm params
-            model.load_state_dict(sampled_state_dict)
+            model.load_state_dict(sample)
             for dataset in ["train", "eval"]:
                 probs_sample = []
                 for batch_x, batch_y in loaders[dataset]:
                     pred = model(batch_x)
-                    probs_batch, _ = pred.probs.max(dim=1)
-                    probs_sample.extend(list(probs_batch.cpu().numpy()))
+                    # shape: len(batch) x n_classes
+                    probs_sample.append(pred.probs.cpu().numpy())
+                # shape: len(dataset) x n_classes
+                probs_sample = np.concatenate(probs_sample, axis=0)
                 probs[dataset].append(probs_sample)
 
     for dataset in ["train", "eval"]:
-        probs[dataset] = t.tensor(probs[dataset]).mean(dim=0).numpy()
+        # axis=0 -> over samples of the model
+        probs[dataset] = np.mean(probs[dataset], axis=0)
+        # axis=-1 -> over class probabilities
+        probs[dataset] = np.max(probs[dataset], axis=-1)
         
     labels = np.concatenate([np.ones_like(probs["train"]), np.zeros_like(probs["eval"])])
     probs_cat = np.concatenate([probs["train"], probs["eval"]])
@@ -185,23 +203,26 @@ def evaluate_ood(model, dataloader_train, dataloader_test, samples, bn_params, n
     return results
 
 
-def evaluate_marglik(model, train_samples, eval_samples, bn_params, n_samples):
+def evaluate_marglik(model, train_samples, eval_samples, n_samples):
     log_priors = []
 
     for i in range(n_samples):
         train_sample = dict((k, v[i]) for k, v in train_samples.items())
         eval_sample = dict((k, v[i]) for k, v in eval_samples.items())
-        sampled_state_dict = {**train_sample, **bn_params, **eval_sample}
+        # Ideally we would only use eval_sample, but the (possibly hierarchical)
+        # model has more parameters than eval_sample. This way we start with
+        # parameters in `train_sample` and overwrite them with all parameters
+        # that are in `eval_sample`
+        sampled_state_dict = {**train_sample, **eval_sample}
         with t.no_grad():
-            # TODO: get model.using_params() to work with batchnorm params
-            model.load_state_dict(sampled_state_dict)
+            model.load_state_dict(samples)
             log_prior = model.log_prior().item()
             log_priors.append(log_prior)
         
     log_priors = t.tensor(log_priors)
     
     results = {}
+    results["simple_logmarglik"] = log_priors.logsumexp(dim=0).item() - math.log(n_samples)
+    results["mean_loglik"] = log_priors.mean().item()
     results["simple_marglik"] = log_priors.exp().mean().item()
-    results["simple_logmarglik"] = log_priors.mean().item()
-    
     return results
