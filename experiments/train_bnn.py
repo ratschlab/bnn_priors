@@ -62,6 +62,7 @@ def config():
     momentum = 0.9
     precond_update = None
     lr = 5e-4
+    he_init = False
     batch_size = None
     batchnorm = True
     device = "try_cuda"
@@ -98,8 +99,12 @@ def evaluate_model(model, dataloader_test, samples, data, n_samples):
                    eval_data=data, likelihood_eval=True, accuracy_eval=True, calibration_eval=False)
 
 
+def he_initialize(model):
+    import pdb; pdb.set_trace()
+
+
 @ex.automain
-def main(inference, model, width, n_samples, warmup,
+def main(inference, model, width, n_samples, warmup, he_init,
          burnin, skip, metrics_skip, cycles, temperature, momentum,
          precond_update, lr, batch_size, save_samples, run_id, _run):
     assert inference in ["SGLD", "HMC", "VerletSGLD", "OurHMC"]
@@ -117,6 +122,9 @@ def main(inference, model, width, n_samples, warmup,
     y_test = data.norm.test_y
 
     model = get_model(x_train=x_train, y_train=y_train)
+    
+    if he_init:
+        he_initialize(model)
             
     if inference == "HMC":
         kernel = HMC(potential_fn=lambda p: model.get_potential(x_train, y_train, eff_num_data=1*x_train.shape[0])(p),
