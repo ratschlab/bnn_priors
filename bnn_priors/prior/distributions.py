@@ -44,9 +44,9 @@ class GeneralizedNormal(Distribution):
     def __init__(self, loc, scale, beta, validate_args=None):
         self.loc, self.scale = broadcast_all(loc, scale)
         (self.beta,) = broadcast_all(beta)
-        self.scipy_dist = stats.gennorm(loc=self.loc.detach().numpy(),
-                            scale=self.scale.detach().numpy(),
-                            beta=self.beta.detach().numpy())
+        self.scipy_dist = stats.gennorm(loc=self.loc.cpu().detach().numpy(),
+                            scale=self.scale.cpu().detach().numpy(),
+                            beta=self.beta.cpu().detach().numpy())
         if isinstance(loc, Number) and isinstance(scale, Number):
             batch_shape = torch.Size()
         else:
