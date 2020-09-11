@@ -65,7 +65,8 @@ class Gamma(Prior):
 class HalfCauchy(Prior):
     _dist = td.HalfCauchy
     def __init__(self, shape, scale=1., multiplier=1.):
-        super().__init__(shape, scale=scale, multiplier=multiplier)
+        super().__init__(shape, scale=scale)
+        self.multiplier = multiplier
 
     def _sample_value(self, shape: torch.Size):
         x = super()._sample_value(shape)
