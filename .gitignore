@@ -134,3 +134,4 @@ logs
 results
 bnn_priors/data/CIFAR/cifar10/*
 */lsf.o*
+figures/*.pdf
