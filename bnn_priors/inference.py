@@ -181,7 +181,7 @@ class SGLDRunner:
         if store_metrics:
             self.store_metrics(i=i, loss=loss, log_prior=log_prior,
                                potential=potential, lr=lr)
-        return loss_
+        return loss
 
     def get_samples(self):
         """
@@ -248,7 +248,7 @@ class VerletSGLDRunner(SGLDRunner):
                 warnings.simplefilter("ignore")
                 self.scheduler.step()
 
-        delta_energy = self.optimizer.delta_energy(self._initial_loss, loss_)
+        delta_energy = self.optimizer.delta_energy(self._initial_loss, loss)
         # Because we never `commit` the sampler by calling `self.optimizer.final_step`,
         # the delta_energy is relative to the initial state.
         total_energy = delta_energy
