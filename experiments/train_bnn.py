@@ -65,6 +65,7 @@ def config():
     batch_size = None
     batchnorm = True
     device = "try_cuda"
+    save_samples = True
     run_id = uuid.uuid4().hex
     log_dir = Path(__file__).parent.parent/"logs"
     if log_dir is not None:
@@ -100,8 +101,7 @@ def evaluate_model(model, dataloader_test, samples, data, n_samples):
 @ex.automain
 def main(inference, model, width, n_samples, warmup,
          burnin, skip, metrics_skip, cycles, temperature, momentum,
-         precond_update, lr, batch_size, save_samples, run_id):
-         precond_update, lr, batch_size, _run):
+         precond_update, lr, batch_size, save_samples, run_id, _run):
     assert inference in ["SGLD", "HMC", "VerletSGLD", "OurHMC"]
     assert width > 0
     assert n_samples > 0
