@@ -63,8 +63,9 @@ class GeneralizedNormal(Distribution):
         return new
 
 
-    def rsample(self, sample_shape=torch.Size()):
-        return torch.tensor(self.scipy_dist.rvs(list(sample_shape))).to(self.loc)
+    def sample(self, sample_shape=torch.Size()):
+        return torch.tensor(self.scipy_dist.rvs(list(sample_shape)),
+                            dtype=self.loc.dtype, device=self.loc.device)
 
 
     def log_prob(self, value):
@@ -77,7 +78,8 @@ class GeneralizedNormal(Distribution):
     def cdf(self, value):
         if isinstance(value, torch.Tensor):
             value = value.numpy()
-        return torch.tensor(self.scipy_dist.cdf(value)).to(self.loc)
+        return torch.tensor(self.scipy_dist.cdf(value),
+                            dtype=self.loc.dtype, device=self.loc.device)
 
 
     def icdf(self, value):

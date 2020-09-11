@@ -8,16 +8,16 @@ from scipy import stats
 from .test_eff_dim import requires_float64
 
 
-def _generic_logp_test(prior_class, size, td_class=NotImplemented, np_pdf=None, **kwargs):
+def _generic_logp_test(prior_class, size, td_class=NotImplemented, np_logpdf=None, **kwargs):
     dist = prior_class(size, **kwargs)
-    if np_pdf is None:
+    if np_logpdf is None:
         tdist = td_class(**kwargs)
-        t_pdf = tdist.log_prob
+        t_logpdf = tdist.log_prob
     else:
         @torch.no_grad()
-        def t_pdf(x):
-            return torch.tensor(np_pdf(x.numpy()))
-    assert np.allclose(dist.log_prob().item(), t_pdf(dist()).sum().item())
+        def t_logpdf(x):
+            return torch.tensor(np_logpdf(x.detach().numpy()))
+    assert np.allclose(dist.log_prob().item(), t_logpdf(dist()).sum().item())
 
 
 def _generic_positive_test(prior_class, **kwargs):
@@ -81,14 +81,14 @@ class PriorTest(unittest.TestCase):
         beta = 0.7
         def np_cdf(x):
             return stats.gennorm.cdf(x, beta=beta, loc=loc, scale=scale)
-        # _generic_sample_test(prior.GenNorm, np_cdf=np_cdf, loc=loc, scale=scale,
-        #                      beta=beta)
+        _generic_sample_test(prior.GenNorm, np_cdf=np_cdf, loc=loc, scale=scale,
+                             beta=beta)
         _generic_positive_test(prior.GenNorm, loc=loc, scale=scale, beta=beta)
 
-        def np_pdf(x):
-            return stats.gennorm.pdf(x, beta=beta, loc=loc, scale=scale)
-        _generic_logp_test(prior.GenNorm, torch.Size([2, 2]), np_pdf=np_pdf,
-                           loc=loc, scale=scale, beta=beta)
+        def np_logpdf(x):
+            return stats.gennorm.logpdf(x, beta=beta, loc=loc, scale=scale)
+        _generic_logp_test(prior.GenNorm, torch.Size([2, 2]),
+                           np_logpdf=np_logpdf, loc=loc, scale=scale, beta=beta)
 
     def test_loc_scale_log_prob(self):
         size = torch.Size([3, 2])
