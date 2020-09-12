@@ -39,7 +39,7 @@ def get_prior(prior_name):
 
 
 class Mixture(LocScale):
-    def __init__(self, shape, loc, scale, components="g_l_s_c"):
+    def __init__(self, shape, loc, scale, components="g_l_s_c_gn"):
         components=self.get_components(components)
         assert len(components) > 0, "Too few mixture components"
         super().__init__(shape, loc, scale)
