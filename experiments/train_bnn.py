@@ -16,7 +16,7 @@ from sacred import Experiment
 from sacred.utils import apply_backspaces_and_linefeeds
 from sacred.observers import FileStorageObserver
 
-from bnn_priors.data import UCI, CIFAR10
+from bnn_priors.data import UCI, CIFAR10, Synthetic
 from bnn_priors.models import RaoBDenseNet, DenseNet, PreActResNet18, PreActResNet34
 from bnn_priors.prior import LogNormal
 from bnn_priors import prior
@@ -40,7 +40,7 @@ def config():
     model = "densenet"
     width = 50
     weight_prior = "gaussian"
-    bias_prior = "gaussian"  # TODO: is that a reasonable default?
+    bias_prior = "gaussian"
     weight_loc = 0.
     weight_scale = 2.**0.5
     bias_loc = 0.
@@ -80,8 +80,16 @@ def device(device):
 
 
 @ex.capture
-def get_data(data):
-    return exp_utils.get_data(data, device())
+def get_data(data, batch_size):
+    if data[:9] == "synthetic":
+        _, data, prior = data.split(".")
+        dataset = get_data(data)
+        x_train = dataset.norm.train_X
+        y_train = dataset.norm.train_y
+        net = get_model(x_train=x_train, y_train=y_train, weight_prior=prior, weight_prior_params={})
+        return Synthetic(dataset=dataset, model=net, batch_size=batch_size, device=device())
+    else:
+        return exp_utils.get_data(data, device())
 
 
 @ex.capture
