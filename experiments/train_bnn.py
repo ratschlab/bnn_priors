@@ -23,6 +23,7 @@ from bnn_priors import prior
 import bnn_priors.inference
 from bnn_priors import exp_utils
 from bnn_priors.exp_utils import get_prior
+import tensorboardX
 
 # Makes CUDA faster
 if t.cuda.is_available():
@@ -68,7 +69,7 @@ def config():
     device = "try_cuda"
     save_samples = True
     run_id = uuid.uuid4().hex
-    log_dir = Path(__file__).resolve().parent.parent/"logs"
+    log_dir = str(Path(__file__).resolve().parent.parent/"logs")
     if log_dir is not None:
         os.makedirs(log_dir, exist_ok=True)
         ex.observers.append(FileStorageObserver(log_dir))
@@ -102,7 +103,7 @@ def evaluate_model(model, dataloader_test, samples, data, n_samples):
 @ex.automain
 def main(inference, model, width, n_samples, warmup, he_init,
          burnin, skip, metrics_skip, cycles, temperature, momentum,
-         precond_update, lr, batch_size, save_samples, run_id, _run):
+         precond_update, lr, batch_size, save_samples, run_id, log_dir, _run):
     assert inference in ["SGLD", "HMC", "VerletSGLD", "OurHMC"]
     assert width > 0
     assert n_samples > 0
@@ -121,32 +122,36 @@ def main(inference, model, width, n_samples, warmup, he_init,
     
     if he_init:
         exp_utils.he_initialize(model)
-            
-    if inference == "HMC":
-        kernel = HMC(potential_fn=lambda p: model.get_potential(x_train, y_train, eff_num_data=1*x_train.shape[0])(p),
-             adapt_step_size=False, adapt_mass_matrix=False,
-             step_size=1e-3, num_steps=32)
-        mcmc = MCMC(kernel, num_samples=n_samples, warmup_steps=warmup, initial_params=model.params_dict())
-    else:
-        if inference == "SGLD":
-            runner_class = bnn_priors.inference.SGLDRunner
-        elif inference == "VerletSGLD":
-            runner_class = bnn_priors.inference.VerletSGLDRunner
-        elif inference == "OurHMC":
-            runner_class = bnn_priors.inference.HMCRunner
 
-        sample_epochs = n_samples * skip // cycles
-        epochs_per_cycle = warmup + burnin + sample_epochs
-        if batch_size is None:
-            batch_size = len(data.norm.train)
-        dataloader = t.utils.data.DataLoader(data.norm.train, batch_size=batch_size, shuffle=True, drop_last=True)
-        mcmc = runner_class(model=model, dataloader=dataloader, epochs_per_cycle=epochs_per_cycle,
-                            warmup_epochs=warmup, sample_epochs=sample_epochs, learning_rate=lr,
-                            skip=skip, metrics_skip=metrics_skip, sampling_decay=True, cycles=cycles, temperature=temperature,
-                            momentum=momentum, precond_update=precond_update, add_scalar_fn=_run.log_scalar)
+    tbx_dir = Path(log_dir)/"tbx"
+    os.mkdir(tbx_dir)
+    with tensorboardX.SummaryWriter(tbx_dir) as summary_writer:
+        if inference == "HMC":
+            kernel = HMC(potential_fn=lambda p: model.get_potential(x_train, y_train, eff_num_data=1*x_train.shape[0])(p),
+                adapt_step_size=False, adapt_mass_matrix=False,
+                step_size=1e-3, num_steps=32)
+            mcmc = MCMC(kernel, num_samples=n_samples, warmup_steps=warmup, initial_params=model.params_dict())
+        else:
+            if inference == "SGLD":
+                runner_class = bnn_priors.inference.SGLDRunner
+            elif inference == "VerletSGLD":
+                runner_class = bnn_priors.inference.VerletSGLDRunner
+            elif inference == "OurHMC":
+                runner_class = bnn_priors.inference.HMCRunner
 
-    mcmc.run(progressbar=True)
-    samples = mcmc.get_samples()
+            sample_epochs = n_samples * skip // cycles
+            epochs_per_cycle = warmup + burnin + sample_epochs
+            if batch_size is None:
+                batch_size = len(data.norm.train)
+            dataloader = t.utils.data.DataLoader(data.norm.train, batch_size=batch_size, shuffle=True, drop_last=True)
+            mcmc = runner_class(model=model, dataloader=dataloader, epochs_per_cycle=epochs_per_cycle,
+                                warmup_epochs=warmup, sample_epochs=sample_epochs, learning_rate=lr,
+                                skip=skip, metrics_skip=metrics_skip, sampling_decay=True, cycles=cycles, temperature=temperature,
+                                momentum=momentum, precond_update=precond_update,
+                                add_scalar_fn=summary_writer.add_scalar)
+
+        mcmc.run(progressbar=True)
+        samples = mcmc.get_samples()
 
     if save_samples:
         samples_file = os.path.join(TMPDIR, f"samples_{run_id}.pt")
