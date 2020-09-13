@@ -112,7 +112,7 @@ class SGLDRunner:
             optimizer=self.optimizer, lr_lambda=schedule)
 
         epochs_since_start = -1
-        step = 0  # only used for `add_scalar`, must start at 0 and never reset
+        step = 0  # used for `add_scalar`, must start at 0 and never reset
         for cycle in range(self.cycles):
             metrics_step = 0  # Used for metrics skip
 
@@ -128,9 +128,10 @@ class SGLDRunner:
                 for g in self.optimizer.param_groups:
                     g['temperature'] = 0 if epoch < self.descent_epochs else self.temperature
 
-                for (x, y) in self.dataloader:
-                    store_metrics = (metrics_step % self.metrics_skip == 0)
-                    self.step(step, x, y, store_metrics)
+                for i, (x, y) in enumerate(self.dataloader):
+                    self.step(step, x, y,
+                              store_metrics=(metrics_step % self.metrics_skip == 0),
+                              initial_step=(i == 0))
                     step += 1
                     metrics_step += 1
 
@@ -159,7 +160,7 @@ class SGLDRunner:
             p.grad.clamp_(min=-self.grad_max, max=self.grad_max)
         return loss.item(), log_prior.item(), potential.item()
 
-    def step(self, i, x, y, store_metrics, lr_decay=True):
+    def step(self, i, x, y, store_metrics, lr_decay=True, **_):
         """
         Perform one step of SGLD on the model.
 
@@ -231,38 +232,44 @@ class VerletSGLDRunner(SGLDRunner):
             lr=self.learning_rate, num_data=self.eff_num_data,
             momentum=self.momentum, temperature=self.temperature)
 
-    def step(self, i, x, y, store_metrics, lr_decay=True):
-        if i == 0:
-            loss, _, _ = self._model_potential_and_grad(x, y)
-            self._initial_loss = loss
-
-        self.optimizer.initial_step()
-
+    def step(self, i, x, y, store_metrics, lr_decay=True, initial_step=False, final_step=False):
         loss, log_prior, potential = self._model_potential_and_grad(x, y)
-        self.optimizer.final_step()
-
         lr = self.optimizer.param_groups[0]["lr"]
+
+        if i == 0:  # The very first step
+            self.optimizer.initial_step()
+            self._initial_loss = loss
+            self._total_energy = 0.
+            delta_energy = self.optimizer.delta_energy(self._initial_loss, loss)
+            total_energy = self._total_energy + delta_energy
+
+        elif initial_step:  # It's the first step of an epoch, but not the very first
+            self.optimizer.final_step()
+            if isinstance(self.optimizer, mcmc.HMC):
+                self.optimizer.sample_momentum()
+
+            delta_energy = self.optimizer.delta_energy(self._initial_loss, loss)
+            self._initial_loss = loss
+            self._total_energy += delta_energy
+            total_energy = self._total_energy
+
+            self.optimizer.initial_step()
+
+        else:  # Any intermediate step
+            self.optimizer.step()
+            delta_energy = self.optimizer.delta_energy(self._initial_loss, loss)
+            total_energy = self._total_energy + delta_energy
+
+        self.store_metrics(i=i, loss=loss, log_prior=log_prior,
+                           potential=potential, lr=lr,
+                           delta_energy=delta_energy, total_energy=total_energy,
+                           rejected=None)
+
         if lr_decay:
             with warnings.catch_warnings():
                 # TODO: PyTorch complains about calling the LR step before the optimizer step
                 warnings.simplefilter("ignore")
                 self.scheduler.step()
-
-        delta_energy = self.optimizer.delta_energy(self._initial_loss, loss)
-        # Because we never `commit` the sampler by calling `self.optimizer.final_step`,
-        # the delta_energy is relative to the initial state.
-        total_energy = delta_energy
-
-        if isinstance(self.optimizer, mcmc.HMC):
-            self.optimizer.sample_momentum()
-        self._initial_loss = loss
-
-        if store_metrics:
-            self.store_metrics(i=i, loss=loss, log_prior=log_prior,
-                               potential=potential, lr=lr,
-                               delta_energy=delta_energy,
-                               total_energy=total_energy,
-                               rejected=None)
         return loss
 
 class HMCRunner(VerletSGLDRunner):
