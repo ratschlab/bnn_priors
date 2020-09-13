@@ -220,7 +220,8 @@ class SGLDRunner:
         if delta_energy is not None:
             self.add_scalar("delta_energy", delta_energy, i)
             self.add_scalar("total_energy", total_energy, i)
-            self.add_scalar("acceptance/log_prob", -delta_energy/temperature, i)
+            if temperature > 0:
+                self.add_scalar("acceptance/log_prob", -delta_energy/temperature, i)
         if rejected is not None:
             self.add_scalar("acceptance/rejected", int(rejected), i)
 
