@@ -54,7 +54,7 @@ def he_initialize(model):
             t.nn.init.zeros_(param.data)
 
 
-def get_model(x_train, y_train, model, width, weight_prior, weight_loc,
+def get_model(x_train, y_train, model, width, depth, weight_prior, weight_loc,
              weight_scale, bias_prior, bias_loc, bias_scale, batchnorm,
              weight_prior_params, bias_prior_params):
     assert model in ["densenet", "raobdensenet", "resnet18", "resnet34", "classificationdensenet", "test_gaussian"]
@@ -66,14 +66,14 @@ def get_model(x_train, y_train, model, width, weight_prior, weight_loc,
     weight_prior = get_prior(weight_prior)
     bias_prior = get_prior(bias_prior)
     if model == "densenet":
-        net = DenseNet(x_train.size(-1), y_train.size(-1), width, noise_std=LogNormal((), -1., 0.2),
+        net = DenseNet(x_train.size(-1), y_train.size(-1), width, depth, noise_std=LogNormal((), -1., 0.2),
                         prior_w=weight_prior, loc_w=weight_loc, std_w=weight_scale,
                         prior_b=bias_prior, loc_b=bias_loc, std_b=bias_scale, scaling_fn=scaling_fn,
                       weight_prior_params=weight_prior_params, bias_prior_params=bias_prior_params).to(x_train)
     elif model == "raobdensenet":
         net = RaoBDenseNet(x_train, y_train, width, noise_std=LogNormal((), -1., 0.2)).to(x_train)
     elif model == "classificationdensenet":
-        net = ClassificationDenseNet(x_train.size(-1), y_train.max()+1, width, softmax_temp=1.,
+        net = ClassificationDenseNet(x_train.size(-1), y_train.max()+1, width, depth, softmax_temp=1.,
                         prior_w=weight_prior, loc_w=weight_loc, std_w=weight_scale,
                         prior_b=bias_prior, loc_b=bias_loc, std_b=bias_scale, scaling_fn=scaling_fn,
                         weight_prior_params=weight_prior_params, bias_prior_params=bias_prior_params).to(x_train)

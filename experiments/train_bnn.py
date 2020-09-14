@@ -39,6 +39,7 @@ def config():
     inference = "SGLD"
     model = "densenet"
     width = 50
+    depth = 3
     weight_prior = "gaussian"
     bias_prior = "gaussian"
     weight_loc = 0.
@@ -94,10 +95,10 @@ def get_data(data, batch_size):
 
 
 @ex.capture
-def get_model(x_train, y_train, model, width, weight_prior, weight_loc,
+def get_model(x_train, y_train, model, width, depth, weight_prior, weight_loc,
              weight_scale, bias_prior, bias_loc, bias_scale, batchnorm,
              weight_prior_params, bias_prior_params):
-    return exp_utils.get_model(x_train, y_train, model, width, weight_prior, weight_loc,
+    return exp_utils.get_model(x_train, y_train, model, width, depth, weight_prior, weight_loc,
              weight_scale, bias_prior, bias_loc, bias_scale, batchnorm, weight_prior_params,
                                bias_prior_params)
 

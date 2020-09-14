@@ -21,50 +21,48 @@ def LinearPrior(in_dim, out_dim, prior_w=prior.Normal, loc_w=0., std_w=1.,
                   prior_b((out_dim,), 0., std_b), **bias_prior_params)
 
 
-def DenseNet(in_features, out_features, width, noise_std=1.,
+def DenseNet(in_features, out_features, width, depth=3, noise_std=1.,
              prior_w=prior.Normal, loc_w=0., std_w=2**.5,
              prior_b=prior.Normal, loc_b=0., std_b=1.,
              scaling_fn=None, weight_prior_params={}, bias_prior_params={}):
-    return RegressionModel(
-        nn.Sequential(
-            LinearPrior(in_features, width, prior_w=prior_w, loc_w=loc_w,
+    layers = [LinearPrior(in_features, width, prior_w=prior_w, loc_w=loc_w,
                        std_w=std_w, prior_b=prior_b, loc_b=loc_b, std_b=std_b,
                        scaling_fn=scaling_fn, weight_prior_params=weight_prior_params,
                         bias_prior_params=bias_prior_params),
-            nn.ReLU(),
-            LinearPrior(width, width, prior_w=prior_w, loc_w=loc_w,
+            nn.ReLU()]
+    for _ in range(depth-2):
+        layers.append(LinearPrior(width, width, prior_w=prior_w, loc_w=loc_w,
                        std_w=std_w, prior_b=prior_b, loc_b=loc_b, std_b=std_b,
                        scaling_fn=scaling_fn, weight_prior_params=weight_prior_params,
-                        bias_prior_params=bias_prior_params),
-            nn.ReLU(),
-            LinearPrior(width, out_features, prior_w=prior_w, loc_w=loc_w,
+                        bias_prior_params=bias_prior_params))
+        layers.append(nn.ReLU())
+    layers.append(LinearPrior(width, out_features, prior_w=prior_w, loc_w=loc_w,
                        std_w=std_w, prior_b=prior_b, loc_b=loc_b, std_b=std_b,
                        scaling_fn=scaling_fn, weight_prior_params=weight_prior_params,
-                        bias_prior_params=bias_prior_params)
-        ), noise_std)
+                        bias_prior_params=bias_prior_params))
+    return RegressionModel(nn.Sequential(*layers), noise_std)
 
 
-def ClassificationDenseNet(in_features, out_features, width, softmax_temp=1.,
+def ClassificationDenseNet(in_features, out_features, width, depth=3, softmax_temp=1.,
                            prior_w=prior.Normal, loc_w=0., std_w=2**.5,
                            prior_b=prior.Normal, loc_b=0., std_b=1.,
                            scaling_fn=None, weight_prior_params={}, bias_prior_params={}):
-    return ClassificationModel(
-        nn.Sequential(
-            LinearPrior(in_features, width, prior_w=prior_w, loc_w=loc_w,
+    layers = [LinearPrior(in_features, width, prior_w=prior_w, loc_w=loc_w,
                        std_w=std_w, prior_b=prior_b, loc_b=loc_b, std_b=std_b,
                        scaling_fn=scaling_fn, weight_prior_params=weight_prior_params,
                         bias_prior_params=bias_prior_params),
-            nn.ReLU(),
-            LinearPrior(width, width, prior_w=prior_w, loc_w=loc_w,
+            nn.ReLU()]
+    for _ in range(depth-2):
+        layers.append(LinearPrior(width, width, prior_w=prior_w, loc_w=loc_w,
                        std_w=std_w, prior_b=prior_b, loc_b=loc_b, std_b=std_b,
                        scaling_fn=scaling_fn, weight_prior_params=weight_prior_params,
-                        bias_prior_params=bias_prior_params),
-            nn.ReLU(),
-            LinearPrior(width, out_features, prior_w=prior_w, loc_w=loc_w,
+                        bias_prior_params=bias_prior_params))
+        layers.append(nn.ReLU())
+    layers.append(LinearPrior(width, out_features, prior_w=prior_w, loc_w=loc_w,
                        std_w=std_w, prior_b=prior_b, loc_b=loc_b, std_b=std_b,
                        scaling_fn=scaling_fn, weight_prior_params=weight_prior_params,
-                        bias_prior_params=bias_prior_params)
-        ), softmax_temp)
+                        bias_prior_params=bias_prior_params))
+    return ClassificationModel(nn.Sequential(*layers), softmax_temp)
 
 
 def RaoBDenseNet(x_train: Tensor, y_train: Tensor, width: int,
