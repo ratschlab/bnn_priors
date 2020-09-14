@@ -2,7 +2,7 @@
 
 logdir='../results/200912_synthetic'
 priors_data=( gaussian laplace student-t cauchy gennorm )
-priors_model=( gaussian laplace student-t cauchy gennorm mixture )
+priors_model=( gaussian laplace student-t cauchy gennorm mixture improper )
 scales=( 1.41 )
 temps=( 0.0 1.0 )
 

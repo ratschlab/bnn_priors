@@ -87,6 +87,7 @@ def get_data(data, batch_size):
         x_train = dataset.norm.train_X
         y_train = dataset.norm.train_y
         net = get_model(x_train=x_train, y_train=y_train, weight_prior=prior, weight_prior_params={})
+        net.sample_all_priors()
         return Synthetic(dataset=dataset, model=net, batch_size=batch_size, device=device())
     else:
         return exp_utils.get_data(data, device())
