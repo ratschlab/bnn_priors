@@ -6,6 +6,7 @@ from bnn_priors.data import UCI, CIFAR10, CIFAR10_C, MNIST, RotatedMNIST, Fashio
 from bnn_priors.models import RaoBDenseNet, DenseNet, PreActResNet18, PreActResNet34, ClassificationDenseNet
 from bnn_priors.prior import LogNormal
 from bnn_priors import prior
+from bnn_priors.prior import get_prior
 from bnn_priors.third_party.calibration_error import ece, ace, rmsce
 
 
@@ -51,15 +52,6 @@ def he_initialize(model):
             t.nn.init.kaiming_normal_(param.data, mode='fan_in', nonlinearity='relu')
         elif "bias_prior.p" in name:
             t.nn.init.zeros_(param.data)
-
-
-def get_prior(prior_name):
-    if prior_name == "mixture":
-        return prior.Mixture
-    elif prior_name == "scalemixture":
-        return prior.ScaleMixture
-    else:
-        return prior.get_prior(prior_name)
 
 
 def get_model(x_train, y_train, model, width, weight_prior, weight_loc,
