@@ -3,7 +3,7 @@ import numpy as np
 import time
 from sklearn.metrics import average_precision_score, roc_auc_score
 import torch as t
-from bnn_priors.data import UCI, CIFAR10, CIFAR10_C, MNIST, RotatedMNIST, FashionMNIST, SVHN
+from bnn_priors.data import UCI, CIFAR10, CIFAR10_C, MNIST, RotatedMNIST, FashionMNIST, SVHN, RandomData
 from bnn_priors.models import RaoBDenseNet, DenseNet, PreActResNet18, PreActResNet34, ClassificationDenseNet
 from bnn_priors.prior import LogNormal
 from bnn_priors import prior
@@ -21,7 +21,7 @@ def device(device):
 
 def get_data(data, device):
     assert (data[:3] == "UCI" or data[:7] == "cifar10" or data[-5:] == "mnist"
-            or data in ["svhn"]), f"Unknown data set {data}"
+            or data in ["svhn", "random"]), f"Unknown data set {data}"
     if data[:3] == "UCI":
         uci_dataset = data.split("_")[1]
         assert uci_dataset in ["boston", "concrete", "energy", "kin8nm",
@@ -41,6 +41,8 @@ def get_data(data, device):
         dataset = FashionMNIST(device=device)
     elif data == "svhn":
         dataset = SVHN(device=device)
+    elif data == "random":
+        dataset = RandomData(device=device)
     return dataset
 
 
@@ -150,26 +152,19 @@ def evaluate_model(model, dataloader_test, samples, n_samples,
         # lps.exp().square().mean(0).sqrt().log() / math.sqrt(len(lps))
         results["lp_ensemble_std"] = lps.mul(2.).logsumexp(0).div(2.).item()
         results["lp_ensemble_stderr"] = results["lp_ensemble_std"] / math.sqrt(len(lps))
-
         results["lp_mean"] =  lps.mean().item()
         results["lp_std"] =  lps.std().item()
         results["lp_stderr"] = lps.std().item() / math.sqrt(len(lps))
+        results["lp_last"] = lps[-1].item()
     if accuracy_eval:
         results["acc_mean"] = accs.mean().item()
         results["acc_std"] =  accs.std().item()
         results["acc_stderr"] = accs.std().item() / math.sqrt(len(accs))
+        results["acc_last"] = accs[-1].item()
     if calibration_eval:
         results["ece"] = eces.mean().item()
-        results["ece_std"] = eces.std().item()
-        results["ece_stderr"] = eces.std().item()  / math.sqrt(len(accs))
-
         results["ace"] = aces.mean().item()
-        results["ace_std"] = aces.std().item()
-        results["ace_stderr"] = aces.std().item()  / math.sqrt(len(accs))
-
         results["rmsce"] = rmsces.mean().item()
-        results["rmsce_std"] = rmsces.std().item()
-        results["rmsce_stderr"] = rmsces.std().item()  / math.sqrt(len(accs))
 
     return results
 
@@ -226,7 +221,7 @@ def evaluate_marglik(model, train_samples, eval_samples, n_samples):
         # that are in `eval_sample`
         sampled_state_dict = {**train_sample, **eval_sample}
         with t.no_grad():
-            model.load_state_dict(samples)
+            model.load_state_dict(sampled_state_dict)
             log_prior = model.log_prior().item()
             log_priors.append(log_prior)
         
