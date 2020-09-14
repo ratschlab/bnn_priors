@@ -220,7 +220,7 @@ def evaluate_marglik(model, train_samples, eval_samples, n_samples):
         # that are in `eval_sample`
         sampled_state_dict = {**train_sample, **eval_sample}
         with t.no_grad():
-            model.load_state_dict(samples)
+            model.load_state_dict(sampled_state_dict)
             log_prior = model.log_prior().item()
             log_priors.append(log_prior)
         

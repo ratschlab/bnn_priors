@@ -1,7 +1,7 @@
 #!/bin/bash
 
-exp_dir="../results/200904_mnist"
-eval_samples='../results/200904_mnist/51/samples.pt'
+exp_dir="../results/200911_mnist"
+eval_samples='../results/200911_mnist/13/samples.pt'
 
 config_files=($(ls $exp_dir/*/config.json))
 
