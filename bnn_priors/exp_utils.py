@@ -151,26 +151,19 @@ def evaluate_model(model, dataloader_test, samples, n_samples,
         # lps.exp().square().mean(0).sqrt().log() / math.sqrt(len(lps))
         results["lp_ensemble_std"] = lps.mul(2.).logsumexp(0).div(2.).item()
         results["lp_ensemble_stderr"] = results["lp_ensemble_std"] / math.sqrt(len(lps))
-
         results["lp_mean"] =  lps.mean().item()
         results["lp_std"] =  lps.std().item()
         results["lp_stderr"] = lps.std().item() / math.sqrt(len(lps))
+        results["lp_last"] = lps[-1].item()
     if accuracy_eval:
         results["acc_mean"] = accs.mean().item()
         results["acc_std"] =  accs.std().item()
         results["acc_stderr"] = accs.std().item() / math.sqrt(len(accs))
+        results["acc_last"] = accs[-1].item()
     if calibration_eval:
         results["ece"] = eces.mean().item()
-        results["ece_std"] = eces.std().item()
-        results["ece_stderr"] = eces.std().item()  / math.sqrt(len(accs))
-
         results["ace"] = aces.mean().item()
-        results["ace_std"] = aces.std().item()
-        results["ace_stderr"] = aces.std().item()  / math.sqrt(len(accs))
-
         results["rmsce"] = rmsces.mean().item()
-        results["rmsce_std"] = rmsces.std().item()
-        results["rmsce_stderr"] = rmsces.std().item()  / math.sqrt(len(accs))
 
     return results
 
