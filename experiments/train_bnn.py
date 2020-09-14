@@ -6,6 +6,7 @@ import os
 import math
 import uuid
 import json
+import h5py
 
 import numpy as np
 import torch as t
@@ -61,7 +62,7 @@ def config():
     cycles =  5
     temperature = 1.0
     momentum = 0.9
-    precond_update = None
+    precond_update = 1
     lr = 5e-4
     he_init = True
     batch_size = None
@@ -123,9 +124,8 @@ def main(inference, model, width, n_samples, warmup, he_init,
     if he_init:
         exp_utils.he_initialize(model)
 
-    tbx_dir = Path(log_dir)/"tbx"
-    os.mkdir(tbx_dir)
-    with tensorboardX.SummaryWriter(tbx_dir) as summary_writer:
+    # libver=latest: read file while it is being written
+    with h5py.File(Path(log_dir)/"metrics.h5", "w", libver="latest") as f_metrics:
         if inference == "HMC":
             kernel = HMC(potential_fn=lambda p: model.get_potential(x_train, y_train, eff_num_data=1*x_train.shape[0])(p),
                 adapt_step_size=False, adapt_mass_matrix=False,
@@ -148,7 +148,7 @@ def main(inference, model, width, n_samples, warmup, he_init,
                                 warmup_epochs=warmup, sample_epochs=sample_epochs, learning_rate=lr,
                                 skip=skip, metrics_skip=metrics_skip, sampling_decay=True, cycles=cycles, temperature=temperature,
                                 momentum=momentum, precond_update=precond_update,
-                                add_scalar_fn=summary_writer.add_scalar)
+                                add_scalars_fn=exp_utils.HDF5Metrics(f_metrics).add_scalar)
 
         mcmc.run(progressbar=True)
         samples = mcmc.get_samples()

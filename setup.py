@@ -13,8 +13,7 @@ setup(
     install_requires=[
         "torch>=1.5.0<1.6",
         "torchvision>=0.6<0.7",
-        "tensorboardX>=2.1<2.2",
-        "tensorboard>=2.1<2.2",
+        "h5py>=2.10<2.11",
         "sacred>=0.8<0.9",
         "gpytorch>=1.0<1.2",
         "pyro-ppl>=1.3<1.4",

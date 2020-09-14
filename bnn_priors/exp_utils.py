@@ -1,5 +1,6 @@
 import math
 import numpy as np
+import time
 from sklearn.metrics import average_precision_score, roc_auc_score
 import torch as t
 from bnn_priors.data import UCI, CIFAR10, CIFAR10_C, MNIST, RotatedMNIST, FashionMNIST, SVHN
@@ -236,3 +237,42 @@ def evaluate_marglik(model, train_samples, eval_samples, n_samples):
     results["mean_loglik"] = log_priors.mean().item()
     results["simple_marglik"] = log_priors.exp().mean().item()
     return results
+
+
+class HDF5Metrics:
+    def __init__(self, f, chunk_size=2**20):
+        self.f = f
+        # default of 2**20 gives ~8 MiB chunks
+        self.chunk_size = chunk_size
+        self._i = -1
+        self._step = -1
+
+    def add_scalar(self, name, value, step):
+        if step > self._step:
+            self._step = step
+            self._i += 1
+            self._append("steps", step)
+            self._append("timestamps", time.time())
+            # Make concurrently readable, no more datasets created
+            if self._i == 1:
+                self.f.swmr_mode = True
+
+        elif step < self._step:
+            raise ValueError(f"step went backwards ({self._step} -> {step})")
+        self._append(name, value)
+
+    def _append(self, name, value):
+        try:
+            dset = self.f[name]
+        except KeyError:
+            dset = self.create_metric(name, type(value))
+        try:
+            dset[self._i] = value
+        except ValueError:
+            dset.resize(len(dset)+self.chunk_size, axis=0)
+            dset[self._i] = value
+
+    def create_metric(self, name, dtype):
+        shape = (self.chunk_size,)
+        return self.f.create_dataset(name, shape, dtype, chunks=shape,
+                                     maxshape=(None,), fletcher32=True, fillvalue=np.nan)

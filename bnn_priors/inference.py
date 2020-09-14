@@ -82,7 +82,7 @@ class SGLDRunner:
         self.grad_max = grad_max
         self.cycles = cycles
         self.precond_update = precond_update
-        self.add_scalar_fn = add_scalar_fn
+        self.add_scalar = add_scalar_fn
 
         self.param_names, self._params = zip(*model.named_parameters())
         self._samples = {name: torch.zeros(torch.Size([self.num_samples*cycles])+p_or_b.shape)
@@ -142,15 +142,6 @@ class SGLDRunner:
                 if (0 <= sampling_epoch) and (sampling_epoch % self.skip == 0):
                     for name, param in self.model.state_dict().items():
                         self._samples[name][(self.num_samples*cycle)+(sampling_epoch//self.skip)] = param
-
-    def add_scalar(self, name, value, step):
-        try:
-            self.metrics[name].append(value)
-        except KeyError:
-            self.metrics[name] = []
-            self.metrics[name].append(value)
-        if self.add_scalar_fn is not None:
-            self.add_scalar_fn(name, value, step)
 
     def _model_potential_and_grad(self, x, y):
         self.optimizer.zero_grad()
