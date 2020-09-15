@@ -18,7 +18,7 @@ do
                 for temp in "${temps[@]}"
                 do
                     #bsub -n 2 -W 24:00 -J "bnn" -sp 40 -g /vincent/experiments -G ms_raets -R "rusage[mem=4000,ngpus_excl_p=1]" "source activate bnn; python train_bnn.py with weight_prior=$prior data=UCI_$dataset inference=$inf warmup=5000 burnin=1000 weight_scale=$scale cycles=20 n_samples=100 skip=100 temperature=$temp log_dir=$logdir"
-                    bsub -n 2 -W 24:00 -J "bnn" -sp 40 -g /vincent/experiments -G ms_raets -R "rusage[mem=4000,ngpus_excl_p=1]" "source activate bnn; python train_bnn.py with weight_prior=$prior data=UCI_$dataset inference=$inf warmup=500 burnin=100 weight_scale=$scale cycles=1 n_samples=50 save_samples=True skip=10 lr=1e-4 temperature=$temp log_dir=$logdir"
+                    bsub -n 2 -W 48:00 -J "bnn" -sp 40 -g /vincent/experiments -G ms_raets -R "rusage[mem=4000,ngpus_excl_p=1]" "source activate bnn; python train_bnn.py with weight_prior=$prior data=UCI_$dataset inference=$inf warmup=500 burnin=100 weight_scale=$scale cycles=1 n_samples=50 save_samples=True skip=10 lr=1e-4 temperature=$temp log_dir=$logdir"
                 done
             done
         done
