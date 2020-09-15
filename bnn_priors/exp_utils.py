@@ -109,7 +109,7 @@ def evaluate_model(model, dataloader_test, samples, n_samples,
             for batch_x, batch_y in dataloader_test:
                 pred = model(batch_x)
                 lps_batch = pred.log_prob(batch_y)
-                if eval_data[:7] == "cifar10" or eval_data[-5:] == "mnist":
+                if "cifar10" in eval_data or "mnist" in eval_data:
                     # shape: batch_size
                     accs_batch = (t.argmax(pred.probs, dim=1) == batch_y).float()
                 else:
