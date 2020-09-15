@@ -33,7 +33,10 @@ def get_prior(prior_name):
              "gaussian_empirical": NormalEmpirical,
              "laplace_empirical": LaplaceEmpirical,
              "student-t_empirical": StudentTEmpirical,
-             "gennorm_empirical": GenNormEmpirical}
+             "gennorm_empirical": GenNormEmpirical,
+             "scale_mixture": ScaleMixture,
+             "mixture": Mixture,
+             "scale_mixture_empirical": ScaleMixtureEmpirical}
     assert prior_name in priors
     return priors[prior_name]
 
@@ -118,11 +121,40 @@ class Mixture(LocScale):
 class ScaleMixture(Mixture):
     def __init__(self, shape, loc, scale, base_dist="gaussian", scales=None):
         if scales is None:
-            scales = [scale/4, scale/2, scale, scale*2, scale*4]
+            self.scales = [scale/9, scale/3, scale, scale*3, scale*9]
+        else:
+            self.scales = scales
         super().__init__(shape, loc, scale)
-        self.mixture_weights = torch.nn.Parameter(torch.zeros(len(scales)))
+        self.mixture_weights = torch.nn.Parameter(torch.zeros(len(self.scales)))
         self.components = [get_prior(base_dist)(shape, loc, scl)
-                           for scl in scales]
+                           for scl in self.scales]
+        for comp in self.components:
+            comp.p = self.p
+            comp._old_log_prob = comp.log_prob
+            # Prevent the sum over priors from double-counting this one
+            comp.log_prob = (lambda: 0.)
+
+        for i, comp in enumerate(self.components):
+            self.add_module(f"component_{i}", comp)
+
+        # Now that all parameters are initialized, sample properly
+        self.sample()
+
+        
+class ScaleMixtureEmpirical(Mixture):
+    def __init__(self, shape, loc, scale, base_dist="gaussian", scales=None):
+        if scales is None:
+            self.scales = [scale/9, scale/3, scale, scale*3, scale*9]
+        else:
+            self.scales = scales
+        super().__init__(shape, loc, scale)
+        self.mixture_weights = torch.nn.Parameter(torch.zeros(len(self.scales)))
+        scale_priors = [PositiveImproper(shape=[], loc=scl, scale=1.) for scl in self.scales]
+        for scale_prior, scl in zip(scale_priors, self.scales):
+            with torch.no_grad():
+                scale_prior.p.data = inv_softplus(torch.tensor(scl))
+        self.components = [get_prior(base_dist)(shape, loc, scl)
+                           for scl in scale_priors]
         for comp in self.components:
             comp.p = self.p
             comp._old_log_prob = comp.log_prob
