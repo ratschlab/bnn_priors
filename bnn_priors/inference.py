@@ -56,8 +56,7 @@ class SGLDRunner:
             grad_max (float): maximum absolute magnitude of an element of the gradient
             cycles (int): Number of warmup and sampling cycles to perform
             precond_update (int): Number of steps after which the preconditioner should be updated. None disables the preconditioner.
-            metrics_saver (optional, (str, float, int) -> None): HDF5Metrics to log metric with a certain name and value
-
+            metrics_saver : HDF5Metrics to log metric with a certain name and value
         """
         self.model = model
         self.dataloader = dataloader
@@ -228,7 +227,7 @@ class VerletSGLDRunner(SGLDRunner):
             lr=self.learning_rate, num_data=self.eff_num_data,
             momentum=self.momentum, temperature=self.temperature)
 
-    def step(self, i, x, y, store_metrics, lr_decay=True, initial_step=False, final_step=False):
+    def step(self, i, x, y, store_metrics, lr_decay=True, initial_step=False):
         loss, log_prior, potential = self._model_potential_and_grad(x, y)
         lr = self.optimizer.param_groups[0]["lr"]
 

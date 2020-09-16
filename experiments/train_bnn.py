@@ -133,9 +133,9 @@ def main(inference, model, width, n_samples, warmup, he_init,
     if he_init:
         exp_utils.he_initialize(model)
 
-    # libver=latest: read file while it is being written
-    with h5py.File(Path(_run.observers[0].dir)/"metrics.h5", "w",
-                   libver="latest", rdcc_nbytes=1024**2) as f_metrics:
+    this_run_dir = Path(_run.observers[0].dir)
+
+    with exp_utils.HDF5Metrics(this_run_dir/"metrics.h5", "w") as metrics_saver:
         if inference == "HMC":
             kernel = HMC(potential_fn=lambda p: model.get_potential(x_train, y_train, eff_num_data=1*x_train.shape[0])(p),
                 adapt_step_size=False, adapt_mass_matrix=False,
@@ -159,7 +159,7 @@ def main(inference, model, width, n_samples, warmup, he_init,
                                 warmup_epochs=warmup, sample_epochs=sample_epochs, learning_rate=lr,
                                 skip=skip, metrics_skip=metrics_skip, sampling_decay=True, cycles=cycles, temperature=temperature,
                                 momentum=momentum, precond_update=precond_update,
-                                metrics_saver=exp_utils.HDF5Metrics(f_metrics))
+                                metrics_saver=metrics_saver)
 
         mcmc.run(progressbar=True)
         samples = mcmc.get_samples()
