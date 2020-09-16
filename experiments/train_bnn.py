@@ -24,7 +24,6 @@ from bnn_priors import prior
 import bnn_priors.inference
 from bnn_priors import exp_utils
 from bnn_priors.exp_utils import get_prior
-import tensorboardX
 
 # Makes CUDA faster
 if t.cuda.is_available():
