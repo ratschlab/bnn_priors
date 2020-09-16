@@ -1,5 +1,7 @@
 import math
+import h5py
 import numpy as np
+import time
 from sklearn.metrics import average_precision_score, roc_auc_score
 import torch as t
 from bnn_priors.data import UCI, CIFAR10, CIFAR10_C, MNIST, RotatedMNIST, FashionMNIST, SVHN, RandomData
@@ -223,3 +225,63 @@ def evaluate_marglik(model, train_samples, eval_samples, n_samples):
     results["mean_loglik"] = log_priors.mean().item()
     results["simple_marglik"] = log_priors.exp().mean().item()
     return results
+
+
+class HDF5Metrics:
+    def __init__(self, path, mode, chunk_size=1024, chunks_in_cache=8*1024):
+        self.path = path
+        self.mode = mode
+        # defaults: 1 KB chunks, 8 MB cache.
+        self.chunk_size = chunk_size
+        self.chunks_in_cache = chunks_in_cache
+        self._i = -1
+        self._step = -1
+        self.last_flush = time.time()
+
+    def __enter__(self):
+        self.f = h5py.File(self.path, self.mode, libver="latest",
+                           rdcc_nbytes=self.chunks_in_cache * self.chunk_size)
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        self.f.close()
+
+    def add_scalar(self, name, value, step):
+        if step > self._step:
+            self._step = step
+            self._i += 1
+            self._append("steps", step, dtype=np.int64)
+            self._append("timestamps", time.time(), dtype=np.float64)
+            if self._i == 1:
+                # Set the h5 file to Single Reader Multiple Writer (SWMR) mode,
+                # the metrics can be read during the run.
+                # No more datasets can be created after that.
+                # This will prevent any new keys from being added using `add_scalar`.
+                self.f.swmr_mode = True
+
+        elif step < self._step:
+            raise ValueError(f"step went backwards ({self._step} -> {step})")
+        self._append(name, value, dtype=np.float64)
+
+    def _append(self, name, value, dtype):
+        try:
+            dset = self.f[name]
+        except KeyError:
+            dset = self._create_metric(name, dtype)
+        if self._i >= len(dset):
+            # If they are all `_append`ed to in every iteration,
+            # `dset`s sizes always are within `self.chunk_size` of each other
+            dset.resize(self._i+self.chunk_size, axis=0)
+        dset[self._i] = value
+
+    def _create_metric(self, name, dtype):
+        return self.f.create_dataset(
+            name, shape=(0,), dtype=dtype, chunks=(self.chunk_size,),
+            maxshape=(None,), fletcher32=True, fillvalue=np.nan)
+
+    def flush(self, every_s):
+        "flush every `every_s` seconds"
+        now = time.time()
+        if now - self.last_flush > every_s:
+            self.last_flush = now
+        return self.f.flush()

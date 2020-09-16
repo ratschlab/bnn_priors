@@ -6,6 +6,7 @@ import os
 import math
 import uuid
 import json
+import h5py
 
 import numpy as np
 import torch as t
@@ -61,7 +62,7 @@ def config():
     cycles =  5
     temperature = 1.0
     momentum = 0.9
-    precond_update = None
+    precond_update = 1
     lr = 5e-4
     he_init = True
     batch_size = None
@@ -69,7 +70,7 @@ def config():
     device = "try_cuda"
     save_samples = True
     run_id = uuid.uuid4().hex
-    log_dir = Path(__file__).resolve().parent.parent/"logs"
+    log_dir = str(Path(__file__).resolve().parent.parent/"logs")
     if log_dir is not None:
         os.makedirs(log_dir, exist_ok=True)
         ex.observers.append(FileStorageObserver(log_dir))
@@ -112,7 +113,7 @@ def evaluate_model(model, dataloader_test, samples, data, n_samples):
 @ex.automain
 def main(inference, model, width, n_samples, warmup, he_init,
          burnin, skip, metrics_skip, cycles, temperature, momentum,
-         precond_update, lr, batch_size, save_samples, run_id, _run):
+         precond_update, lr, batch_size, save_samples, run_id, log_dir, _run):
     assert inference in ["SGLD", "HMC", "VerletSGLD", "OurHMC"]
     assert width > 0
     assert n_samples > 0
@@ -131,32 +132,37 @@ def main(inference, model, width, n_samples, warmup, he_init,
     
     if he_init:
         exp_utils.he_initialize(model)
-            
-    if inference == "HMC":
-        kernel = HMC(potential_fn=lambda p: model.get_potential(x_train, y_train, eff_num_data=1*x_train.shape[0])(p),
-             adapt_step_size=False, adapt_mass_matrix=False,
-             step_size=1e-3, num_steps=32)
-        mcmc = MCMC(kernel, num_samples=n_samples, warmup_steps=warmup, initial_params=model.params_dict())
-    else:
-        if inference == "SGLD":
-            runner_class = bnn_priors.inference.SGLDRunner
-        elif inference == "VerletSGLD":
-            runner_class = bnn_priors.inference.VerletSGLDRunner
-        elif inference == "OurHMC":
-            runner_class = bnn_priors.inference.HMCRunner
 
-        sample_epochs = n_samples * skip // cycles
-        epochs_per_cycle = warmup + burnin + sample_epochs
-        if batch_size is None:
-            batch_size = len(data.norm.train)
-        dataloader = t.utils.data.DataLoader(data.norm.train, batch_size=batch_size, shuffle=True, drop_last=True)
-        mcmc = runner_class(model=model, dataloader=dataloader, epochs_per_cycle=epochs_per_cycle,
-                            warmup_epochs=warmup, sample_epochs=sample_epochs, learning_rate=lr,
-                            skip=skip, metrics_skip=metrics_skip, sampling_decay=True, cycles=cycles, temperature=temperature,
-                            momentum=momentum, precond_update=precond_update, add_scalar_fn=_run.log_scalar)
+    this_run_dir = Path(_run.observers[0].dir)
 
-    mcmc.run(progressbar=True)
-    samples = mcmc.get_samples()
+    with exp_utils.HDF5Metrics(this_run_dir/"metrics.h5", "w") as metrics_saver:
+        if inference == "HMC":
+            kernel = HMC(potential_fn=lambda p: model.get_potential(x_train, y_train, eff_num_data=1*x_train.shape[0])(p),
+                adapt_step_size=False, adapt_mass_matrix=False,
+                step_size=1e-3, num_steps=32)
+            mcmc = MCMC(kernel, num_samples=n_samples, warmup_steps=warmup, initial_params=model.params_dict())
+        else:
+            if inference == "SGLD":
+                runner_class = bnn_priors.inference.SGLDRunner
+            elif inference == "VerletSGLD":
+                runner_class = bnn_priors.inference.VerletSGLDRunner
+            elif inference == "OurHMC":
+                runner_class = bnn_priors.inference.HMCRunner
+
+            assert (n_samples * skip) % cycles == 0
+            sample_epochs = n_samples * skip // cycles
+            epochs_per_cycle = warmup + burnin + sample_epochs
+            if batch_size is None:
+                batch_size = len(data.norm.train)
+            dataloader = t.utils.data.DataLoader(data.norm.train, batch_size=batch_size, shuffle=True, drop_last=True)
+            mcmc = runner_class(model=model, dataloader=dataloader, epochs_per_cycle=epochs_per_cycle,
+                                warmup_epochs=warmup, sample_epochs=sample_epochs, learning_rate=lr,
+                                skip=skip, metrics_skip=metrics_skip, sampling_decay=True, cycles=cycles, temperature=temperature,
+                                momentum=momentum, precond_update=precond_update,
+                                metrics_saver=metrics_saver)
+
+        mcmc.run(progressbar=True)
+        samples = mcmc.get_samples()
 
     if save_samples:
         samples_file = os.path.join(TMPDIR, f"samples_{run_id}.pt")
