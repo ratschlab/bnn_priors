@@ -263,7 +263,7 @@ class HDF5Metrics:
             if self._i == 1:
                 # Set the h5 file to Single Reader Multiple Writer (SWMR) mode,
                 # the metrics can be read during the run.
-                # more datasets can be created after that.
+                # No more datasets can be created after that.
                 # This will prevent any new keys from being added using `add_scalar`.
                 self.f.swmr_mode = True
 
