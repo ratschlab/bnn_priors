@@ -31,7 +31,7 @@ class SGLD(torch.optim.Optimizer):
     """
     def __init__(self, params: Sequence[Union[torch.nn.Parameter, Dict]], lr: float,
                  num_data: int, momentum: float=0, temperature: float=1.,
-                 rmsprop_alpha: float=0.99, rmsprop_eps: float=1e-8,
+                 rmsprop_alpha: float=0.99, rmsprop_eps: float=1e-8,  # Wenzel et al. use 1e-7
                  raise_on_no_grad: bool=True, raise_on_nan: bool=False):
         assert lr >= 0 and num_data >= 0 and momentum >= 0 and temperature >= 0
         defaults = dict(lr=lr, num_data=num_data, momentum=momentum,

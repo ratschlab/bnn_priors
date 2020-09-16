@@ -235,39 +235,45 @@ def evaluate_marglik(model, train_samples, eval_samples, n_samples):
 
 
 class HDF5Metrics:
-    def __init__(self, f, chunk_size=2**20):
+    def __init__(self, f, chunk_size=1024):
         self.f = f
         # default of 2**20 gives ~8 MiB chunks
         self.chunk_size = chunk_size
         self._i = -1
         self._step = -1
+        self.last_flush = time.time()
 
     def add_scalar(self, name, value, step):
         if step > self._step:
             self._step = step
             self._i += 1
-            self._append("steps", step)
-            self._append("timestamps", time.time())
+            self._append("steps", step, dtype=np.int64)
+            self._append("timestamps", time.time(), dtype=np.float64)
             # Make concurrently readable, no more datasets created
             if self._i == 1:
                 self.f.swmr_mode = True
 
         elif step < self._step:
             raise ValueError(f"step went backwards ({self._step} -> {step})")
-        self._append(name, value)
+        self._append(name, value, dtype=np.float64)
 
-    def _append(self, name, value):
+    def _append(self, name, value, dtype):
         try:
             dset = self.f[name]
         except KeyError:
-            dset = self.create_metric(name, type(value))
-        try:
-            dset[self._i] = value
-        except ValueError:
-            dset.resize(len(dset)+self.chunk_size, axis=0)
-            dset[self._i] = value
+            dset = self.create_metric(name, dtype)
+        if self._i >= len(dset):
+            dset.resize(self._i+self.chunk_size, axis=0)
+        dset[self._i] = value
 
     def create_metric(self, name, dtype):
-        shape = (self.chunk_size,)
-        return self.f.create_dataset(name, shape, dtype, chunks=shape,
-                                     maxshape=(None,), fletcher32=True, fillvalue=np.nan)
+        return self.f.create_dataset(
+            name, shape=(0,), dtype=dtype, chunks=(self.chunk_size,),
+            maxshape=(None,), fletcher32=True, fillvalue=np.nan)
+
+    def flush(self, every_s):
+        "flush every `every_s` seconds"
+        now = time.time()
+        if now - self.last_flush > every_s:
+            self.last_flush = now
+        return self.f.flush()

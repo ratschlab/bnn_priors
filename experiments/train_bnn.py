@@ -134,7 +134,8 @@ def main(inference, model, width, n_samples, warmup, he_init,
         exp_utils.he_initialize(model)
 
     # libver=latest: read file while it is being written
-    with h5py.File(Path(log_dir)/"metrics.h5", "w", libver="latest") as f_metrics:
+    with h5py.File(Path(_run.observers[0].dir)/"metrics.h5", "w",
+                   libver="latest", rdcc_nbytes=1024**2) as f_metrics:
         if inference == "HMC":
             kernel = HMC(potential_fn=lambda p: model.get_potential(x_train, y_train, eff_num_data=1*x_train.shape[0])(p),
                 adapt_step_size=False, adapt_mass_matrix=False,
@@ -148,6 +149,7 @@ def main(inference, model, width, n_samples, warmup, he_init,
             elif inference == "OurHMC":
                 runner_class = bnn_priors.inference.HMCRunner
 
+            assert (n_samples * skip) % cycles == 0
             sample_epochs = n_samples * skip // cycles
             epochs_per_cycle = warmup + burnin + sample_epochs
             if batch_size is None:
@@ -157,7 +159,7 @@ def main(inference, model, width, n_samples, warmup, he_init,
                                 warmup_epochs=warmup, sample_epochs=sample_epochs, learning_rate=lr,
                                 skip=skip, metrics_skip=metrics_skip, sampling_decay=True, cycles=cycles, temperature=temperature,
                                 momentum=momentum, precond_update=precond_update,
-                                add_scalars_fn=exp_utils.HDF5Metrics(f_metrics).add_scalar)
+                                metrics_saver=exp_utils.HDF5Metrics(f_metrics))
 
         mcmc.run(progressbar=True)
         samples = mcmc.get_samples()
