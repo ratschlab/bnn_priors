@@ -20,7 +20,7 @@ class SGLDRunner:
                  sample_epochs, learning_rate=1e-2, skip=1, metrics_skip=1,
                  temperature=1., data_mult=1., momentum=0., sampling_decay=True,
                  grad_max=1e6, cycles=1, precond_update=None,
-                 metrics_saver=None):
+                 metrics_saver=None, model_saver=None):
         """Stochastic Gradient Langevin Dynamics for posterior sampling.
 
         On calling `run`, this class runs SGLD for `cycles` sampling cycles. In
@@ -84,11 +84,13 @@ class SGLDRunner:
         self.cycles = cycles
         self.precond_update = precond_update
         self.metrics_saver = metrics_saver
+        self.model_saver = model_saver
+        if model_saver is None:
+            self._samples = {
+                name: torch.zeros(torch.Size([self.num_samples*cycles])+p_or_b.shape, dtype=p_or_b.dtype)
+                for name, p_or_b in model.state_dict().items()}
 
         self.param_names, self._params = zip(*model.named_parameters())
-        self._samples = {name: torch.zeros(torch.Size([self.num_samples*cycles])+p_or_b.shape)
-                         for name, p_or_b in model.state_dict().items()}
-        self.metrics = {}
 
     def _make_optimizer(self, params):
         return mcmc.SGLD(
@@ -127,7 +129,7 @@ class SGLDRunner:
                 epochs_since_start += 1
 
                 for g in self.optimizer.param_groups:
-                    g['temperature'] = 0 if epoch < self.descent_epochs else self.temperature
+                    g['temperature'] = 0. if epoch < self.descent_epochs else self.temperature
 
                 for i, (x, y) in enumerate(self.dataloader):
                     self.step(step, x, y,
@@ -142,8 +144,13 @@ class SGLDRunner:
 
                 sampling_epoch = epoch - (self.descent_epochs + self.warmup_epochs)
                 if (0 <= sampling_epoch) and (sampling_epoch % self.skip == 0):
-                    for name, param in self.model.state_dict().items():
-                        self._samples[name][(self.num_samples*cycle)+(sampling_epoch//self.skip)] = param
+                    state_dict = self.model.state_dict()
+                    if self.model_saver is None:
+                        for name, param in state_dict.items():
+                            self._samples[name][(self.num_samples*cycle)+(sampling_epoch//self.skip)] = param
+                    else:
+                        self.model_saver.add_state_dict(state_dict, step)
+                        self.model_saver.flush()
 
     def _model_potential_and_grad(self, x, y):
         self.optimizer.zero_grad()
@@ -184,7 +191,9 @@ class SGLDRunner:
         Returns:
             samples (dict): Dictionary of torch.tensors with num_samples*cycles samples for each parameter of the model
         """
-        return self._samples
+        if self.model_saver is None:
+            return self._samples
+        return self.model_saver.load_samples()
 
     def store_metrics(self, i, loss, log_prior, potential, lr,
                       delta_energy=None, total_energy=None, rejected=None):
