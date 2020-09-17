@@ -5,7 +5,7 @@ import time
 from sklearn.metrics import average_precision_score, roc_auc_score
 import torch as t
 from bnn_priors.data import UCI, CIFAR10, CIFAR10_C, MNIST, RotatedMNIST, FashionMNIST, SVHN, RandomData
-from bnn_priors.models import RaoBDenseNet, DenseNet, PreActResNet18, PreActResNet34, ClassificationDenseNet
+from bnn_priors.models import RaoBDenseNet, DenseNet, PreActResNet18, PreActResNet34, ClassificationDenseNet, ResNet
 from bnn_priors.prior import LogNormal
 from bnn_priors import prior
 from bnn_priors.prior import get_prior
@@ -59,7 +59,8 @@ def he_initialize(model):
 def get_model(x_train, y_train, model, width, depth, weight_prior, weight_loc,
              weight_scale, bias_prior, bias_loc, bias_scale, batchnorm,
              weight_prior_params, bias_prior_params):
-    assert model in ["densenet", "raobdensenet", "resnet18", "resnet34", "classificationdensenet", "test_gaussian"]
+    assert model in ["densenet", "raobdensenet", "resnet18", "resnet34",
+                     "classificationdensenet", "test_gaussian", "googleresnet"]
     if weight_prior in ["cauchy"]:
         # NOTE: Cauchy and anything with infinite variance should use this
         scaling_fn = lambda std, dim: std/dim
@@ -89,6 +90,11 @@ def get_model(x_train, y_train, model, width, depth, weight_prior, weight_loc,
                             prior_b=bias_prior, loc_b=bias_loc, std_b=bias_scale, scaling_fn=scaling_fn,
                             bn=batchnorm, softmax_temp=1., weight_prior_params=weight_prior_params,
                             bias_prior_params=bias_prior_params).to(x_train)
+    elif model == "googleresnet":
+        net = ResNet(prior_w=weight_prior, loc_w=weight_loc, std_w=weight_scale, depth=20,
+                     prior_b=bias_prior, loc_b=bias_loc, std_b=bias_scale, scaling_fn=scaling_fn,
+                     bn=batchnorm, softmax_temp=1., weight_prior_params=weight_prior_params,
+                     bias_prior_params=bias_prior_params).to(x_train)
     elif model == "test_gaussian":
         from testing.test_sgld import GaussianModel
         net = GaussianModel(N=1, D=100)

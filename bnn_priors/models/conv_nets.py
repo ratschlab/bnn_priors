@@ -7,7 +7,8 @@ import torch.nn.functional as F
 from torch import Tensor
 
 from .layers import Conv2d
-from . import RegressionModel, LinearPrior, ClassificationModel
+from .base import RegressionModel, ClassificationModel
+from .dense_nets import LinearPrior
 from .. import prior
 
 __all__ = ('Conv2dPrior', 'PreActResNet18', 'PreActResNet34')
