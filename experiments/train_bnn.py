@@ -6,7 +6,7 @@ import os
 import math
 import uuid
 import json
-import h5py
+import contextlib
 
 import numpy as np
 import torch as t
@@ -134,8 +134,15 @@ def main(inference, model, width, n_samples, warmup, he_init,
         exp_utils.he_initialize(model)
 
     this_run_dir = Path(_run.observers[0].dir)
+    if save_samples:
+        model_saver_fn = (lambda: exp_utils.HDF5ModelSaver(this_run_dir/"samples.pt", "w"))
+    else:
+        @contextlib.contextmanager
+        def model_saver_fn():
+            yield None
 
-    with exp_utils.HDF5Metrics(this_run_dir/"metrics.h5", "w") as metrics_saver:
+    with exp_utils.HDF5Metrics(this_run_dir/"metrics.h5", "w") as metrics_saver,\
+         model_saver_fn() as model_saver:
         if inference == "HMC":
             kernel = HMC(potential_fn=lambda p: model.get_potential(x_train, y_train, eff_num_data=1*x_train.shape[0])(p),
                 adapt_step_size=False, adapt_mass_matrix=False,
@@ -159,17 +166,10 @@ def main(inference, model, width, n_samples, warmup, he_init,
                                 warmup_epochs=warmup, sample_epochs=sample_epochs, learning_rate=lr,
                                 skip=skip, metrics_skip=metrics_skip, sampling_decay=True, cycles=cycles, temperature=temperature,
                                 momentum=momentum, precond_update=precond_update,
-                                metrics_saver=metrics_saver)
+                                metrics_saver=metrics_saver, model_saver=model_saver)
 
         mcmc.run(progressbar=True)
-        samples = mcmc.get_samples()
-
-    if save_samples:
-        samples_file = os.path.join(TMPDIR, f"samples_{run_id}.pt")
-        t.save(samples, samples_file)
-        _run.add_artifact(filename=samples_file, name="samples.pt")
-        os.remove(samples_file)
-
+    samples = mcmc.get_samples()
     model.eval()
 
     batch_size = min(batch_size, len(data.norm.test))
