@@ -1,7 +1,7 @@
 from torch import nn, Tensor
 
 from .layers import Linear
-from . import RegressionModel, RaoBRegressionModel, ClassificationModel
+from .base import RegressionModel, RaoBRegressionModel, ClassificationModel
 from .. import prior
 
 __all__ = ('LinearNealNormal', 'LinearPrior', 'DenseNet', 'RaoBDenseNet', 'ClassificationDenseNet')
