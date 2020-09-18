@@ -25,8 +25,9 @@ class HMC(VerletSGLD):
     def __init__(self, params: Sequence[Union[torch.nn.Parameter, Dict]],
                  lr: float, num_data: int,
                  raise_on_no_grad: bool=True, raise_on_nan: bool=True):
-        super().__init__(params, lr, num_data, 1., 1., raise_on_no_grad,
-                         raise_on_nan)
+        super().__init__(params, lr, num_data, 1., 1.,
+                         raise_on_no_grad=raise_on_no_grad,
+                         raise_on_nan=raise_on_nan)
 
     def _point_energy(self, group, p, state):
         return .5 * dot(state['momentum_buffer'], state['momentum_buffer'])
@@ -37,7 +38,8 @@ class HMC(VerletSGLD):
         g['momentum'] = g['temperature'] = 1.
         return super()._update_group_fn(g)
 
-    def _step_fn(self, group, p, state, is_initial=False, is_final=False, save_state=False):
+    def _step_fn(self, group, p, state, is_initial=False, is_final=False,
+                 save_state=False, calc_metrics=True):
         if save_state:
             self._save_state(group, p, state)
 
@@ -51,11 +53,12 @@ class HMC(VerletSGLD):
         grad_lr = -.5 * group['grad_v'] * group['bhn'] * M_rsqrt
         momentum.add_(p.grad, alpha=grad_lr)
 
-        # Temperature diagnostics
-        d = p.numel()
-        state['est_temperature'] = dot(momentum, momentum) / d
-        # NOTE: p and p.grad are from the same time step
-        state['est_config_temp'] = dot(p, p.grad) * (group['num_data']/d)
+        if calc_metrics:
+            # Temperature diagnostics
+            d = p.numel()
+            state['est_temperature'] = dot(momentum, momentum) / d
+            # NOTE: p and p.grad are from the same time step
+            state['est_config_temp'] = dot(p, p.grad) * (group['num_data']/d)
 
         if not is_final:
             # Update the parameters:

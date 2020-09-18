@@ -80,7 +80,8 @@ class VerletSGLD(SGLD):
                     device='cpu', copy=True)
 
     @torch.no_grad()
-    def initial_step(self, closure: Optional[Callable[..., torch.Tensor]]=None, save_state=True):
+    def initial_step(self, closure: Optional[Callable[..., torch.Tensor]]=None,
+                     save_state=True, calc_metrics=True):
         """The initial transition for the Verlet integrator.
         θ(n), m(n) -> θ(n+1), u(n+1)
 
@@ -94,20 +95,24 @@ class VerletSGLD(SGLD):
             g['grad_v'] = 1.
             g['noise_std'] = math.sqrt((1 - a) * g['temperature'])
         return self._step_internal(update_group_fn, self._step_fn, closure,
-                                   is_initial=True, save_state=save_state)
+                                   is_initial=True, save_state=save_state,
+                                   calc_metrics=calc_metrics)
 
     @torch.no_grad()
-    def step(self, closure: Optional[Callable[..., torch.Tensor]]=None):
+    def step(self, closure: Optional[Callable[..., torch.Tensor]]=None,
+             calc_metrics=True):
         """An intermediate transition for the Verlet integrator.
         θ(n), u(n) -> θ(n+1), u(n+1)
 
         u(n) is not the momentum, rather, it is
         u(n) = sqrt(b)*m(n) - gradient of parameters
         """
-        return self._step_internal(self._update_group_fn, self._step_fn, closure)
+        return self._step_internal(self._update_group_fn, self._step_fn,
+                                   closure, calc_metrics=calc_metrics)
 
     @torch.no_grad()
-    def final_step(self, closure: Optional[Callable[..., torch.Tensor]]=None):
+    def final_step(self, closure: Optional[Callable[..., torch.Tensor]]=None,
+                   calc_metrics=True):
         """The final transition for the Verlet integrator
         θ(n), u(n) -> θ(n), m(n)
 
@@ -121,7 +126,7 @@ class VerletSGLD(SGLD):
             g['grad_v'] = g['mom_decay']
             g['noise_std'] = math.sqrt((1 - a) * g['temperature'])
         return self._step_internal(update_group_fn, self._step_fn, closure,
-                                   is_final=True)
+                                   is_final=True, calc_metrics=calc_metrics)
 
     def _update_group_fn(self, g):
         g['b^2h^2'] = g['lr'] / g['num_data']
@@ -134,7 +139,8 @@ class VerletSGLD(SGLD):
         g['noise_std'] = math.sqrt((1 - a**2) * g['temperature'])
 
 
-    def _step_fn(self, group, p, state, is_initial=False, is_final=False, save_state=False):
+    def _step_fn(self, group, p, state, is_initial=False, is_final=False,
+                 save_state=False, calc_metrics=True):
         """An intermediate transition for the Verlet integrator.
         θ(n), u(n) -> θ(n+1), u(n+1)
 
@@ -163,11 +169,12 @@ class VerletSGLD(SGLD):
         del old_momentum
         state['prev_new_momentum_delta'] = c_gm * dot(p.grad, new_momentum)
 
-        # Temperature diagnostics
-        d = p.numel()
-        state['est_temperature'] = dot(new_momentum, new_momentum) / d
-        # NOTE: p and p.grad are (and have to be) from the same time step
-        state['est_config_temp'] = dot(p, p.grad) * (group['num_data']/d)
+        if calc_metrics:
+            # Temperature diagnostics
+            d = p.numel()
+            state['est_temperature'] = dot(new_momentum, new_momentum) / d
+            # NOTE: p and p.grad are (and have to be) from the same time step
+            state['est_config_temp'] = dot(p, p.grad) * (group['num_data']/d)
 
         state['momentum_buffer'] = new_momentum
         if not is_final:

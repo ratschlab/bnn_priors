@@ -60,8 +60,10 @@ class SGLD(torch.optim.Optimizer):
                 self.state[p]['momentum_buffer'] = torch.randn_like(p).mul_(std)
 
     @torch.no_grad()
-    def step(self, closure: Optional[Callable[..., torch.Tensor]]=None):
-        return self._step_internal(self._update_group_fn, self._step_fn, closure)
+    def step(self, closure: Optional[Callable[..., torch.Tensor]]=None,
+             calc_metrics=True):
+        return self._step_internal(self._update_group_fn, self._step_fn,
+                                   closure, calc_metrics=calc_metrics)
 
     def _step_internal(self, update_group_fn, step_fn, closure, **step_fn_kwargs):
         loss = None
@@ -94,7 +96,7 @@ class SGLD(torch.optim.Optimizer):
         g['h'] = math.sqrt(g['lr'] / g['num_data'])
         g['noise_std'] = math.sqrt(2*(1 - g['momentum']) * g['temperature'])
 
-    def _step_fn(self, group, p, state):
+    def _step_fn(self, group, p, state, calc_metrics=True):
         M_rsqrt = self._preconditioner_default(state, p)
 
         # Update the momentum with the gradient
@@ -108,11 +110,12 @@ class SGLD(torch.optim.Optimizer):
         if group['temperature'] > 0:
             momentum.add_(torch.randn_like(momentum), alpha=group['noise_std'])
 
-        # Temperature diagnostics
-        d = p.numel()
-        state['est_temperature'] = dot(momentum, momentum) / d
-        # NOTE: p and p.grad are from the same time step
-        state['est_config_temp'] = dot(p, p.grad) * (group['num_data']/d)
+        if calc_metrics:
+            # Temperature diagnostics
+            d = p.numel()
+            state['est_temperature'] = dot(momentum, momentum) / d
+            # NOTE: p and p.grad are from the same time step
+            state['est_config_temp'] = dot(p, p.grad) * (group['num_data']/d)
 
         # Take the gradient step
         p.add_(momentum, alpha=group['h']*M_rsqrt)

@@ -131,9 +131,11 @@ class SGLDRunner:
                 for g in self.optimizer.param_groups:
                     g['temperature'] = 0. if epoch < self.descent_epochs else self.temperature
 
+                last_i = len(self.dataloader)-1
                 for i, (x, y) in enumerate(self.dataloader):
                     self.step(step, x, y,
-                              store_metrics=(metrics_step % self.metrics_skip == 0),
+                              store_metrics=(metrics_step % self.metrics_skip == 0
+                                             or i == last_i),
                               initial_step=(i == 0))
                     step += 1
                     metrics_step += 1
@@ -173,7 +175,7 @@ class SGLDRunner:
             loss (float): The current loss of the model for x and y
         """
         loss, log_prior, potential = self._model_potential_and_grad(x, y)
-        self.optimizer.step()
+        self.optimizer.step(calc_metrics=store_metrics)
 
         lr = self.optimizer.param_groups[0]["lr"]
         if lr_decay:
@@ -241,14 +243,14 @@ class VerletSGLDRunner(SGLDRunner):
         lr = self.optimizer.param_groups[0]["lr"]
 
         if i == 0:  # The very first step
-            self.optimizer.initial_step()
+            self.optimizer.initial_step(calc_metrics=store_metrics)
             self._initial_loss = loss
             self._total_energy = 0.
             delta_energy = self.optimizer.delta_energy(self._initial_loss, loss)
             total_energy = self._total_energy + delta_energy
 
         elif initial_step:  # It's the first step of an epoch, but not the very first
-            self.optimizer.final_step()
+            self.optimizer.final_step(calc_metrics=store_metrics)
             if isinstance(self.optimizer, mcmc.HMC):
                 self.optimizer.sample_momentum()
 
@@ -257,10 +259,10 @@ class VerletSGLDRunner(SGLDRunner):
             self._total_energy += delta_energy
             total_energy = self._total_energy
 
-            self.optimizer.initial_step()
+            self.optimizer.initial_step(calc_metrics=store_metrics)
 
         else:  # Any intermediate step
-            self.optimizer.step()
+            self.optimizer.step(calc_metrics=store_metrics)
             delta_energy = self.optimizer.delta_energy(self._initial_loss, loss)
             total_energy = self._total_energy + delta_energy
 
