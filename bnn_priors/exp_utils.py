@@ -5,7 +5,7 @@ import time
 from sklearn.metrics import average_precision_score, roc_auc_score
 import torch as t
 from bnn_priors.data import UCI, CIFAR10, CIFAR10_C, MNIST, RotatedMNIST, FashionMNIST, SVHN, RandomData
-from bnn_priors.models import RaoBDenseNet, DenseNet, PreActResNet18, PreActResNet34, ClassificationDenseNet, ResNet
+from bnn_priors.models import RaoBDenseNet, DenseNet, PreActResNet18, PreActResNet34, ClassificationDenseNet, ResNet, ClassificationConvNet
 from bnn_priors.prior import LogNormal
 from bnn_priors import prior
 from bnn_priors.prior import get_prior
@@ -63,7 +63,8 @@ def get_model(x_train, y_train, model, width, depth, weight_prior, weight_loc,
              weight_scale, bias_prior, bias_loc, bias_scale, batchnorm,
              weight_prior_params, bias_prior_params):
     assert model in ["densenet", "raobdensenet", "resnet18", "resnet34",
-                     "classificationdensenet", "test_gaussian", "googleresnet"]
+                     "classificationdensenet", "test_gaussian", "googleresnet",
+                    "classificationconvnet"]
     if weight_prior in ["cauchy"]:
         # NOTE: Cauchy and anything with infinite variance should use this
         scaling_fn = lambda std, dim: std/dim
@@ -80,6 +81,17 @@ def get_model(x_train, y_train, model, width, depth, weight_prior, weight_loc,
         net = RaoBDenseNet(x_train, y_train, width, noise_std=LogNormal((), -1., 0.2)).to(x_train)
     elif model == "classificationdensenet":
         net = ClassificationDenseNet(x_train.size(-1), y_train.max()+1, width, depth, softmax_temp=1.,
+                        prior_w=weight_prior, loc_w=weight_loc, std_w=weight_scale,
+                        prior_b=bias_prior, loc_b=bias_loc, std_b=bias_scale, scaling_fn=scaling_fn,
+                        weight_prior_params=weight_prior_params, bias_prior_params=bias_prior_params).to(x_train)
+    elif model == "classificationconvnet":
+        if len(x_train.shape) == 4:
+            in_channels = x_train.shape[1]
+            height = x_train.shape[-2]
+        else:
+            in_channels = 1
+            height = int(math.sqrt(x_train.shape[-1]))
+        net = ClassificationConvNet(in_channels, height, y_train.max()+1, width, depth, softmax_temp=1.,
                         prior_w=weight_prior, loc_w=weight_loc, std_w=weight_scale,
                         prior_b=bias_prior, loc_b=bias_loc, std_b=bias_scale, scaling_fn=scaling_fn,
                         weight_prior_params=weight_prior_params, bias_prior_params=bias_prior_params).to(x_train)
