@@ -11,6 +11,8 @@ from bnn_priors import prior
 from bnn_priors.prior import get_prior
 from bnn_priors.third_party.calibration_error import ece, ace, rmsce
 import warnings
+import sacred
+from pathlib import Path
 
 
 def device(device):
@@ -353,3 +355,14 @@ def load_samples(path, idx=slice(None)):
     except OSError:
         samples = t.load(path)
         return {k: v[idx] for k, v in samples.items()}
+
+
+def sneaky_artifact(_run, name):
+    """modifed `artifact_event` from `sacred.observers.FileStorageObserver`
+    Returns path to the name.
+    """
+    obs = _run.observers[0]
+    assert isinstance(obs, sacred.observers.FileStorageObserver)
+    obs.run_entry["artifacts"].append(name)
+    obs.save_json(obs.run_entry, "run.json")
+    return Path(obs.dir)/name

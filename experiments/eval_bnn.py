@@ -59,6 +59,7 @@ evaluate_marglik = ex.capture(exp_utils.evaluate_marglik)
 
 @ex.capture
 def get_eval_data(data, eval_data):
+    # TODO load synthetic data if present
     if eval_data is not None:
         return exp_utils.get_data(eval_data, device())
     else:

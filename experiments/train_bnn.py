@@ -80,7 +80,7 @@ device = ex.capture(exp_utils.device)
 get_model = ex.capture(exp_utils.get_model)
 
 @ex.capture
-def get_data(data, batch_size):
+def get_data(data, batch_size, _run):
     if data[:9] == "synthetic":
         _, data, prior = data.split(".")
         dataset = get_data(data)
@@ -88,7 +88,9 @@ def get_data(data, batch_size):
         y_train = dataset.norm.train_y
         net = get_model(x_train=x_train, y_train=y_train, weight_prior=prior, weight_prior_params={})
         net.sample_all_priors()
-        return Synthetic(dataset=dataset, model=net, batch_size=batch_size, device=device())
+        data = Synthetic(dataset=dataset, model=net, batch_size=batch_size, device=device())
+        t.save(data, exp_utils.sneaky_artifact(_run, "synthetic_data.pt"))
+        return data
     else:
         return exp_utils.get_data(data, device())
 
@@ -122,15 +124,17 @@ def main(inference, model, width, n_samples, warmup, he_init,
     if he_init:
         exp_utils.he_initialize(model)
 
-    this_run_dir = Path(_run.observers[0].dir)
     if save_samples:
-        model_saver_fn = (lambda: exp_utils.HDF5ModelSaver(this_run_dir/"samples.pt", "w"))
+
+        model_saver_fn = (lambda: exp_utils.HDF5ModelSaver(
+            exp_utils.sneaky_artifact(_run, "samples.pt"), "w"))
     else:
         @contextlib.contextmanager
         def model_saver_fn():
             yield None
 
-    with exp_utils.HDF5Metrics(this_run_dir/"metrics.h5", "w") as metrics_saver,\
+    with exp_utils.HDF5Metrics(
+            exp_utils.sneaky_artifact(_run, "metrics.h5"), "w") as metrics_saver,\
          model_saver_fn() as model_saver:
         if inference == "HMC":
             kernel = HMC(potential_fn=lambda p: model.get_potential(x_train, y_train, eff_num_data=1*x_train.shape[0])(p),
