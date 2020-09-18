@@ -51,11 +51,11 @@ def config():
     os.makedirs(eval_dir, exist_ok=True)
     ex.observers.append(FileStorageObserver(eval_dir))
 
-
-@ex.capture
-def device(device):
-    return exp_utils.device(device)
-
+device = ex.capture(exp_utils.device)
+get_model = ex.capture(exp_utils.get_model)
+evaluate_model = ex.capture(exp_utils.evaluate_model)
+evaluate_ood = ex.capture(exp_utils.evaluate_ood)
+evaluate_marglik = ex.capture(exp_utils.evaluate_marglik)
 
 @ex.capture
 def get_eval_data(data, eval_data):
@@ -70,33 +70,6 @@ def get_train_data(data):
     return exp_utils.get_data(data, device())
 
 
-@ex.capture
-def get_model(x_train, y_train, model, width, weight_prior, weight_loc,
-             weight_scale, bias_prior, bias_loc, bias_scale, batchnorm,
-             weight_prior_params, bias_prior_params):
-    return exp_utils.get_model(x_train, y_train, model, width, weight_prior, weight_loc,
-             weight_scale, bias_prior, bias_loc, bias_scale, batchnorm, weight_prior_params,
-                               bias_prior_params)
-
-
-@ex.capture
-def evaluate_model(model, dataloader_test, samples, eval_data, n_samples,
-                   skip_first, likelihood_eval, accuracy_eval, calibration_eval):
-    return exp_utils.evaluate_model(model, dataloader_test, samples, n_samples-skip_first,
-                   eval_data, likelihood_eval, accuracy_eval, calibration_eval)
-
-
-@ex.capture
-def evaluate_ood(model, dataloader_train, dataloader_test, samples, n_samples, skip_first):
-    return exp_utils.evaluate_ood(model, dataloader_train, dataloader_test,
-                                  samples, n_samples-skip_first)#
-
-
-@ex.capture
-def evaluate_marglik(model, train_samples, eval_samples, n_samples, skip_first):
-    return exp_utils.evaluate_marglik(model, train_samples, eval_samples, n_samples-skip_first)
-
-
 @ex.automain
 def main(config_file, batch_size, n_samples, run_dir, eval_data, data, skip_first, eval_samples,
         likelihood_eval, accuracy_eval, calibration_eval, ood_eval, marglik_eval):
@@ -107,10 +80,9 @@ def main(config_file, batch_size, n_samples, run_dir, eval_data, data, skip_firs
 
     assert "samples.pt" in run_data["artifacts"], "No samples found"
 
-    samples = t.load(os.path.join(run_dir, "samples.pt"))
+    samples = exp_utils.load_samples(os.path.join(run_dir, "samples.pt"),
+                                     idx=np.s_[skip_first:])
 
-    samples = {param: sample[skip_first:] for param, sample in samples.items()}
-    
     if eval_data is None:
         eval_data = data
 
@@ -138,22 +110,25 @@ def main(config_file, batch_size, n_samples, run_dir, eval_data, data, skip_firs
     if ood_eval and not (eval_data[:7] == "cifar10" or eval_data[-5:] == "mnist" or eval_data == "svhn"):
         raise NotImplementedError("The OOD error is not defined for this type of data.")
 
-    results = evaluate_model(model, dataloader_test, samples, eval_data)
+    results = evaluate_model(model=model, dataloader_test=dataloader_test,
+                             samples=samples, eval_data=eval_data)
     
     if ood_eval:
         train_data = get_train_data()
         dataloader_train = t.utils.data.DataLoader(train_data.norm.test, batch_size=batch_size)
-        ood_results = evaluate_ood(model, dataloader_train, dataloader_test, samples)
+        ood_results = evaluate_ood(model=model,
+                                   dataloader_train=dataloader_train,
+                                   dataloader_test=dataloader_test,
+                                   samples=samples)
         results = {**results, **ood_results}
         
     if marglik_eval:
         if eval_samples is None:
             eval_samples = samples
         else:
-            eval_samples = t.load(eval_samples)
-            eval_samples = {param: sample[skip_first:]
-                            for param, sample in eval_samples.items()}
-        marglik_results = evaluate_marglik(model, samples, eval_samples)
+            eval_samples = exp_utils.load_samples(eval_samples, idx=np.s_[skip_first:])
+        marglik_results = evaluate_marglik(model=model, train_samples=samples,
+                                           eval_samples=eval_samples)
         results = {**results, **marglik_results}
         
     return results

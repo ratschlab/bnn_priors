@@ -76,10 +76,8 @@ def config():
         ex.observers.append(FileStorageObserver(log_dir))
     
 
-@ex.capture
-def device(device):
-    return exp_utils.device(device)
-
+device = ex.capture(exp_utils.device)
+get_model = ex.capture(exp_utils.get_model)
 
 @ex.capture
 def get_data(data, batch_size):
@@ -94,21 +92,12 @@ def get_data(data, batch_size):
     else:
         return exp_utils.get_data(data, device())
 
-
 @ex.capture
-def get_model(x_train, y_train, model, width, depth, weight_prior, weight_loc,
-             weight_scale, bias_prior, bias_loc, bias_scale, batchnorm,
-             weight_prior_params, bias_prior_params):
-    return exp_utils.get_model(x_train, y_train, model, width, depth, weight_prior, weight_loc,
-             weight_scale, bias_prior, bias_loc, bias_scale, batchnorm, weight_prior_params,
-                               bias_prior_params)
-
-
-@ex.capture
-def evaluate_model(model, dataloader_test, samples, data, n_samples):
-    return exp_utils.evaluate_model(model, dataloader_test, samples, n_samples,
-                   eval_data=data, likelihood_eval=True, accuracy_eval=True, calibration_eval=False)
-
+def evaluate_model(model, dataloader_test, samples, data):
+    return exp_utils.evaluate_model(
+        model=model, dataloader_test=dataloader_test, samples=samples,
+        eval_data=data, likelihood_eval=True, accuracy_eval=True,
+        calibration_eval=False)
 
 @ex.automain
 def main(inference, model, width, n_samples, warmup, he_init,
