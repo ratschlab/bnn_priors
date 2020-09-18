@@ -167,7 +167,7 @@ class SGLDRunner:
         potential.backward()
         for p in self.optimizer.param_groups[0]["params"]:
             p.grad.clamp_(min=-self.grad_max, max=self.grad_max)
-        return loss.item(), log_prior.item(), potential.item()
+        return loss, log_prior, potential
 
     def step(self, i, x, y, store_metrics, lr_decay=True, initial_step=False):
         """
@@ -189,8 +189,8 @@ class SGLDRunner:
             self.scheduler.step()
 
         if store_metrics:
-            self.store_metrics(i=i-1, loss=loss, log_prior=log_prior,
-                               potential=potential, lr=lr,
+            self.store_metrics(i=i-1, loss=loss.item(), log_prior=log_prior.item(),
+                               potential=potential.item(), lr=lr,
                                corresponds_to_sample=initial_step)
         return loss
 
@@ -254,38 +254,43 @@ class VerletSGLDRunner(SGLDRunner):
         loss, log_prior, potential = self._model_potential_and_grad(x, y)
         lr = self.optimizer.param_groups[0]["lr"]
 
-        if i == 0:  # The very first step
-            store_metrics = True
+        if i == 0:
+            # The very first step
             self.optimizer.initial_step(calc_metrics=True)
-            self._initial_loss = loss
-            self._total_energy = 0.
-            delta_energy = self.optimizer.delta_energy(self._initial_loss, loss)
-            total_energy = delta_energy
-
-        elif initial_step:  # It's the first step of an epoch, but not the very first
+        elif initial_step:
+            # The first step of an epoch, but not the very first
             self.optimizer.final_step(calc_metrics=False)
             if isinstance(self.optimizer, mcmc.HMC):
                 self.optimizer.sample_momentum()
+            # Calculate metrics using the momentum and parameter left by
+            # `final_step`
+            self.optimizer.initial_step(calc_metrics=True)
+        else:
+            # Any intermediate step
+            self.optimizer.step(calc_metrics=store_metrics)
 
+        if i == 0:
+            # Very first step
+            store_metrics = True
+            total_energy = delta_energy = self.optimizer.delta_energy(0., 0.)
+            self._initial_loss = loss.item()
+            self._total_energy = 0.
+        elif initial_step:
+            # First step of an epoch
+            store_metrics = True
             delta_energy = self.optimizer.delta_energy(self._initial_loss, loss)
-            self._initial_loss = loss
+            self._initial_loss = loss.item()
             self._total_energy += delta_energy
             total_energy = self._total_energy
-
-            store_metrics = True
-            # This will calculate metrics using the momentum and parameter left
-            # by `final_ste`
-            self.optimizer.initial_step(calc_metrics=True)
-
-        else:  # Any intermediate step
-            self.optimizer.step(calc_metrics=store_metrics)
+        else:
+            # Any step
             if store_metrics:
                 delta_energy = self.optimizer.delta_energy(self._initial_loss, loss)
                 total_energy = self._total_energy + delta_energy
 
         if store_metrics:
-            self.store_metrics(i=i-1, loss=loss, log_prior=log_prior,
-                               potential=potential, lr=lr,
+            self.store_metrics(i=i-1, loss=loss.item(), log_prior=log_prior.item(),
+                               potential=potential.item(), lr=lr,
                                delta_energy=delta_energy,
                                total_energy=total_energy, rejected=None,
                                corresponds_to_sample=initial_step)

@@ -29,13 +29,16 @@ class VerletSGLD(SGLD):
         num_data = self.param_groups[0]['num_data']
         assert all(g['num_data'] == num_data for g in self.param_groups),\
             "unclear which `num_data` to use"
-        delta_energy = (loss - prev_loss) * num_data
-
+        delta_energy = 0.
         for group in self.param_groups:
             for p in group['params']:
                 state = self.state[p]
                 point_energy = self._point_energy(group, p, state)
                 delta_energy += state['delta_energy'] + point_energy
+
+        if isinstance(loss, torch.Tensor):
+            loss = loss.item()
+        delta_energy += (loss - prev_loss) * num_data
         return delta_energy
 
     def _point_energy(self, group, p, state):
