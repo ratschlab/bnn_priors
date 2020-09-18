@@ -166,14 +166,14 @@ class VerletSGLD(SGLD):
         else:
             state['delta_energy'] += state['prev_new_momentum_delta']
             state['delta_energy'] += c_gm * dot(p.grad, old_momentum)
-        del old_momentum
         state['prev_new_momentum_delta'] = c_gm * dot(p.grad, new_momentum)
 
         if calc_metrics:
             # Temperature diagnostics
             d = p.numel()
-            state['est_temperature'] = dot(new_momentum, new_momentum) / d
             # NOTE: p and p.grad are (and have to be) from the same time step
+            # the momentum is from the previous time step
+            state['est_temperature'] = dot(old_momentum, old_momentum) / d
             state['est_config_temp'] = dot(p, p.grad) * (group['num_data']/d)
 
         state['momentum_buffer'] = new_momentum

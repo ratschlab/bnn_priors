@@ -49,16 +49,17 @@ class HMC(VerletSGLD):
             # Subtract initial kinetic energy from delta_energy
             state['delta_energy'] = -self._point_energy(group, p, state)
 
-        # Gradient step on the momentum
-        grad_lr = -.5 * group['grad_v'] * group['bhn'] * M_rsqrt
-        momentum.add_(p.grad, alpha=grad_lr)
-
         if calc_metrics:
             # Temperature diagnostics
             d = p.numel()
-            state['est_temperature'] = dot(momentum, momentum) / d
             # NOTE: p and p.grad are from the same time step
+            # the momentum is from the previous time step
+            state['est_temperature'] = dot(momentum, momentum) / d
             state['est_config_temp'] = dot(p, p.grad) * (group['num_data']/d)
+
+        # Gradient step on the momentum
+        grad_lr = -.5 * group['grad_v'] * group['bhn'] * M_rsqrt
+        momentum.add_(p.grad, alpha=grad_lr)
 
         if not is_final:
             # Update the parameters:

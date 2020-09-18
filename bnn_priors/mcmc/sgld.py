@@ -98,22 +98,26 @@ class SGLD(torch.optim.Optimizer):
 
     def _step_fn(self, group, p, state, calc_metrics=True):
         M_rsqrt = self._preconditioner_default(state, p)
+        d = p.numel()
 
         # Update the momentum with the gradient
         if group['momentum'] > 0:
             momentum = state['momentum_buffer']
+            if calc_metrics:
+                # NOTE: the momentum is from the previous time step
+                state['est_temperature'] = dot(momentum, momentum) / d
             momentum.mul_(group['momentum']).add_(p.grad, alpha=-group['hn']*M_rsqrt)
         else:
             momentum = p.grad.detach().mul(-group['hn']*M_rsqrt)
+            if calc_metrics:
+                # TODO: make the momentum be from the previous time step
+                state['est_temperature'] = dot(momentum, momentum) / d
 
         # Add noise to momentum
         if group['temperature'] > 0:
             momentum.add_(torch.randn_like(momentum), alpha=group['noise_std'])
 
         if calc_metrics:
-            # Temperature diagnostics
-            d = p.numel()
-            state['est_temperature'] = dot(momentum, momentum) / d
             # NOTE: p and p.grad are from the same time step
             state['est_config_temp'] = dot(p, p.grad) * (group['num_data']/d)
 

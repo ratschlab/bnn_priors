@@ -116,6 +116,7 @@ class SGLDRunner:
 
         epochs_since_start = -1
         step = 0  # used for `self.metrics_saver.add_scalar`, must start at 0 and never reset
+        prev_saved_sample = False
         for cycle in range(self.cycles):
             metrics_step = 0  # Used for metrics skip
 
@@ -131,12 +132,11 @@ class SGLDRunner:
                 for g in self.optimizer.param_groups:
                     g['temperature'] = 0. if epoch < self.descent_epochs else self.temperature
 
-                last_i = len(self.dataloader)-1
-                for i, (x, y) in enumerate(self.dataloader):
+                for (x, y) in self.dataloader:
                     self.step(step, x, y,
                               store_metrics=(metrics_step % self.metrics_skip == 0
-                                             or i == last_i),
-                              initial_step=(i == 0))
+                                             or prev_saved_sample),
+                              initial_step=prev_saved_sample)
                     step += 1
                     metrics_step += 1
                 self.metrics_saver.flush(every_s=120)
@@ -153,6 +153,13 @@ class SGLDRunner:
                     else:
                         self.model_saver.add_state_dict(state_dict, step)
                         self.model_saver.flush()
+                    prev_saved_sample = True
+                else:
+                    prev_saved_sample = False
+
+        # Save metrics for the last sample
+        (x, y) = next(iter(self.dataloader))
+        self.step(step, x, y, store_metrics=True, initial_step=prev_saved_sample)
 
     def _model_potential_and_grad(self, x, y):
         self.optimizer.zero_grad()
@@ -162,7 +169,7 @@ class SGLDRunner:
             p.grad.clamp_(min=-self.grad_max, max=self.grad_max)
         return loss.item(), log_prior.item(), potential.item()
 
-    def step(self, i, x, y, store_metrics, lr_decay=True, **_):
+    def step(self, i, x, y, store_metrics, lr_decay=True, initial_step=False):
         """
         Perform one step of SGLD on the model.
 
@@ -182,8 +189,9 @@ class SGLDRunner:
             self.scheduler.step()
 
         if store_metrics:
-            self.store_metrics(i=i, loss=loss, log_prior=log_prior,
-                               potential=potential, lr=lr)
+            self.store_metrics(i=i-1, loss=loss, log_prior=log_prior,
+                               potential=potential, lr=lr,
+                               corresponds_to_sample=initial_step)
         return loss
 
     def get_samples(self):
@@ -198,6 +206,7 @@ class SGLDRunner:
         return self.model_saver.load_samples()
 
     def store_metrics(self, i, loss, log_prior, potential, lr,
+                      corresponds_to_sample,
                       delta_energy=None, total_energy=None, rejected=None):
         est_temperature_all = 0.
         est_config_temp_all = 0.
@@ -222,11 +231,14 @@ class SGLDRunner:
         add_scalar("potential", potential, i)
         add_scalar("lr", lr, i)
 
+        if i <= 0:
+            add_scalar("acceptance/is_sample", int(corresponds_to_sample), i)
+        elif corresponds_to_sample:
+            add_scalar("acceptance/is_sample", 1, i)
+
         if delta_energy is not None:
             add_scalar("delta_energy", delta_energy, i)
             add_scalar("total_energy", total_energy, i)
-            if temperature > 0:
-                add_scalar("acceptance/log_prob", -delta_energy/temperature, i)
         if rejected is not None:
             add_scalar("acceptance/rejected", int(rejected), i)
 
@@ -243,14 +255,15 @@ class VerletSGLDRunner(SGLDRunner):
         lr = self.optimizer.param_groups[0]["lr"]
 
         if i == 0:  # The very first step
-            self.optimizer.initial_step(calc_metrics=store_metrics)
+            store_metrics = True
+            self.optimizer.initial_step(calc_metrics=True)
             self._initial_loss = loss
             self._total_energy = 0.
             delta_energy = self.optimizer.delta_energy(self._initial_loss, loss)
-            total_energy = self._total_energy + delta_energy
+            total_energy = delta_energy
 
         elif initial_step:  # It's the first step of an epoch, but not the very first
-            self.optimizer.final_step(calc_metrics=store_metrics)
+            self.optimizer.final_step(calc_metrics=False)
             if isinstance(self.optimizer, mcmc.HMC):
                 self.optimizer.sample_momentum()
 
@@ -259,17 +272,23 @@ class VerletSGLDRunner(SGLDRunner):
             self._total_energy += delta_energy
             total_energy = self._total_energy
 
-            self.optimizer.initial_step(calc_metrics=store_metrics)
+            store_metrics = True
+            # This will calculate metrics using the momentum and parameter left
+            # by `final_ste`
+            self.optimizer.initial_step(calc_metrics=True)
 
         else:  # Any intermediate step
             self.optimizer.step(calc_metrics=store_metrics)
-            delta_energy = self.optimizer.delta_energy(self._initial_loss, loss)
-            total_energy = self._total_energy + delta_energy
+            if store_metrics:
+                delta_energy = self.optimizer.delta_energy(self._initial_loss, loss)
+                total_energy = self._total_energy + delta_energy
 
-        self.store_metrics(i=i, loss=loss, log_prior=log_prior,
-                           potential=potential, lr=lr,
-                           delta_energy=delta_energy, total_energy=total_energy,
-                           rejected=None)
+        if store_metrics:
+            self.store_metrics(i=i-1, loss=loss, log_prior=log_prior,
+                               potential=potential, lr=lr,
+                               delta_energy=delta_energy,
+                               total_energy=total_energy, rejected=None,
+                               corresponds_to_sample=initial_step)
 
         if lr_decay:
             with warnings.catch_warnings():
