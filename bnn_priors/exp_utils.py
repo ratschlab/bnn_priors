@@ -248,73 +248,65 @@ def evaluate_marglik(model, train_samples, eval_samples):
     return results
 
 
-class HDF5Metrics:
-    def __init__(self, path, mode, chunk_size=1024, chunks_in_cache=8*1024):
+class HDF5ModelSaver:
+    def __init__(self, path, mode):
         self.path = path
         self.mode = mode
-        # defaults: 1 KB chunks, 8 MB cache.
-        self.chunk_size = chunk_size
-        self.chunks_in_cache = chunks_in_cache
-        self._i = -1
-        self._step = -1
-        self.last_flush = time.time()
+        self.chunk_size = 1
+        self.__i = 0
+        self.__init_dsets = True
 
     def __enter__(self):
         self.f = h5py.File(self.path, self.mode, libver="latest",
-                           rdcc_nbytes=self.chunks_in_cache * self.chunk_size)
+                           rdcc_nbytes=0)
         return self
 
     def __exit__(self, exc_type, exc_value, traceback):
+        self.flush()  # Make sure to save all in-memory cache before closing
         self.f.close()
 
-    def add_scalar(self, name, value, step, dtype=None):
-        if step > self._step:
-            self._step = step
-            self._i += 1
-            self._append("steps", step, dtype=np.int64)
-            self._append("timestamps", time.time(), dtype=np.float64)
-            if self._i == 1:
-                # Set the h5 file to Single Reader Multiple Writer (SWMR) mode,
-                # the metrics can be read during the run.
-                # No more datasets can be created after that.
-                # This will prevent any new keys from being added using `add_scalar`.
-                self.f.swmr_mode = True
+    def add_state_dict(self, state_dict, step):
+        d = {k: v.cpu().detach().unsqueeze(0).numpy()
+             for (k, v) in state_dict.items()}
+        d["steps"] = np.array([step], dtype=np.int64)
+        d["timestamps"] = np.array([time.time()], dtype=np.int64)
+        self._extend_dict(d)
 
-        elif step < self._step:
-            raise ValueError(f"step went backwards ({self._step} -> {step})")
-        self._append(name, value, dtype=dtype)
+    def _extend_dict(self, d):
+        length = self._assign_dict_current(d)
+        self.__i += length
 
-    def _append(self, name, value, dtype=None):
-        try:
-            dset = self.f[name]
-        except KeyError:
-            if isinstance(value, np.ndarray):
-                if dtype is None:
-                    dtype = value.dtype
-                else:
-                    assert dtype == value.dtype
-                shape = value.shape
-            elif isinstance(value, t.Tensor):
-                np_dtype = np.dtype(str(value.dtype).lstrip("torch."))
-                if dtype is None:
-                    dtype = np_dtype
-                else:
-                    assert dtype == np_dtype
-                shape = tuple(value.size())
+    def _assign_dict_current(self, d):
+        """
+       Assigns all data from dictionary `d` to the positions
+        `self.__i:self.__i+self.chunk_size` in the HDF5 file.
+        """
+        if self.__init_dsets:
+            for k, v in d.items():
+                self._create_dset(k, v.shape[1:], v.dtype)
+            # Set the h5 file to Single Reader Multiple Writer (SWMR) mode,
+            # the metrics can be read during the run.
+            # No more datasets can be created after that.
+            # This will prevent any new keys from being added using `add_scalar`.
+            self.f.swmr_mode = True
+            self.__init_dsets = False
+
+        i = self.__i
+        length = None
+        for k, value in d.items():
+            if length is None:
+                length = len(value)
             else:
-                if dtype is None:
-                    dtype = type(value)
-                shape = ()
-            dset = self._create_metric(name, shape, dtype)
+                assert length == len(value), "lengths unequal"
 
-        assert isinstance(dset, h5py.Dataset)
-        if self._i >= len(dset):
-            # If they are all `_append`ed to in every iteration,
-            # `dset`s sizes always are within `self.chunk_size` of each other
-            dset.resize(self._i+self.chunk_size, axis=0)
-        dset[self._i] = value
+            dset = self.f[k]
+            if i + length >= len(dset):
+                add = int(math.ceil(length / self.chunk_size)) * self.chunk_size
+                dset.resize(i + add, axis=0)
+            dset[i:i+length] = value
+        return length
 
-    def _create_metric(self, name, shape, dtype):
+    def _create_dset(self, name, shape, dtype):
         return self.f.create_dataset(
             name, dtype=dtype,
             shape=(0,                *shape),
@@ -322,28 +314,55 @@ class HDF5Metrics:
             maxshape=(None,          *shape),
             fletcher32=True, fillvalue=np.nan)
 
+    def flush(self):
+        self.f.flush()
+
+    def load_samples(self):
+        try:
+            self.f.flush()
+        except:
+            pass
+        return load_samples(self.path)
+
+
+class HDF5Metrics(HDF5ModelSaver):
+    def __init__(self, path, mode, chunk_size=8*1024):
+        super().__init__(path, mode)
+        self.chunk_size = chunk_size
+        self._step = -2**63
+        self._cache = {}
+        self._chunk_i = 0
+        self.last_flush = time.time()
+
+    def add_scalar(self, name, value, step, dtype=None):
+        if step > self._step:
+            self._chunk_i += 1
+            if self._chunk_i >= self.chunk_size:
+                self._extend_dict(self._cache)
+                self._chunk_i = 0
+
+            self._step = step
+            self._append("steps", step, np.int64)
+            self._append("timestamps", time.time(), np.float64)
+
+        elif step < self._step:
+            raise ValueError(f"step went backwards ({self._step} -> {step})")
+        self._append(name, value, type(value))
+
+    def _append(self, name, value, dtype):
+        try:
+            arr = self._cache[name]
+        except KeyError:
+            arr = self._cache[name] = np.empty(self.chunk_size, dtype=dtype)
+            arr[:] = np.nan
+        arr[self._chunk_i] = value
+
     def flush(self, every_s=0):
         "flush every `every_s` seconds"
         now = time.time()
         if now - self.last_flush > every_s:
-            self.last_flush = now
-        return self.f.flush()
-
-
-class HDF5ModelSaver(HDF5Metrics):
-    def __init__(self, path, mode):
-        super().__init__(path, mode, chunk_size=1, chunks_in_cache=0)
-
-    def add_state_dict(self, state_dict, step):
-        for k, v in state_dict.items():
-            self.add_scalar(k, v.cpu().detach().numpy(), step, dtype=None)
-
-    def load_samples(self):
-        try:
-            self.flush()
-        except:
-            pass
-        return load_samples(self.path)
+            self._assign_dict_current(self._cache)
+            self.f.flush()
 
 
 def load_samples(path, idx=slice(None)):
