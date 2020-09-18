@@ -38,12 +38,12 @@ class Reshape(nn.Module):
         return x.view(self.shape)
 
 
-def ClassificationConvNet(in_channels, height, out_features, width, depth=3, softmax_temp=1.,
+def ClassificationConvNet(in_channels, img_height, out_features, width, depth=3, softmax_temp=1.,
                            prior_w=prior.Normal, loc_w=0., std_w=2**.5,
                            prior_b=prior.Normal, loc_b=0., std_b=1.,
                            scaling_fn=None, weight_prior_params={}, bias_prior_params={}):
     assert depth >= 2, "We can't have less than two layers"
-    layers = [Reshape(-1, in_channels, height, height),
+    layers = [Reshape(-1, in_channels, img_height, img_height),
               Conv2dPrior(in_channels, width, kernel_size=3, padding=1, prior_w=prior_w, loc_w=loc_w,
                        std_w=std_w, prior_b=prior_b, loc_b=loc_b, std_b=std_b,
                        scaling_fn=scaling_fn, weight_prior_params=weight_prior_params,
@@ -57,7 +57,7 @@ def ClassificationConvNet(in_channels, height, out_features, width, depth=3, sof
         layers.append(nn.ReLU())
         layers.append(nn.MaxPool2d(2))
     layers.append(nn.Flatten())
-    reshaped_size = width*(height//2**(depth-1))**2
+    reshaped_size = width*(img_height//2**(depth-1))**2
     layers.append(LinearPrior(reshaped_size, out_features, prior_w=prior_w, loc_w=loc_w,
                        std_w=std_w, prior_b=prior_b, loc_b=loc_b, std_b=std_b,
                        scaling_fn=scaling_fn, weight_prior_params=weight_prior_params,

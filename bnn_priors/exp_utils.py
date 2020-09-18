@@ -87,11 +87,11 @@ def get_model(x_train, y_train, model, width, depth, weight_prior, weight_loc,
     elif model == "classificationconvnet":
         if len(x_train.shape) == 4:
             in_channels = x_train.shape[1]
-            height = x_train.shape[-2]
+            img_height = x_train.shape[-2]
         else:
             in_channels = 1
-            height = int(math.sqrt(x_train.shape[-1]))
-        net = ClassificationConvNet(in_channels, height, y_train.max()+1, width, depth, softmax_temp=1.,
+            img_height = int(math.sqrt(x_train.shape[-1]))
+        net = ClassificationConvNet(in_channels, img_height, y_train.max()+1, width, depth, softmax_temp=1.,
                         prior_w=weight_prior, loc_w=weight_loc, std_w=weight_scale,
                         prior_b=bias_prior, loc_b=bias_loc, std_b=bias_scale, scaling_fn=scaling_fn,
                         weight_prior_params=weight_prior_params, bias_prior_params=bias_prior_params).to(x_train)
