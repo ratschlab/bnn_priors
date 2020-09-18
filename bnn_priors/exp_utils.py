@@ -10,6 +10,9 @@ from bnn_priors.prior import LogNormal
 from bnn_priors import prior
 from bnn_priors.prior import get_prior
 from bnn_priors.third_party.calibration_error import ece, ace, rmsce
+import warnings
+import sacred
+from pathlib import Path
 
 
 def device(device):
@@ -101,14 +104,26 @@ def get_model(x_train, y_train, model, width, depth, weight_prior, weight_loc,
     return net
 
 
-def evaluate_model(model, dataloader_test, samples, n_samples,
-                   eval_data, likelihood_eval, accuracy_eval, calibration_eval):
+def _n_samples_dict(samples):
+    n_samples = min(len(v) for _, v in samples.items())
+
+    if not all((len(v) == n_samples) for _, v in samples.items()):
+        warnings.warn("Not all samples have the same length. "
+                      "Setting n_samples to the minimum.")
+    return n_samples
+
+def sample_iter(samples):
+    for i in range(_n_samples_dict(samples)):
+        yield dict((k, v[i]) for k, v in samples.items())
+
+
+def evaluate_model(model, dataloader_test, samples, eval_data, likelihood_eval,
+                   accuracy_eval, calibration_eval):
     lps = []
     accs = []
     probs = []
 
-    for i in range(n_samples):
-        sample = dict((k, v[i]) for k, v in samples.items())
+    for sample in sample_iter(samples):
         with t.no_grad():
             model.load_state_dict(sample)
             lps_sample = []
@@ -168,15 +183,14 @@ def evaluate_model(model, dataloader_test, samples, n_samples,
     return results
 
 
-def evaluate_ood(model, dataloader_train, dataloader_test, samples, n_samples):
+def evaluate_ood(model, dataloader_train, dataloader_test, samples):
 
     loaders = {"train": dataloader_train, "eval": dataloader_test}
     probs = {"train": [], "eval": []}
     aurocs = []
     auprcs = []
 
-    for i in range(n_samples):
-        sample = dict((k, v[i]) for k, v in samples.items())
+    for sample in sample_iter(samples):
         with t.no_grad():
             model.load_state_dict(sample)
             for dataset in ["train", "eval"]:
@@ -208,12 +222,13 @@ def evaluate_ood(model, dataloader_train, dataloader_test, samples, n_samples):
     return results
 
 
-def evaluate_marglik(model, train_samples, eval_samples, n_samples):
+def evaluate_marglik(model, train_samples, eval_samples):
     log_priors = []
 
-    for i in range(n_samples):
-        train_sample = dict((k, v[i]) for k, v in train_samples.items())
-        eval_sample = dict((k, v[i]) for k, v in eval_samples.items())
+    n_samples = _n_samples_dict(train_samples)
+    assert n_samples == _n_samples_dict(eval_samples)
+    for train_sample, eval_sample in zip(sample_iter(train_samples),
+                                         sample_iter(eval_samples)):
         # Ideally we would only use eval_sample, but the (possibly hierarchical)
         # model has more parameters than eval_sample. This way we start with
         # parameters in `train_sample` and overwrite them with all parameters
@@ -340,3 +355,14 @@ def load_samples(path, idx=slice(None)):
     except OSError:
         samples = t.load(path)
         return {k: v[idx] for k, v in samples.items()}
+
+
+def sneaky_artifact(_run, name):
+    """modifed `artifact_event` from `sacred.observers.FileStorageObserver`
+    Returns path to the name.
+    """
+    obs = _run.observers[0]
+    assert isinstance(obs, sacred.observers.FileStorageObserver)
+    obs.run_entry["artifacts"].append(name)
+    obs.save_json(obs.run_entry, "run.json")
+    return Path(obs.dir)/name
