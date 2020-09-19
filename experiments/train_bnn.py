@@ -58,7 +58,7 @@ def config():
     warmup = 2000
     burnin = 2000
     skip = 5
-    metrics_skip = 1
+    metrics_skip = 10
     cycles =  5
     temperature = 1.0
     momentum = 0.9
