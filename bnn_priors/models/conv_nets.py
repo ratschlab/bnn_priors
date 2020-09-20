@@ -102,13 +102,10 @@ class PreActBlock(nn.Module):
             self.shortcut = (lambda x: x)
 
     def forward(self, x):
-        out = x
-        out = self.bn1(out)
-        out = F.relu(out)
+        out = F.relu(self.bn1(x))
         shortcut = self.shortcut(out)
         out = self.conv1(out)
-        out = self.bn2(out)
-        out = self.conv2(F.relu(out))
+        out = self.conv2(F.relu(self.bn2(out)))
         out += shortcut
         return out
 
