@@ -122,15 +122,12 @@ def main(inference, model, width, n_samples, warmup, he_init,
     x_test = data.norm.test_X
     y_test = data.norm.test_y
 
-    #model = get_model(x_train=x_train, y_train=y_train)
-    import bnn_priors.models.preact_resnet
-    model = bnn_priors.models.preact_resnet.PreActResNet18()
+    model = get_model(x_train=x_train, y_train=y_train)
 
-    #if he_init:
-    #    exp_utils.he_initialize(model)
+    if he_init:
+        exp_utils.he_initialize(model)
 
     if save_samples:
-
         model_saver_fn = (lambda: exp_utils.HDF5ModelSaver(
             exp_utils.sneaky_artifact(_run, "samples.pt"), "w"))
     else:

@@ -21,6 +21,8 @@ class AbstractModel(nn.Module, abc.ABC):
     """
     def __init__(self, net: nn.Module):
         super().__init__()
+        # For some reason, this increases GPU utilization and decreases CPU
+        # utilization. The end result is much faster.
         self.net = torch.nn.DataParallel(net)
 
     def log_prior(self):
@@ -67,8 +69,8 @@ class AbstractModel(nn.Module, abc.ABC):
         return - (self.log_likelihood(x, y, eff_num_data) + self.log_prior())
 
     def _split_potential_preds(self, x, y, eff_num_data):
-        loss_, preds = self._log_likelihood_avg_preds(x, y)
-        loss = -loss_
+        lla, preds = self._log_likelihood_avg_preds(x, y)
+        loss = -lla
         log_prior = self.log_prior()
         potential_avg = loss - log_prior/eff_num_data
         return loss, log_prior, potential_avg, preds
