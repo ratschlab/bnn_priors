@@ -1,11 +1,12 @@
 import os
 import torch as t
 import torchvision
+from torchvision import transforms
 import numpy as np
-from bnn_priors.data import Dataset
+from ..base import Dataset, DatasetFromTorch
 
 
-__all__ = ('CIFAR10','CIFAR10_C', 'SVHN')
+__all__ = ('CIFAR10','CIFAR10_C', 'SVHN', 'CIFAR10Augmented')
 
 
 class CIFAR10:
@@ -131,3 +132,35 @@ class SVHN(CIFAR10):
 
         self._save_datasets(data_train.data, data_test.data, data_train.labels,
                             data_test.labels, permutation=(0,1,2,3))
+
+class CIFAR10Augmented:
+    def __init__(self, dtype='float32', device="cpu", download=False):
+        _ROOT = os.path.abspath(os.path.dirname(__file__))
+        dataset_dir = f'{_ROOT}/cifar10/'
+        dtype = getattr(t, dtype)
+        self.dtype = dtype
+        self.device = device
+
+        x_std = (0.2023, 0.1994, 0.2010)
+        x_mean = (0.4914, 0.4822, 0.4465)
+        self.X_std = t.tensor(x_std, dtype=dtype, device=device).reshape((1, 3, 1, 1))
+        self.X_mean = t.tensor(x_mean, dtype=dtype, device=device).reshape((1, 3, 1, 1))
+
+        transform_train = transforms.Compose([
+            transforms.RandomCrop(32, padding=4),
+            transforms.RandomHorizontalFlip(),
+            transforms.ToTensor(),
+            transforms.Normalize(x_mean, x_std),
+        ])
+
+        transform_test = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize(x_mean, x_std),
+        ])
+        data_train = torchvision.datasets.CIFAR10(dataset_dir, download=download, train=True, transform=transform_train)
+        data_test = torchvision.datasets.CIFAR10(dataset_dir, download=download, train=False, transform=transform_test)
+
+        self.norm = DatasetFromTorch(data_train, data_test)
+        self.num_train_set = len(data_train)
+        self.in_shape = t.Size([3, 32, 32])
+        self.out_shape = t.Size([])

@@ -1,10 +1,10 @@
 import os
 import torch as t
 import numpy as np
-from torch.utils.data import TensorDataset
+from torch.utils.data import TensorDataset, DataLoader
 
 
-__all__ = ('Dataset',)
+__all__ = ('Dataset', 'DatasetFromTorch')
 
 
 class Dataset:
@@ -22,3 +22,16 @@ class Dataset:
 
         self.train = TensorDataset(self.train_X, self.train_y)
         self.test  = TensorDataset(self.test_X,  self.test_y)
+
+
+def _load_all(dset):
+    loader = DataLoader(dset, batch_size=len(dset), shuffle=False)
+    return next(iter(loader))
+
+
+class DatasetFromTorch(Dataset):
+    def __init__(self, train, test):
+        self.train = train
+        self.test = test
+        self.train_X, self.train_y = (None, None)  # _load_all(train)
+        self.test_X, self.test_y = (None, None)  # _load_all(test)

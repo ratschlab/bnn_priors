@@ -4,7 +4,7 @@ import numpy as np
 import time
 from sklearn.metrics import average_precision_score, roc_auc_score
 import torch as t
-from bnn_priors.data import UCI, CIFAR10, CIFAR10_C, MNIST, RotatedMNIST, FashionMNIST, SVHN, RandomData
+from bnn_priors.data import UCI, CIFAR10Augmented, CIFAR10, CIFAR10_C, MNIST, RotatedMNIST, FashionMNIST, SVHN, RandomData
 from bnn_priors.models import RaoBDenseNet, DenseNet, PreActResNet18, ThinPreActResNet18, PreActResNet34, ClassificationDenseNet, ResNet, ClassificationConvNet
 from bnn_priors.prior import LogNormal
 from bnn_priors import prior
@@ -38,6 +38,8 @@ def get_data(data, device):
         dataset = CIFAR10_C(corruption, device=device)
     elif data == "cifar10":
         dataset = CIFAR10(device=device)
+    elif data == "cifar10_augmented":
+        dataset = CIFAR10Augmented(device=device)
     elif data == "mnist":
         dataset = MNIST(device=device)
     elif data == "rotated_mnist":
@@ -140,6 +142,8 @@ def evaluate_model(model, dataloader_test, samples, eval_data, likelihood_eval,
     accs = []
     probs = []
 
+    device = next(iter(model.parameters())).device
+
     for sample in sample_iter(samples):
         with t.no_grad():
             model.load_state_dict(sample)
@@ -147,8 +151,11 @@ def evaluate_model(model, dataloader_test, samples, eval_data, likelihood_eval,
             accs_sample = []
             probs_sample = []
             for batch_x, batch_y in dataloader_test:
+                batch_x = batch_x.to(device)
+                batch_y = batch_y.to(device)
                 pred = model(batch_x)
                 lps_batch = pred.log_prob(batch_y)
+                # TODO: depend only on whether it is a ClassificationModel or a RegressionModel
                 if "cifar10" in eval_data or "mnist" in eval_data:
                     # shape: batch_size
                     accs_batch = (t.argmax(pred.probs, dim=1) == batch_y).float()

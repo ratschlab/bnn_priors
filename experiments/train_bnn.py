@@ -61,6 +61,7 @@ def config():
     metrics_skip = 10
     cycles =  5
     temperature = 1.0
+    sampling_decay = True
     momentum = 0.9
     precond_update = 1
     lr = 5e-4
@@ -104,13 +105,15 @@ def evaluate_model(model, dataloader_test, samples, data):
 @ex.automain
 def main(inference, model, width, n_samples, warmup, he_init,
          burnin, skip, metrics_skip, cycles, temperature, momentum,
-         precond_update, lr, batch_size, save_samples, run_id, log_dir, _run):
+         precond_update, lr, batch_size, save_samples, data,
+         run_id, log_dir, sampling_decay, _run):
     assert inference in ["SGLD", "HMC", "VerletSGLD", "OurHMC"]
     assert width > 0
     assert n_samples > 0
     assert cycles > 0
     assert temperature >= 0
 
+    eval_data_name = data
     data = get_data()
 
     x_train = data.norm.train_X
@@ -119,10 +122,12 @@ def main(inference, model, width, n_samples, warmup, he_init,
     x_test = data.norm.test_X
     y_test = data.norm.test_y
 
-    model = get_model(x_train=x_train, y_train=y_train)
-    
-    if he_init:
-        exp_utils.he_initialize(model)
+    #model = get_model(x_train=x_train, y_train=y_train)
+    import bnn_priors.models.preact_resnet
+    model = bnn_priors.models.preact_resnet.PreActResNet18()
+
+    #if he_init:
+    #    exp_utils.he_initialize(model)
 
     if save_samples:
 
@@ -154,10 +159,13 @@ def main(inference, model, width, n_samples, warmup, he_init,
             epochs_per_cycle = warmup + burnin + sample_epochs
             if batch_size is None:
                 batch_size = len(data.norm.train)
-            dataloader = t.utils.data.DataLoader(data.norm.train, batch_size=batch_size, shuffle=True, drop_last=True)
-            mcmc = runner_class(model=model, dataloader=dataloader, epochs_per_cycle=epochs_per_cycle,
+            # Disable parallel loading for `TensorDataset`s.
+            num_workers = (0 if isinstance(data.norm.train, t.utils.data.TensorDataset) else 2)
+            dataloader = t.utils.data.DataLoader(data.norm.train, batch_size=batch_size, shuffle=True, drop_last=False, num_workers=num_workers)
+            dataloader_test = t.utils.data.DataLoader(data.norm.test, batch_size=batch_size, shuffle=False, drop_last=False, num_workers=num_workers)
+            mcmc = runner_class(model=model, dataloader=dataloader, dataloader_test=dataloader_test, eval_data=eval_data_name, epochs_per_cycle=epochs_per_cycle,
                                 warmup_epochs=warmup, sample_epochs=sample_epochs, learning_rate=lr,
-                                skip=skip, metrics_skip=metrics_skip, sampling_decay=True, cycles=cycles, temperature=temperature,
+                                skip=skip, metrics_skip=metrics_skip, sampling_decay=sampling_decay, cycles=cycles, temperature=temperature,
                                 momentum=momentum, precond_update=precond_update,
                                 metrics_saver=metrics_saver, model_saver=model_saver)
 

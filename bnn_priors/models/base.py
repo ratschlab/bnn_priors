@@ -21,7 +21,7 @@ class AbstractModel(nn.Module, abc.ABC):
     """
     def __init__(self, net: nn.Module):
         super().__init__()
-        self.net = net
+        self.net = torch.nn.DataParallel(net)
 
     def log_prior(self):
         "log p(params)"
@@ -48,10 +48,15 @@ class AbstractModel(nn.Module, abc.ABC):
         """
         unbiased minibatch estimate of log-likelihood per datapoint
         """
+        lla, _ = self._log_likelihood_avg_preds(x, y)
+        return lla
+
+    def _log_likelihood_avg_preds(self, x: torch.Tensor, y: torch.Tensor):
         # compute batch size using zeroth dim of inputs (log_prob_batch doesn't work with RaoB).
         assert x.shape[0] == y.shape[0]
         batch_size = x.shape[0]
-        return self(x).log_prob(y).sum() / batch_size
+        preds = self(x)
+        return preds.log_prob(y).sum() / batch_size, preds
 
     def potential(self, x, y, eff_num_data):
         """
@@ -61,11 +66,16 @@ class AbstractModel(nn.Module, abc.ABC):
         """
         return - (self.log_likelihood(x, y, eff_num_data) + self.log_prior())
 
-    def split_potential_avg(self, x, y, eff_num_data):
-        loss = self.log_likelihood_avg(x, y).neg()
+    def _split_potential_preds(self, x, y, eff_num_data):
+        loss_, preds = self._log_likelihood_avg_preds(x, y)
+        loss = -loss_
         log_prior = self.log_prior()
-        return loss, log_prior, loss - log_prior/eff_num_data
+        potential_avg = loss - log_prior/eff_num_data
+        return loss, log_prior, potential_avg, preds
 
+    @abc.abstractmethod
+    def split_potential_and_acc(self, x, y, eff_num_data):
+        pass
 
     def potential_avg(self, x, y, eff_num_data):
         "-log p(y, params | x)"
@@ -147,6 +157,12 @@ class RegressionModel(AbstractModel):
     def likelihood_dist(self, f: torch.Tensor):
         return torch.distributions.Normal(f, prior.value_or_call(self.noise_std))
 
+    def split_potential_and_acc(self, x, y, eff_num_data):
+        loss, log_prior, potential_avg, preds = (
+            self._split_potential_preds(x, y, eff_num_data))
+        diff = preds.mean - y
+        mse = torch.einsum("nd,nd->n", diff, diff)
+        return loss, log_prior, potential_avg, mse
 
 class ClassificationModel(AbstractModel):
     """Model for classification using a Categorical likelihood.
@@ -163,6 +179,12 @@ class ClassificationModel(AbstractModel):
 
     def likelihood_dist(self, f: torch.Tensor):
         return torch.distributions.Categorical(logits=f/prior.value_or_call(self.softmax_temp))
+
+    def split_potential_and_acc(self, x, y, eff_num_data):
+        loss, log_prior, potential_avg, preds = (
+            self._split_potential_preds(x, y, eff_num_data))
+        acc = torch.argmax(preds.logits, dim=1).eq(y).to(torch.float32)
+        return loss, log_prior, potential_avg, acc
 
 
 class RaoBRegressionModel(AbstractModel):
