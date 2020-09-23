@@ -43,6 +43,7 @@ class SGLD(torch.optim.Optimizer):
         # OK to call this one, but not `sample_momentum`, because
         # `update_preconditioner` uses no random numbers.
         self.update_preconditioner()
+        self._step_count = 0  # keep the `torch.optim.scheduler` happy
 
     def _preconditioner_default(self, state, p) -> float:
         try:

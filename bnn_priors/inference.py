@@ -333,12 +333,8 @@ class VerletSGLDRunner(SGLDRunner):
                                delta_energy=delta_energy,
                                total_energy=total_energy, rejected=None,
                                corresponds_to_sample=initial_step)
-
         if lr_decay:
-            with warnings.catch_warnings():
-                # TODO: PyTorch complains about calling the LR step before the optimizer step
-                warnings.simplefilter("ignore")
-                self.scheduler.step()
+            self.scheduler.step()
         return loss, acc
 
 class HMCRunner(VerletSGLDRunner):
