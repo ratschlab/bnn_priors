@@ -9,7 +9,7 @@ import contextlib
 import collections
 import itertools
 
-__all__ = ('RegressionModel', 'RaoBRegressionModel', 'CategoricalModel', 'ClassificationModel', 'AbstractModel')
+__all__ = ('RegressionModel', 'RaoBRegressionModel', 'ClassificationModel', 'AbstractModel')
 
 
 class AbstractModel(nn.Module, abc.ABC):
@@ -27,7 +27,10 @@ class AbstractModel(nn.Module, abc.ABC):
 
     def log_prior(self):
         "log p(params)"
-        return sum(p.log_prob() for _, p in prior.named_priors(self))
+        lp = sum(p.log_prob() for _, p in prior.named_priors(self))
+        if isinstance(lp, float):
+            return torch.tensor(lp)
+        return lp
 
     @abc.abstractmethod
     def likelihood_dist(self, f: torch.Tensor):
@@ -136,13 +139,6 @@ class AbstractModel(nn.Module, abc.ABC):
                     mod._parameters[name] = param_or_buffer
 
 
-
-class CategoricalModel(AbstractModel):
-    def likelihood_dist(self, f: torch.Tensor):
-        return torch.distributions.Categorical(logits=f)
-
-
-
 class RegressionModel(AbstractModel):
     """Model for regression using an independent Gaussian likelihood.
     Arguments:
@@ -165,6 +161,7 @@ class RegressionModel(AbstractModel):
         diff = preds.mean - y
         mse = torch.einsum("nd,nd->n", diff, diff)
         return loss, log_prior, potential_avg, mse
+
 
 class ClassificationModel(AbstractModel):
     """Model for classification using a Categorical likelihood.
@@ -189,7 +186,7 @@ class ClassificationModel(AbstractModel):
         return loss, log_prior, potential_avg, acc
 
 
-class RaoBRegressionModel(AbstractModel):
+class RaoBRegressionModel(RegressionModel):
     """Rao-Blackwellised version of Gaussian univariate regression. It integrates
     out the weights of the last layer analytically during inference. The last
     layer has to have an iid Normal prior, with variance `last_layer_var`.
@@ -203,10 +200,9 @@ class RaoBRegressionModel(AbstractModel):
         assert x_train.dim() == 2
         assert x_train.size(0) == y_train.size(0)
         assert y_train.size(1) == 1
-        super().__init__(net)
+        super().__init__(net, noise_std)
         self.x_train = x_train
         self.y_train = y_train
-        self.noise_std = noise_std
         self.last_layer_std = last_layer_std
 
     def _log_likelihood_constants(self, y, n_feat, sig):

@@ -65,7 +65,8 @@ def config():
     momentum = 0.9
     precond_update = 1
     lr = 5e-4
-    he_init = True
+    init_method = "he"
+    load_samples = None
     batch_size = None
     batchnorm = True
     device = "try_cuda"
@@ -103,9 +104,9 @@ def evaluate_model(model, dataloader_test, samples, data):
         calibration_eval=False)
 
 @ex.automain
-def main(inference, model, width, n_samples, warmup, he_init,
+def main(inference, model, width, n_samples, warmup, init_method,
          burnin, skip, metrics_skip, cycles, temperature, momentum,
-         precond_update, lr, batch_size, save_samples, data,
+         precond_update, lr, batch_size, load_samples, save_samples, data,
          run_id, log_dir, sampling_decay, _run):
     assert inference in ["SGLD", "HMC", "VerletSGLD", "OurHMC"]
     assert width > 0
@@ -124,8 +125,15 @@ def main(inference, model, width, n_samples, warmup, he_init,
 
     model = get_model(x_train=x_train, y_train=y_train)
 
-    if he_init:
-        exp_utils.he_initialize(model)
+    if load_samples is None:
+        if init_method == "he":
+            exp_utils.he_initialize(model)
+        elif init_method == "he_uniform":
+            exp_utils.he_uniform_initialize(model)
+    else:
+        state_dict = exp_utils.load_samples(load_samples, idx=-1)
+        model.load_state_dict(state_dict)
+        del state_dict
 
     if save_samples:
         model_saver_fn = (lambda: exp_utils.HDF5ModelSaver(

@@ -14,7 +14,7 @@ class GaussianModel(AbstractModel):
     def log_likelihood(self):
         return 0.
     def __init__(self, N, D, mean=0., std=1.):
-        super().__init__(None)
+        super().__init__(torch.nn.Identity())
         for i in range(N):
             setattr(self, str(i), prior.Normal(torch.Size([D]), mean, std))
 

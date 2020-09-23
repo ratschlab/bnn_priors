@@ -22,6 +22,9 @@ def zip_allclose(sequence_a, sequence_b):
 def new_model_loss(N=10, D=1):
     x = torch.randn(N, 1)
     y = x.sin()
+    if torch.cuda.is_available():
+        x = x.cuda()
+        y = y.cuda()
     model = DenseNet(x.size(-1), y.size(-1), 10, noise_std=0.1)
     def loss():
         model.zero_grad()

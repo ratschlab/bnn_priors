@@ -192,7 +192,10 @@ class SGLDRunner:
 
         # Save metrics for the last sample
         (x, y) = next(iter(self.dataloader))
-        self.step(step, x, y, store_metrics=True, initial_step=prev_saved_sample)
+        self.step(step,
+                  x.to(self._params[0].device).detach(),
+                  y.to(self._params[0].device).detach(), store_metrics=True,
+                  initial_step=prev_saved_sample)
 
     def _model_potential_and_grad(self, x, y):
         self.optimizer.zero_grad()
