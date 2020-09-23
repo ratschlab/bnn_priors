@@ -5,7 +5,8 @@ import torch
 from .utils import get_cosine_schedule
 from . import mcmc
 import math
-from bnn_priors import prior
+from . import prior
+from .exp_utils import evaluate_model
 
 
 # def _named_params_and_buffers(model):
@@ -16,7 +17,7 @@ from bnn_priors import prior
 #         model.named_buffers())
 
 class SGLDRunner:
-    def __init__(self, model, dataloader, epochs_per_cycle, warmup_epochs,
+    def __init__(self, model, dataloader, dataloader_test, eval_data, epochs_per_cycle, warmup_epochs,
                  sample_epochs, learning_rate=1e-2, skip=1, metrics_skip=1,
                  temperature=1., data_mult=1., momentum=0., sampling_decay=True,
                  grad_max=1e6, cycles=1, precond_update=None,
@@ -60,6 +61,9 @@ class SGLDRunner:
         """
         self.model = model
         self.dataloader = dataloader
+        self.dataloader_test = dataloader_test
+        # TODO: forgo eval_data and just whether `model` is a Classification- ora RegressionModel
+        self.eval_data = eval_data
 
         assert warmup_epochs >= 0
         assert sample_epochs >= 0
@@ -110,9 +114,16 @@ class SGLDRunner:
         self.optimizer = self._make_optimizer(self._params)
         self.optimizer.sample_momentum()
 
-        schedule = get_cosine_schedule(len(self.dataloader) * self.epochs_per_cycle)
-        self.scheduler = torch.optim.lr_scheduler.LambdaLR(
-            optimizer=self.optimizer, lr_lambda=schedule)
+        if self.sampling_decay:
+            schedule = get_cosine_schedule(len(self.dataloader) * self.epochs_per_cycle)
+            self.scheduler = torch.optim.lr_scheduler.LambdaLR(
+                optimizer=self.optimizer, lr_lambda=schedule)
+        else:
+            self.scheduler = torch.optim.lr_scheduler.StepLR(
+                self.optimizer, 150*len(self.dataloader), gamma=0.1)
+
+        self.metrics_saver.add_scalar("test/log_prob", math.nan, step=-1)
+        self.metrics_saver.add_scalar("test/acc", math.nan, step=-1)
 
         epochs_since_start = -1
         step = 0  # used for `self.metrics_saver.add_scalar`, must start at 0 and never reset
@@ -126,17 +137,28 @@ class SGLDRunner:
             else:
                 epochs = range(self.epochs_per_cycle)
 
+            postfix = {}
             for epoch in epochs:
                 epochs_since_start += 1
 
                 for g in self.optimizer.param_groups:
                     g['temperature'] = 0. if epoch < self.descent_epochs else self.temperature
 
-                for (x, y) in self.dataloader:
-                    self.step(step, x, y,
-                              store_metrics=(metrics_step % self.metrics_skip == 0
-                                             or prev_saved_sample),
-                              initial_step=prev_saved_sample)
+                train_loss = 0.
+                train_acc = 0.
+                for i, (x, y) in enumerate(self.dataloader):
+                    store_metrics = (metrics_step % self.metrics_skip == 0
+                                     or prev_saved_sample)
+                    loss_, acc_ = self.step(
+                        step, x.to(self._params[0].device).detach(), y.to(self._params[0].device).detach(),
+                        store_metrics=store_metrics,
+                        initial_step=prev_saved_sample)
+                    train_loss += loss_
+                    train_acc += acc_
+                    if progressbar and store_metrics:
+                        postfix["train/loss"] = train_loss.item()/(i+1)
+                        postfix["train/acc"] = train_acc.item()/(i+1)
+                        epochs.set_postfix(postfix)
                     step += 1
                     metrics_step += 1
                 self.metrics_saver.flush(every_s=120)
@@ -145,8 +167,8 @@ class SGLDRunner:
                     self.optimizer.update_preconditioner()
 
                 sampling_epoch = epoch - (self.descent_epochs + self.warmup_epochs)
+                state_dict = self.model.state_dict()
                 if (0 <= sampling_epoch) and (sampling_epoch % self.skip == 0):
-                    state_dict = self.model.state_dict()
                     if self.model_saver is None:
                         for name, param in state_dict.items():
                             self._samples[name][(self.num_samples*cycle)+(sampling_epoch//self.skip)] = param
@@ -157,17 +179,34 @@ class SGLDRunner:
                 else:
                     prev_saved_sample = False
 
+                state_dict = {k: v.unsqueeze(0) for k, v in state_dict.items()}
+                results = evaluate_model(
+                    self.model, self.dataloader_test, state_dict, self.eval_data,
+                    likelihood_eval=True, accuracy_eval=True, calibration_eval=False)
+                results = {"test/log_prob": results["lp_ensemble"],
+                           "test/acc": results["acc_mean"]}
+                for k, v in results.items():
+                    self.metrics_saver.add_scalar(k, v, step-1)
+                if progressbar:
+                    postfix.update(results)
+                    epochs.set_postfix(postfix)
+
         # Save metrics for the last sample
         (x, y) = next(iter(self.dataloader))
-        self.step(step, x, y, store_metrics=True, initial_step=prev_saved_sample)
+        self.step(step,
+                  x.to(self._params[0].device),
+                  y.to(self._params[0].device),
+                  store_metrics=True, initial_step=prev_saved_sample)
 
     def _model_potential_and_grad(self, x, y):
         self.optimizer.zero_grad()
-        loss, log_prior, potential = self.model.split_potential_avg(x, y, self.eff_num_data)
+        loss, log_prior, potential, acc, _ = self.model.split_potential_and_acc(x, y, self.eff_num_data)
+        # why not return acc.mean() already from the function above? To use this in exp_utils.py
+        # TODO: use the `model.split_potential_and_acc` function in exp_utils.py as well
         potential.backward()
         for p in self.optimizer.param_groups[0]["params"]:
             p.grad.clamp_(min=-self.grad_max, max=self.grad_max)
-        return loss, log_prior, potential
+        return loss, log_prior, potential, acc.mean()
 
     def step(self, i, x, y, store_metrics, lr_decay=True, initial_step=False):
         """
@@ -181,7 +220,7 @@ class SGLDRunner:
         Returns:
             loss (float): The current loss of the model for x and y
         """
-        loss, log_prior, potential = self._model_potential_and_grad(x, y)
+        loss, log_prior, potential, acc = self._model_potential_and_grad(x, y)
         self.optimizer.step(calc_metrics=store_metrics)
 
         lr = self.optimizer.param_groups[0]["lr"]
@@ -190,9 +229,9 @@ class SGLDRunner:
 
         if store_metrics:
             self.store_metrics(i=i-1, loss=loss.item(), log_prior=log_prior.item(),
-                               potential=potential.item(), lr=lr,
+                               potential=potential.item(), acc=acc.item(), lr=lr,
                                corresponds_to_sample=initial_step)
-        return loss
+        return loss, acc
 
     def get_samples(self):
         """
@@ -205,7 +244,7 @@ class SGLDRunner:
             return self._samples
         return self.model_saver.load_samples()
 
-    def store_metrics(self, i, loss, log_prior, potential, lr,
+    def store_metrics(self, i, loss, log_prior, potential, acc, lr,
                       corresponds_to_sample,
                       delta_energy=None, total_energy=None, rejected=None):
         est_temperature_all = 0.
@@ -227,6 +266,7 @@ class SGLDRunner:
         temperature = self.optimizer.param_groups[0]["temperature"]
         add_scalar("temperature", temperature, i)
         add_scalar("loss", loss, i)
+        add_scalar("acc", acc, i)
         add_scalar("log_prior", log_prior, i)
         add_scalar("potential", potential, i)
         add_scalar("lr", lr, i)
@@ -251,7 +291,7 @@ class VerletSGLDRunner(SGLDRunner):
             momentum=self.momentum, temperature=self.temperature)
 
     def step(self, i, x, y, store_metrics, lr_decay=True, initial_step=False):
-        loss, log_prior, potential = self._model_potential_and_grad(x, y)
+        loss, log_prior, potential, acc = self._model_potential_and_grad(x, y)
         lr = self.optimizer.param_groups[0]["lr"]
 
         if i == 0:
@@ -290,17 +330,13 @@ class VerletSGLDRunner(SGLDRunner):
 
         if store_metrics:
             self.store_metrics(i=i-1, loss=loss.item(), log_prior=log_prior.item(),
-                               potential=potential.item(), lr=lr,
+                               potential=potential.item(), acc=acc.item(), lr=lr,
                                delta_energy=delta_energy,
                                total_energy=total_energy, rejected=None,
                                corresponds_to_sample=initial_step)
-
         if lr_decay:
-            with warnings.catch_warnings():
-                # TODO: PyTorch complains about calling the LR step before the optimizer step
-                warnings.simplefilter("ignore")
-                self.scheduler.step()
-        return loss
+            self.scheduler.step()
+        return loss, acc
 
 class HMCRunner(VerletSGLDRunner):
     def _make_optimizer(self, params):

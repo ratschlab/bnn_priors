@@ -9,7 +9,7 @@ import contextlib
 import collections
 import itertools
 
-__all__ = ('RegressionModel', 'RaoBRegressionModel', 'CategoricalModel', 'ClassificationModel', 'AbstractModel')
+__all__ = ('RegressionModel', 'RaoBRegressionModel', 'ClassificationModel', 'AbstractModel')
 
 
 class AbstractModel(nn.Module, abc.ABC):
@@ -21,11 +21,16 @@ class AbstractModel(nn.Module, abc.ABC):
     """
     def __init__(self, net: nn.Module):
         super().__init__()
-        self.net = net
+        # For some reason, this increases GPU utilization and decreases CPU
+        # utilization. The end result is much faster.
+        self.net = torch.nn.DataParallel(net)
 
     def log_prior(self):
         "log p(params)"
-        return sum(p.log_prob() for _, p in prior.named_priors(self))
+        lp = sum(p.log_prob() for _, p in prior.named_priors(self))
+        if isinstance(lp, float):
+            return torch.tensor(lp)
+        return lp
 
     @abc.abstractmethod
     def likelihood_dist(self, f: torch.Tensor):
@@ -48,10 +53,15 @@ class AbstractModel(nn.Module, abc.ABC):
         """
         unbiased minibatch estimate of log-likelihood per datapoint
         """
+        lla, _ = self._log_likelihood_avg_preds(x, y)
+        return lla
+
+    def _log_likelihood_avg_preds(self, x: torch.Tensor, y: torch.Tensor):
         # compute batch size using zeroth dim of inputs (log_prob_batch doesn't work with RaoB).
         assert x.shape[0] == y.shape[0]
         batch_size = x.shape[0]
-        return self(x).log_prob(y).sum() / batch_size
+        preds = self(x)
+        return preds.log_prob(y).sum() / batch_size, preds
 
     def potential(self, x, y, eff_num_data):
         """
@@ -61,11 +71,16 @@ class AbstractModel(nn.Module, abc.ABC):
         """
         return - (self.log_likelihood(x, y, eff_num_data) + self.log_prior())
 
-    def split_potential_avg(self, x, y, eff_num_data):
-        loss = self.log_likelihood_avg(x, y).neg()
+    def _split_potential_preds(self, x, y, eff_num_data):
+        lla, preds = self._log_likelihood_avg_preds(x, y)
+        loss = -lla
         log_prior = self.log_prior()
-        return loss, log_prior, loss - log_prior/eff_num_data
+        potential_avg = loss - log_prior/eff_num_data
+        return loss, log_prior, potential_avg, preds
 
+    @abc.abstractmethod
+    def split_potential_and_acc(self, x, y, eff_num_data):
+        pass
 
     def potential_avg(self, x, y, eff_num_data):
         "-log p(y, params | x)"
@@ -124,13 +139,6 @@ class AbstractModel(nn.Module, abc.ABC):
                     mod._parameters[name] = param_or_buffer
 
 
-
-class CategoricalModel(AbstractModel):
-    def likelihood_dist(self, f: torch.Tensor):
-        return torch.distributions.Categorical(logits=f)
-
-
-
 class RegressionModel(AbstractModel):
     """Model for regression using an independent Gaussian likelihood.
     Arguments:
@@ -146,6 +154,13 @@ class RegressionModel(AbstractModel):
 
     def likelihood_dist(self, f: torch.Tensor):
         return torch.distributions.Normal(f, prior.value_or_call(self.noise_std))
+
+    def split_potential_and_acc(self, x, y, eff_num_data):
+        loss, log_prior, potential_avg, preds = (
+            self._split_potential_preds(x, y, eff_num_data))
+        diff = preds.mean - y
+        mse = torch.einsum("nd,nd->n", diff, diff)
+        return loss, log_prior, potential_avg, mse, preds
 
 
 class ClassificationModel(AbstractModel):
@@ -164,8 +179,14 @@ class ClassificationModel(AbstractModel):
     def likelihood_dist(self, f: torch.Tensor):
         return torch.distributions.Categorical(logits=f/prior.value_or_call(self.softmax_temp))
 
+    def split_potential_and_acc(self, x, y, eff_num_data):
+        loss, log_prior, potential_avg, preds = (
+            self._split_potential_preds(x, y, eff_num_data))
+        acc = torch.argmax(preds.logits, dim=1).eq(y).to(torch.float32)
+        return loss, log_prior, potential_avg, acc, preds
 
-class RaoBRegressionModel(AbstractModel):
+
+class RaoBRegressionModel(RegressionModel):
     """Rao-Blackwellised version of Gaussian univariate regression. It integrates
     out the weights of the last layer analytically during inference. The last
     layer has to have an iid Normal prior, with variance `last_layer_var`.
@@ -179,10 +200,9 @@ class RaoBRegressionModel(AbstractModel):
         assert x_train.dim() == 2
         assert x_train.size(0) == y_train.size(0)
         assert y_train.size(1) == 1
-        super().__init__(net)
+        super().__init__(net, noise_std)
         self.x_train = x_train
         self.y_train = y_train
-        self.noise_std = noise_std
         self.last_layer_std = last_layer_std
 
     def _log_likelihood_constants(self, y, n_feat, sig):

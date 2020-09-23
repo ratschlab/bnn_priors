@@ -1,11 +1,12 @@
 import os
 import torch as t
 import torchvision
+from torchvision import transforms
 import numpy as np
-from bnn_priors.data import Dataset
+from ..base import Dataset, DatasetFromTorch, load_all
 
 
-__all__ = ('CIFAR10','CIFAR10_C', 'SVHN')
+__all__ = ('CIFAR10','CIFAR10_C', 'SVHN', 'CIFAR10Augmented')
 
 
 class CIFAR10:
@@ -131,3 +132,41 @@ class SVHN(CIFAR10):
 
         self._save_datasets(data_train.data, data_test.data, data_train.labels,
                             data_test.labels, permutation=(0,1,2,3))
+
+class CIFAR10Augmented:
+    def __init__(self, dtype='float32', device="cpu", download=False):
+        _ROOT = os.path.abspath(os.path.dirname(__file__))
+        dataset_dir = f'{_ROOT}/cifar10/'
+        dtype = getattr(t, dtype)
+        self.dtype = dtype
+        self.device = device
+
+        unnorm_train = torchvision.datasets.CIFAR10(
+            dataset_dir, download=download, train=True, transform=transforms.ToTensor())
+        unnorm_x, _ = load_all(unnorm_train)
+        X_mean = unnorm_x.mean(dim=(0, 2, 3), keepdims=True)
+        X_std = unnorm_x.std(dim=(0, 2, 3), keepdims=True)
+        self.X_mean = X_mean
+        self.X_std = X_std
+
+        X_mean_tuple = tuple(a.item() for a in X_mean.view(-1))
+        X_std_tuple = tuple(a.item() for a in X_std.view(-1))
+
+        transform_train = transforms.Compose([
+            transforms.RandomCrop(32, padding=4),
+            transforms.RandomHorizontalFlip(),
+            transforms.ToTensor(),
+            transforms.Normalize(X_mean_tuple, X_std_tuple),
+        ])
+
+        transform_test = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Normalize(X_mean_tuple, X_std_tuple),
+        ])
+        data_train = torchvision.datasets.CIFAR10(dataset_dir, download=download, train=True, transform=transform_train)
+        data_test = torchvision.datasets.CIFAR10(dataset_dir, download=download, train=False, transform=transform_test)
+
+        self.norm = DatasetFromTorch(data_train, data_test, device=device)
+        self.num_train_set = len(data_train)
+        self.in_shape = t.Size([3, 32, 32])
+        self.out_shape = t.Size([])

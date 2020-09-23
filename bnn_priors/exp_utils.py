@@ -4,8 +4,9 @@ import numpy as np
 import time
 from sklearn.metrics import average_precision_score, roc_auc_score
 import torch as t
-from bnn_priors.data import UCI, CIFAR10, CIFAR10_C, MNIST, RotatedMNIST, FashionMNIST, SVHN, RandomData
+from bnn_priors.data import UCI, CIFAR10Augmented, CIFAR10, CIFAR10_C, MNIST, RotatedMNIST, FashionMNIST, SVHN, RandomData
 from bnn_priors.models import RaoBDenseNet, DenseNet, PreActResNet18, ThinPreActResNet18, PreActResNet34, ClassificationDenseNet, ResNet, ClassificationConvNet
+import bnn_priors.models
 from bnn_priors.prior import LogNormal
 from bnn_priors import prior
 from bnn_priors.prior import get_prior
@@ -38,6 +39,8 @@ def get_data(data, device):
         dataset = CIFAR10_C(corruption, device=device)
     elif data == "cifar10":
         dataset = CIFAR10(device=device)
+    elif data == "cifar10_augmented":
+        dataset = CIFAR10Augmented(device=device)
     elif data == "mnist":
         dataset = MNIST(device=device)
     elif data == "rotated_mnist":
@@ -56,7 +59,36 @@ def he_initialize(model):
         if "weight_prior.p" in name:
             t.nn.init.kaiming_normal_(param.data, mode='fan_in', nonlinearity='relu')
         elif "bias_prior.p" in name:
+            bound = 1 / math.sqrt(param.size(0))
+            t.nn.init.uniform_(param.data, -bound, bound)
+
+
+def he_zerobias_initialize(model):
+    for name, param in model.named_parameters():
+        if "weight_prior.p" in name:
+            t.nn.init.kaiming_normal_(param.data, mode='fan_in', nonlinearity='relu')
+        elif "bias_prior.p" in name:
             t.nn.init.zeros_(param.data)
+
+def he_uniform_initialize(model):
+    for name, param in model.named_parameters():
+        if "weight_prior.p" in name:
+            if "conv" in name or "shortcut" in name:
+                t.nn.init.kaiming_uniform_(param.data, a=math.sqrt(5))
+            elif "linear" in name:
+                bound = 1 / math.sqrt(param.size(1))
+                t.nn.init.uniform_(param.data, -bound, bound)
+            else:
+                raise NotImplementedError(name)
+        elif "bias_prior.p" in name:
+            if "conv" in name or "shortcut" in name:
+                raise NotImplementedError(name)
+            elif "linear" in name:
+                bound = 1 / math.sqrt(param.size(0))
+                t.nn.init.uniform_(param.data, -bound, bound)
+            else:
+                raise NotImplementedError(name)
+
 
 
 def get_model(x_train, y_train, model, width, depth, weight_prior, weight_loc,
@@ -140,6 +172,8 @@ def evaluate_model(model, dataloader_test, samples, eval_data, likelihood_eval,
     accs = []
     probs = []
 
+    device = next(iter(model.parameters())).device
+
     for sample in sample_iter(samples):
         with t.no_grad():
             model.load_state_dict(sample)
@@ -147,15 +181,15 @@ def evaluate_model(model, dataloader_test, samples, eval_data, likelihood_eval,
             accs_sample = []
             probs_sample = []
             for batch_x, batch_y in dataloader_test:
-                pred = model(batch_x)
-                lps_batch = pred.log_prob(batch_y)
-                if "cifar10" in eval_data or "mnist" in eval_data:
-                    # shape: batch_size
-                    accs_batch = (t.argmax(pred.probs, dim=1) == batch_y).float()
-                else:
-                    accs_batch = (pred.mean - batch_y)**2.  # shape: batch_size
+                batch_x = batch_x.to(device)
+                batch_y = batch_y.to(device)
+                _, _, _, accs_batch, preds = model.split_potential_and_acc(batch_x, batch_y, 1)
+                lps_batch = preds.log_prob(batch_y)
                 if calibration_eval:
-                    probs_batch = pred.probs
+                    if not isinstance(preds, t.distributions.Categorical):
+                        raise ValueError("Cannot calculate calibration metrics "
+                                         f"for predictions of type {type(preds)}")
+                    probs_batch = preds.probs
                 else:
                     probs_batch = t.tensor([])
                 lps_sample.extend(list(lps_batch.cpu().numpy()))
@@ -385,7 +419,7 @@ class HDF5Metrics(HDF5ModelSaver):
 def load_samples(path, idx=slice(None)):
     try:
         with h5py.File(path, "r", swmr=True) as f:
-            return {k: t.from_numpy(v[idx])
+            return {k: t.from_numpy(np.asarray(v[idx]))
                     for k, v in f.items()
                     if k not in ["steps", "timestamps"]}
     except OSError:

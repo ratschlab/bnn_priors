@@ -14,11 +14,11 @@ class GaussianModel(AbstractModel):
     def log_likelihood(self):
         return 0.
     def __init__(self, N, D, mean=0., std=1.):
-        super().__init__(None)
+        super().__init__(torch.nn.Identity())
         for i in range(N):
             setattr(self, str(i), prior.Normal(torch.Size([D]), mean, std))
 
-    def log_likelihood(self, x, y, eff_num_data):
+    def log_likelihood_avg(self, x, y):
         return 0.
 
     def potential_avg_closure(self):
@@ -26,6 +26,9 @@ class GaussianModel(AbstractModel):
         loss = self.potential_avg(None, None, 1.)
         loss.backward()
         return loss
+
+    def split_potential_and_acc(self, x, y, eff_num_data):
+        raise NotImplementedError
 
 class SGLDTest(unittest.TestCase):
     def test_distribution_preservation(self, n_vars=50, n_dim=1000, n_samples=200):
@@ -75,6 +78,28 @@ class SGLDTest(unittest.TestCase):
         assert pvalue >= 0.3, "the configurational temperature is not Chi^2 with p<0.3"
         # _, pvalue = scipy.stats.ks_1samp(kinetic_temp, chi2, mode='exact')
         # assert pvalue >= 0.3, "the kinetic temperature is not Chi^2 with p<0.3"
+
+    def test_sgd_equivalence(self, n_vars=1, n_dim=5):
+        model = GaussianModel(N=n_vars, D=n_dim, mean=0.5, std=0.25)
+        lr = 1.25
+        momentum = 0.9
+        sgld = SGLD(model.parameters(), lr=lr, num_data=1, momentum=momentum, temperature=0.)
+        sgld.sample_momentum()
+        sgd = torch.optim.SGD(model.parameters(), lr=lr, momentum=momentum)
+
+        initial_sd = {k: v.detach().clone() for k, v in model.state_dict().items()}
+        for _ in range(4):
+            sgld.step(model.potential_avg_closure)
+        sgld_sd = {k: v.detach().clone() for k, v in model.state_dict().items()}
+
+        model.load_state_dict(initial_sd)
+        for _ in range(4):
+            sgd.step(model.potential_avg_closure)
+
+        assert all(torch.allclose(v1, v2) for v1, v2 in zip(
+            sgld_sd.values(),
+            model.state_dict().values()))
+
 
 
 if __name__ == '__main__':
