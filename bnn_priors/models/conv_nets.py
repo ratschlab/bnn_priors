@@ -11,7 +11,7 @@ from .base import RegressionModel, ClassificationModel
 from .dense_nets import LinearPrior
 from .. import prior
 
-__all__ = ('Conv2dPrior', 'PreActResNet18', 'PreActResNet34', 'ClassificationConvNet')
+__all__ = ('Conv2dPrior', 'PreActResNet18', 'PreActResNet34', 'ClassificationConvNet', 'ThinPreActResNet18')
 
 def Conv2dPrior(in_channels, out_channels, kernel_size=3, stride=1,
             padding=0, dilation=1, groups=1, padding_mode='zeros',
@@ -116,9 +116,10 @@ class PreActResNet(nn.Module):
     def __init__(self, block, num_blocks, num_classes=10, bn=True,
                  prior_w=prior.Normal, loc_w=0., std_w=2**.5,
                  prior_b=prior.Normal, loc_b=0., std_b=1.,
-                scaling_fn=None, weight_prior_params={}, bias_prior_params={}):
+                 in_planes=64, scaling_fn=None,
+                 weight_prior_params={}, bias_prior_params={}):
         super(PreActResNet, self).__init__()
-        self.in_planes = 64
+        self.in_planes = in_planes
         self.bn = bn
         self.prior_w = prior_w
         self.loc_w = loc_w
@@ -130,15 +131,16 @@ class PreActResNet(nn.Module):
         self.weight_prior_params = weight_prior_params
         self.bias_prior_params = bias_prior_params
 
-        self.conv1 = Conv2dPrior(3, 64, kernel_size=3, stride=1, padding=1, prior_b=None,
+        # `self.in_planes` gets modified, so we use `in_planes`.
+        self.conv1 = Conv2dPrior(3, in_planes, kernel_size=3, stride=1, padding=1, prior_b=None,
                            prior_w=self.prior_w, loc_w=self.loc_w, std_w=self.std_w,
                            scaling_fn=self.scaling_fn, weight_prior_params=self.weight_prior_params,
                             bias_prior_params=self.bias_prior_params)
-        self.layer1 = self._make_layer(block, 64, num_blocks[0], stride=1)
-        self.layer2 = self._make_layer(block, 128, num_blocks[1], stride=2)
-        self.layer3 = self._make_layer(block, 256, num_blocks[2], stride=2)
-        self.layer4 = self._make_layer(block, 512, num_blocks[3], stride=2)
-        self.linear = LinearPrior(512*block.expansion, num_classes,
+        self.layer1 = self._make_layer(block, in_planes, num_blocks[0], stride=1)
+        self.layer2 = self._make_layer(block, 2 * in_planes, num_blocks[1], stride=2)
+        self.layer3 = self._make_layer(block, 4 * in_planes, num_blocks[2], stride=2)
+        self.layer4 = self._make_layer(block, 8 * in_planes, num_blocks[3], stride=2)
+        self.linear = LinearPrior(8 * in_planes, num_classes,
                             prior_w=self.prior_w, loc_w=self.loc_w, std_w=self.std_w,
                             prior_b=self.prior_b, loc_b=self.loc_b, std_b=self.std_b,
                             scaling_fn=self.scaling_fn, weight_prior_params=self.weight_prior_params,
@@ -180,9 +182,22 @@ def PreActResNet18(softmax_temp=1.,
                                        prior_b=prior_b,
                                        loc_b=loc_b,
                                        std_b=std_b,
-                                       scaling_fn=scaling_fn,
+                                       scaling_fn=scaling_fn, in_planes=64,
                                        weight_prior_params=weight_prior_params,
                                         bias_prior_params=bias_prior_params), softmax_temp)
+
+def ThinPreActResNet18(softmax_temp=1.,
+                       prior_w=prior.Normal, loc_w=0., std_w=2**.5,
+                       prior_b=prior.Normal, loc_b=0., std_b=1.,
+                       scaling_fn=None, bn=True,
+                       weight_prior_params={}, bias_prior_params={}):
+    return ClassificationModel(PreActResNet(
+        PreActBlock, [2,2,2,2], bn=bn,
+        prior_w=prior_w, loc_w=loc_w, std_w=std_w,
+        prior_b=prior_b, loc_b=loc_b, std_b=std_b,
+        in_planes=16, scaling_fn=scaling_fn,
+        weight_prior_params=weight_prior_params, bias_prior_params=bias_prior_params),
+                               softmax_temp)
 
 
 def PreActResNet34(softmax_temp=1.,
