@@ -166,7 +166,7 @@ class CIFAR10Augmented:
         data_train = torchvision.datasets.CIFAR10(dataset_dir, download=download, train=True, transform=transform_train)
         data_test = torchvision.datasets.CIFAR10(dataset_dir, download=download, train=False, transform=transform_test)
 
-        self.norm = DatasetFromTorch(data_train, data_test)
+        self.norm = DatasetFromTorch(data_train, data_test, device=device)
         self.num_train_set = len(data_train)
         self.in_shape = t.Size([3, 32, 32])
         self.out_shape = t.Size([])

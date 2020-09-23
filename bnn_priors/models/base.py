@@ -164,7 +164,7 @@ class RegressionModel(AbstractModel):
             self._split_potential_preds(x, y, eff_num_data))
         diff = preds.mean - y
         mse = torch.einsum("nd,nd->n", diff, diff)
-        return loss, log_prior, potential_avg, mse
+        return loss, log_prior, potential_avg, mse, preds
 
 class ClassificationModel(AbstractModel):
     """Model for classification using a Categorical likelihood.
@@ -186,7 +186,7 @@ class ClassificationModel(AbstractModel):
         loss, log_prior, potential_avg, preds = (
             self._split_potential_preds(x, y, eff_num_data))
         acc = torch.argmax(preds.logits, dim=1).eq(y).to(torch.float32)
-        return loss, log_prior, potential_avg, acc
+        return loss, log_prior, potential_avg, acc, preds
 
 
 class RaoBRegressionModel(AbstractModel):

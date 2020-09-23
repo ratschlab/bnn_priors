@@ -153,16 +153,13 @@ def evaluate_model(model, dataloader_test, samples, eval_data, likelihood_eval,
             for batch_x, batch_y in dataloader_test:
                 batch_x = batch_x.to(device)
                 batch_y = batch_y.to(device)
-                pred = model(batch_x)
-                lps_batch = pred.log_prob(batch_y)
-                # TODO: depend only on whether it is a ClassificationModel or a RegressionModel
-                if "cifar10" in eval_data or "mnist" in eval_data:
-                    # shape: batch_size
-                    accs_batch = (t.argmax(pred.probs, dim=1) == batch_y).float()
-                else:
-                    accs_batch = (pred.mean - batch_y)**2.  # shape: batch_size
+                _, _, _, accs_batch, preds = model.split_potential_and_acc(batch_x, batch_y, 1)
+                lps_batch = preds.log_prob(batch_y)
                 if calibration_eval:
-                    probs_batch = pred.probs
+                    if not isinstance(preds, t.distributions.Categorical):
+                        raise ValueError("Cannot calculate calibration metrics "
+                                         f"for predictions of type {type(preds)}")
+                    probs_batch = preds.probs
                 else:
                     probs_batch = t.tensor([])
                 lps_sample.extend(list(lps_batch.cpu().numpy()))

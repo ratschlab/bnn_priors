@@ -197,7 +197,7 @@ class SGLDRunner:
 
     def _model_potential_and_grad(self, x, y):
         self.optimizer.zero_grad()
-        loss, log_prior, potential, acc = self.model.split_potential_and_acc(x, y, self.eff_num_data)
+        loss, log_prior, potential, acc, _ = self.model.split_potential_and_acc(x, y, self.eff_num_data)
         # why not return acc.mean() already from the function above? To use this in exp_utils.py
         # TODO: use the `model.split_potential_and_acc` function in exp_utils.py as well
         potential.backward()

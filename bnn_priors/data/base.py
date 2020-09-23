@@ -30,8 +30,8 @@ def load_all(dset):
 
 
 class DatasetFromTorch(Dataset):
-    def __init__(self, train, test):
+    def __init__(self, train, test, device):
         self.train = train
         self.test = test
-        self.train_X, self.train_y = load_all(train)
-        self.test_X, self.test_y = load_all(test)
+        self.train_X, self.train_y = (a.to(device) for a in load_all(train))
+        self.test_X, self.test_y = (a.to(device) for a in load_all(test))
