@@ -91,6 +91,8 @@ class VerletSGLD(SGLD):
         u(n) is not the momentum, rather, it is
         u(n) = sqrt(b)*m(n) - gradient of parameters
         """
+        # keep a `torch.optim.lr_scheduler` happy
+        self._step_count = getattr(self, '_step_count', 0) + 1
         def update_group_fn(g):
             self._update_group_fn(g)
             a = g['momentum']
@@ -122,6 +124,8 @@ class VerletSGLD(SGLD):
         u(n) is not the momentum, rather, it is
         u(n) = sqrt(b)*m(n) - gradient of parameters
         """
+        # keep a `torch.optim.lr_scheduler` happy
+        self._step_count = getattr(self, '_step_count', 0) + 1
         def update_group_fn(g):
             self._update_group_fn(g)
             a = g['momentum']
