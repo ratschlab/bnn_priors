@@ -3,7 +3,7 @@ import torch as t
 import torchvision
 from torchvision import transforms
 import numpy as np
-from ..base import Dataset, DatasetFromTorch
+from ..base import Dataset, DatasetFromTorch, load_all
 
 
 __all__ = ('CIFAR10','CIFAR10_C', 'SVHN', 'CIFAR10Augmented')
@@ -141,21 +141,27 @@ class CIFAR10Augmented:
         self.dtype = dtype
         self.device = device
 
-        x_std = (0.2023, 0.1994, 0.2010)
-        x_mean = (0.4914, 0.4822, 0.4465)
-        self.X_std = t.tensor(x_std, dtype=dtype, device=device).reshape((1, 3, 1, 1))
-        self.X_mean = t.tensor(x_mean, dtype=dtype, device=device).reshape((1, 3, 1, 1))
+        unnorm_train = torchvision.datasets.CIFAR10(
+            dataset_dir, download=download, train=True, transform=transforms.ToTensor())
+        unnorm_x, _ = load_all(unnorm_train)
+        X_mean = unnorm_x.mean(dim=(0, 2, 3), keepdims=True)
+        X_std = unnorm_x.std(dim=(0, 2, 3), keepdims=True)
+        self.X_mean = X_mean
+        self.X_std = X_std
+
+        X_mean_tuple = tuple(a.item() for a in X_mean.view(-1))
+        X_std_tuple = tuple(a.item() for a in X_std.view(-1))
 
         transform_train = transforms.Compose([
             transforms.RandomCrop(32, padding=4),
             transforms.RandomHorizontalFlip(),
             transforms.ToTensor(),
-            transforms.Normalize(x_mean, x_std),
+            transforms.Normalize(X_mean_tuple, X_std_tuple),
         ])
 
         transform_test = transforms.Compose([
             transforms.ToTensor(),
-            transforms.Normalize(x_mean, x_std),
+            transforms.Normalize(X_mean_tuple, X_std_tuple),
         ])
         data_train = torchvision.datasets.CIFAR10(dataset_dir, download=download, train=True, transform=transform_train)
         data_test = torchvision.datasets.CIFAR10(dataset_dir, download=download, train=False, transform=transform_test)

@@ -24,7 +24,7 @@ class Dataset:
         self.test  = TensorDataset(self.test_X,  self.test_y)
 
 
-def _load_all(dset):
+def load_all(dset):
     loader = DataLoader(dset, batch_size=len(dset), shuffle=False)
     return next(iter(loader))
 
@@ -33,6 +33,5 @@ class DatasetFromTorch(Dataset):
     def __init__(self, train, test):
         self.train = train
         self.test = test
-        # TODO: actually load all the training and test data
-        self.train_X, self.train_y = (None, None)  # _load_all(train)
-        self.test_X, self.test_y = (None, None)  # _load_all(test)
+        self.train_X, self.train_y = load_all(train)
+        self.test_X, self.test_y = load_all(test)
