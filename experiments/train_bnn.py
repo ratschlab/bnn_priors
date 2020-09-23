@@ -130,6 +130,12 @@ def main(inference, model, width, n_samples, warmup, init_method,
             exp_utils.he_initialize(model)
         elif init_method == "he_uniform":
             exp_utils.he_uniform_initialize(model)
+        elif init_method == "he_zerobias":
+            exp_utils.he_zerobias_initialize(model)
+        elif init_method == "prior":
+            pass
+        else:
+            raise ValueError(f"unknown init_method={init_method}")
     else:
         state_dict = exp_utils.load_samples(load_samples, idx=-1)
         model.load_state_dict(state_dict)
