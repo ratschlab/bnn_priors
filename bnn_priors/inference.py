@@ -119,10 +119,11 @@ class SGLDRunner:
             self.scheduler = torch.optim.lr_scheduler.LambdaLR(
                 optimizer=self.optimizer, lr_lambda=schedule)
         else:
-            self.scheduler = torch.optim.lr_scheduler.StepLR(self.optimizer, 150*len(self.dataloader), 0.1)
+            self.scheduler = torch.optim.lr_scheduler.StepLR(
+                self.optimizer, 150*len(self.dataloader), gamma=0.1)
 
-        self.metrics_saver.add_scalar("test/log_prob", 0., -1)
-        self.metrics_saver.add_scalar("test/acc", 0., -1)
+        self.metrics_saver.add_scalar("test/log_prob", math.nan, step=-1)
+        self.metrics_saver.add_scalar("test/acc", math.nan, step=-1)
 
         epochs_since_start = -1
         step = 0  # used for `self.metrics_saver.add_scalar`, must start at 0 and never reset
