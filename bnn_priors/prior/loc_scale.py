@@ -1,3 +1,4 @@
+import numpy as np
 import torch.distributions as td
 import torch
 import math
@@ -8,7 +9,7 @@ from .transformed import Gamma, Uniform, HalfCauchy
 from .distributions import GeneralizedNormal
 
 
-__all__ = ('LocScale', 'Normal', 'Laplace', 'Cauchy', 'StudentT', 'LogNormal',
+__all__ = ('LocScale', 'Normal', 'ConvCorrelatedNormal', 'Laplace', 'Cauchy', 'StudentT', 'LogNormal',
            'Improper', 'PositiveImproper', 'GenNorm')
 
 
@@ -27,6 +28,30 @@ class LocScale(Prior):
 
 class Normal(LocScale):
     _dist = td.Normal
+
+
+class ConvCorrelatedNormal(Prior):
+    def __init__(self, shape, loc, scale, *, lengthscale=1.0):
+        p = np.mgrid[:shape[-2], :shape[-1]].reshape(2, -1).T
+        d = np.sum((p[:, None, :] - p[None, :, :]) ** 2.0, 2) ** 0.5
+        cov = np.exp(-d / lengthscale) * scale ** 2.0
+        chol = np.linalg.cholesky(cov)
+
+        if type(loc) == float:
+            loc = np.zeros(shape[-2] * shape[-1]) + loc
+
+        super().__init__(shape, loc=torch.from_numpy(loc.astype('float32')),
+                         scale_tril=torch.from_numpy(chol.astype('float32')))
+
+    def log_prob(self) -> torch.Tensor:
+        return self._dist_obj().log_prob(self.p.reshape(self.p.shape[:-2] + (-1,))).sum()
+
+    def _sample_value(self, shape: torch.Size):
+        dist = self._dist_obj()
+
+        return torch.reshape(dist.sample(sample_shape=shape[:-2]), shape)
+
+    _dist = td.MultivariateNormal
 
 
 class Laplace(LocScale):
