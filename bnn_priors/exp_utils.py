@@ -298,6 +298,9 @@ def evaluate_marglik(model, train_samples, eval_samples):
     results["simple_marglik"] = log_priors.exp().mean().item()
     return results
 
+def _round_up_div(a: int, b: int) -> int:
+    "int(ceil(a / b)) exactly, without losses from floating point precision"
+    return -(a // -b)
 
 class HDF5ModelSaver:
     def __init__(self, path, mode):
@@ -353,7 +356,7 @@ class HDF5ModelSaver:
             dset = self.f[k]
             if i + length >= len(dset):
                 # Round up to chunk size
-                add = -(length // -self.chunk_size) * self.chunk_size
+                add = _round_up_div(length, self.chunk_size) * self.chunk_size
                 dset.resize(i + add, axis=0)
             dset[i:i+length] = value
         return length
