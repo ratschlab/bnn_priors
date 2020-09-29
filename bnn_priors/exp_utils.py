@@ -298,6 +298,9 @@ def evaluate_marglik(model, train_samples, eval_samples):
     results["simple_marglik"] = log_priors.exp().mean().item()
     return results
 
+def _round_up_div(a: int, b: int) -> int:
+    "int(ceil(a / b)) exactly, without losses from floating point precision"
+    return -(a // -b)
 
 class HDF5ModelSaver:
     def __init__(self, path, mode):
@@ -320,7 +323,7 @@ class HDF5ModelSaver:
         d = {k: v.cpu().detach().unsqueeze(0).numpy()
              for (k, v) in state_dict.items()}
         d["steps"] = np.array([step], dtype=np.int64)
-        d["timestamps"] = np.array([time.time()], dtype=np.int64)
+        d["timestamps"] = np.array([time.time()], dtype=np.float64)
         self._extend_dict(d)
 
     def _extend_dict(self, d):
@@ -352,7 +355,8 @@ class HDF5ModelSaver:
 
             dset = self.f[k]
             if i + length >= len(dset):
-                add = int(math.ceil(length / self.chunk_size)) * self.chunk_size
+                # Round up to chunk size
+                add = _round_up_div(length, self.chunk_size) * self.chunk_size
                 dset.resize(i + add, axis=0)
             dset[i:i+length] = value
         return length
@@ -382,7 +386,7 @@ class HDF5Metrics(HDF5ModelSaver):
         self.chunk_size = chunk_size
         self._step = -2**63
         self._cache = {}
-        self._chunk_i = 0
+        self._chunk_i = -1
         self.last_flush = time.time()
 
     def add_scalar(self, name, value, step, dtype=None):
@@ -410,9 +414,14 @@ class HDF5Metrics(HDF5ModelSaver):
 
     def flush(self, every_s=0):
         "flush every `every_s` seconds"
+        if self._chunk_i < 0:
+            return  # Nothing to flush
+
         now = time.time()
-        if now - self.last_flush > every_s:
-            self._assign_dict_current(self._cache)
+        if every_s <= 0 or now - self.last_flush > every_s:
+            self.last_flush = now
+            trimmed_cache = {k: v[:self._chunk_i+1] for k, v in self._cache.items()}
+            self._assign_dict_current(trimmed_cache)
             self.f.flush()
 
 
