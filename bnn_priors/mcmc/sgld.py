@@ -153,23 +153,3 @@ class SGLD(torch.optim.Optimizer):
             # ^(1/2) to form the preconditioner,
             # ^(-1/2) because we want the preconditioner's inverse square root.
             self.state[p]['preconditioner'] = (new_M / min_s)**(-1/4)
-
-    def kinetic_temperature_intervals(self, c: Union[float, np.ndarray]=0.95) -> Dict[
-            torch.nn.Parameter, Tuple[np.ndarray, np.ndarray]]:
-        """Calculates the confidence intervals for the kinetic temperature of the
-        momentum of each parameter. Assumes the target temperature is 1.
-
-        Arguments:
-            c: the target confidence levels for the intervals
-        Returns:
-            "parameter -> (lower, upper)" dictionary of confidence intervals
-            per parameters. `lower` and `upper` have the same shape as `c`.
-        """
-        d = OrderedDict()
-        for group in self.param_groups:
-            for p in group["params"]:
-                df = p.numel()
-                lower = chi2.ppf((1-c)/2, df=df, scale=1/df)
-                upper = chi2.ppf((1+c)/2, df=df, scale=1/df)
-                d[p] = (lower, upper)
-        return d

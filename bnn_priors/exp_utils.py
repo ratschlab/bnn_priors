@@ -475,7 +475,7 @@ def sneaky_artifact(_run, name):
 
 
 def reject_samples_(samples, metrics_file):
-    is_sample = metrics_file["acceptance/is_sample"][:]
+    is_sample = (metrics_file["acceptance/is_sample"][:] == 1)
     try:
         rejected_arr = metrics_file["acceptance/rejected"][is_sample]
     except KeyError:
