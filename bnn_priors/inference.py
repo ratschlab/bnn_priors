@@ -1,27 +1,17 @@
-import numpy as np
-import warnings
 from tqdm import tqdm
 import torch
 from .utils import get_cosine_schedule
 from . import mcmc
 import math
-from . import prior
 from .exp_utils import evaluate_model
 
 
-# def _named_params_and_buffers(model):
-#     # TODO don't copy parameters twice
-#     # See issue #76 , https://github.com/ratschlab/projects2020_BNN-priors/issues/76
-#     return itertools.chain(
-#         model.named_parameters(),
-#         model.named_buffers())
-
 class SGLDRunner:
-    def __init__(self, model, dataloader, dataloader_test, eval_data, epochs_per_cycle, warmup_epochs,
+    def __init__(self, model, dataloader, dataloader_test, epochs_per_cycle, warmup_epochs,
                  sample_epochs, learning_rate=1e-2, skip=1, metrics_skip=1,
                  temperature=1., data_mult=1., momentum=0., sampling_decay=True,
                  grad_max=1e6, cycles=1, precond_update=None,
-                 metrics_saver=None, model_saver=None):
+                 metrics_saver=None, model_saver=None, reject_samples=False):
         """Stochastic Gradient Langevin Dynamics for posterior sampling.
 
         On calling `run`, this class runs SGLD for `cycles` sampling cycles. In
@@ -62,8 +52,6 @@ class SGLDRunner:
         self.model = model
         self.dataloader = dataloader
         self.dataloader_test = dataloader_test
-        # TODO: forgo eval_data and just whether `model` is a Classification- ora RegressionModel
-        self.eval_data = eval_data
 
         assert warmup_epochs >= 0
         assert sample_epochs >= 0
@@ -93,14 +81,31 @@ class SGLDRunner:
             self._samples = {
                 name: torch.zeros(torch.Size([self.num_samples*cycles])+p_or_b.shape, dtype=p_or_b.dtype)
                 for name, p_or_b in model.state_dict().items()}
+            self._samples["steps"] = torch.zeros(torch.Size([self.num_samples*cycles]), dtype=torch.int64)
 
         self.param_names, self._params = zip(*model.named_parameters())
+        self.reject_samples = reject_samples
 
     def _make_optimizer(self, params):
+        assert self.reject_samples is False, "SGLD cannot reject samples"
         return mcmc.SGLD(
             params=params,
             lr=self.learning_rate, num_data=self.eff_num_data,
             momentum=self.momentum, temperature=self.temperature)
+
+    def _make_scheduler(self, optimizer):
+        if self.sampling_decay is True or self.sampling_decay == "cosine":
+            schedule = get_cosine_schedule(
+                len(self.dataloader) * self.epochs_per_cycle)
+            return torch.optim.lr_scheduler.LambdaLR(
+                optimizer=optimizer, lr_lambda=schedule)
+        elif self.sampling_decay is False or self.sampling_decay == "stairs":
+            return torch.optim.lr_scheduler.StepLR(
+                optimizer, 150*len(self.dataloader), gamma=0.1)
+        elif self.sampling_decay == "flat":
+            # No-op scheduler
+            return torch.optim.lr_scheduler.StepLR(optimizer, 2**30, gamma=1.0)
+        raise ValueError(f"self.sampling_decay={self.sampling_decay}")
 
     def run(self, progressbar=False):
         """
@@ -113,24 +118,18 @@ class SGLDRunner:
         """
         self.optimizer = self._make_optimizer(self._params)
         self.optimizer.sample_momentum()
-
-        if self.sampling_decay:
-            schedule = get_cosine_schedule(len(self.dataloader) * self.epochs_per_cycle)
-            self.scheduler = torch.optim.lr_scheduler.LambdaLR(
-                optimizer=self.optimizer, lr_lambda=schedule)
-        else:
-            self.scheduler = torch.optim.lr_scheduler.StepLR(
-                self.optimizer, 150*len(self.dataloader), gamma=0.1)
+        self.scheduler = self._make_scheduler(self.optimizer)
 
         self.metrics_saver.add_scalar("test/log_prob", math.nan, step=-1)
         self.metrics_saver.add_scalar("test/acc", math.nan, step=-1)
 
-        epochs_since_start = -1
-        step = 0  # used for `self.metrics_saver.add_scalar`, must start at 0 and never reset
-        prev_saved_sample = False
-        for cycle in range(self.cycles):
-            metrics_step = 0  # Used for metrics skip
+        def _is_sampling_epoch(_epoch):
+            _epoch = _epoch % self.epochs_per_cycle
+            sampling_epoch = _epoch - (self.descent_epochs + self.warmup_epochs)
+            return (0 <= sampling_epoch) and (sampling_epoch % self.skip == 0)
 
+        step = -1  # used for `self.metrics_saver.add_scalar`, must start at 0 and never reset
+        for cycle in range(self.cycles):
             if progressbar:
                 epochs = tqdm(range(self.epochs_per_cycle), position=0,
                               leave=True, desc=f"Cycle {cycle}, Sampling")
@@ -139,74 +138,84 @@ class SGLDRunner:
 
             postfix = {}
             for epoch in epochs:
-                epochs_since_start += 1
-
                 for g in self.optimizer.param_groups:
                     g['temperature'] = 0. if epoch < self.descent_epochs else self.temperature
 
                 train_loss = 0.
                 train_acc = 0.
                 for i, (x, y) in enumerate(self.dataloader):
-                    store_metrics = (metrics_step % self.metrics_skip == 0
-                                     or prev_saved_sample)
+                    step += 1
+                    store_metrics = (
+                        i == 0   # The start of an epoch
+                        or step % self.metrics_skip == 0)
+                    initial_step = (
+                        step == 0 # The very first step
+                        or
+                        # This is the first step after a sampling epoch
+                        (i == 0 and _is_sampling_epoch(epoch-1)))
+
                     loss_, acc_ = self.step(
                         step, x.to(self._params[0].device).detach(), y.to(self._params[0].device).detach(),
                         store_metrics=store_metrics,
-                        initial_step=prev_saved_sample)
+                        initial_step=initial_step)
+
                     train_loss += loss_
                     train_acc += acc_
                     if progressbar and store_metrics:
                         postfix["train/loss"] = train_loss.item()/(i+1)
                         postfix["train/acc"] = train_acc.item()/(i+1)
                         epochs.set_postfix(postfix)
-                    step += 1
-                    metrics_step += 1
                 self.metrics_saver.flush(every_s=120)
 
                 if self.precond_update is not None and epoch % self.precond_update == 0:
                     self.optimizer.update_preconditioner()
 
-                sampling_epoch = epoch - (self.descent_epochs + self.warmup_epochs)
                 state_dict = self.model.state_dict()
-                if (0 <= sampling_epoch) and (sampling_epoch % self.skip == 0):
-                    if self.model_saver is None:
-                        for name, param in state_dict.items():
-                            self._samples[name][(self.num_samples*cycle)+(sampling_epoch//self.skip)] = param
-                    else:
-                        self.model_saver.add_state_dict(state_dict, step)
-                        self.model_saver.flush()
-                    prev_saved_sample = True
-                else:
-                    prev_saved_sample = False
-
-                state_dict = {k: v.unsqueeze(0) for k, v in state_dict.items()}
-                results = evaluate_model(
-                    self.model, self.dataloader_test, state_dict, self.eval_data,
-                    likelihood_eval=True, accuracy_eval=True, calibration_eval=False)
-                results = {"test/log_prob": results["lp_ensemble"],
-                           "test/acc": results["acc_mean"]}
-                for k, v in results.items():
-                    self.metrics_saver.add_scalar(k, v, step-1)
+                if _is_sampling_epoch(epoch):
+                    self._save_sample(state_dict, cycle, epoch, step)
+                results = self._evaluate_model(state_dict, step)
                 if progressbar:
                     postfix.update(results)
                     epochs.set_postfix(postfix)
 
         # Save metrics for the last sample
         (x, y) = next(iter(self.dataloader))
-        self.step(step,
+        self.step(step+1,
                   x.to(self._params[0].device),
                   y.to(self._params[0].device),
-                  store_metrics=True, initial_step=prev_saved_sample)
+                  store_metrics=True, initial_step=_is_sampling_epoch(-1))
+
+    def _save_sample(self, state_dict, cycle, epoch, step):
+        # TODO: refactor this into two `model_saver` classes
+        sampling_epoch = epoch - (self.descent_epochs + self.warmup_epochs)
+        if self.model_saver is None:
+            for name, param in state_dict.items():
+                self._samples[name][(self.num_samples*cycle)+(sampling_epoch//self.skip)] = param
+        else:
+            self.model_saver.add_state_dict(state_dict, step)
+            self.model_saver.flush()
+
+    def _evaluate_model(self, state_dict, step):
+        self.model.eval()
+        state_dict = {k: v.unsqueeze(0) for k, v in state_dict.items()}
+        results = evaluate_model(
+            self.model, self.dataloader_test, state_dict,
+            likelihood_eval=True, accuracy_eval=True, calibration_eval=False)
+        self.model.train()
+
+        results = {"test/loss": -results["lp_ensemble"],
+                   "test/acc": results["acc_mean"]}
+        for k, v in results.items():
+            self.metrics_saver.add_scalar(k, v, step)
+        return results
 
     def _model_potential_and_grad(self, x, y):
         self.optimizer.zero_grad()
-        loss, log_prior, potential, acc, _ = self.model.split_potential_and_acc(x, y, self.eff_num_data)
-        # why not return acc.mean() already from the function above? To use this in exp_utils.py
-        # TODO: use the `model.split_potential_and_acc` function in exp_utils.py as well
+        loss, log_prior, potential, accs_batch, _ = self.model.split_potential_and_acc(x, y, self.eff_num_data)
         potential.backward()
         for p in self.optimizer.param_groups[0]["params"]:
             p.grad.clamp_(min=-self.grad_max, max=self.grad_max)
-        return loss, log_prior, potential, acc.mean()
+        return loss, log_prior, potential, accs_batch.mean()
 
     def step(self, i, x, y, store_metrics, lr_decay=True, initial_step=False):
         """
@@ -228,6 +237,7 @@ class SGLDRunner:
             self.scheduler.step()
 
         if store_metrics:
+            # The metrics are valid for the previous step.
             self.store_metrics(i=i-1, loss=loss.item(), log_prior=log_prior.item(),
                                potential=potential.item(), acc=acc.item(), lr=lr,
                                corresponds_to_sample=initial_step)
@@ -242,10 +252,10 @@ class SGLDRunner:
         """
         if self.model_saver is None:
             return self._samples
-        return self.model_saver.load_samples()
+        return self.model_saver.load_samples(keep_steps=False)
 
     def store_metrics(self, i, loss, log_prior, potential, acc, lr,
-                      corresponds_to_sample,
+                      corresponds_to_sample: bool,
                       delta_energy=None, total_energy=None, rejected=None):
         est_temperature_all = 0.
         est_config_temp_all = 0.
@@ -270,11 +280,7 @@ class SGLDRunner:
         add_scalar("log_prior", log_prior, i)
         add_scalar("potential", potential, i)
         add_scalar("lr", lr, i)
-
-        if i <= 0:
-            add_scalar("acceptance/is_sample", int(corresponds_to_sample), i)
-        elif corresponds_to_sample:
-            add_scalar("acceptance/is_sample", 1, i)
+        add_scalar("acceptance/is_sample", int(corresponds_to_sample), i)
 
         if delta_energy is not None:
             add_scalar("delta_energy", delta_energy, i)
@@ -294,17 +300,31 @@ class VerletSGLDRunner(SGLDRunner):
         loss, log_prior, potential, acc = self._model_potential_and_grad(x, y)
         lr = self.optimizer.param_groups[0]["lr"]
 
+        rejected = None
         if i == 0:
             # The very first step
-            self.optimizer.initial_step(calc_metrics=True)
+            if isinstance(self.optimizer, mcmc.HMC):
+                # momentum should be sampled already, but it does not hurt to
+                # sample again.
+                self.optimizer.sample_momentum()
+            self.optimizer.initial_step(
+                calc_metrics=True, save_state=self.reject_samples)
+            if self.reject_samples:
+                rejected = False  # the first sample is what we have.
         elif initial_step:
+            # Calculate metrics using the possible sample's parameter (which is
+            # not modified), its gradient, and the new momentum as updated by
+            # `final_step`.
+            self.optimizer.final_step(calc_metrics=True)
+            delta_energy = self.optimizer.delta_energy(self._initial_loss, loss)
+            if self.reject_samples:
+                rejected, _ = self.optimizer.maybe_reject(delta_energy)
+
             # The first step of an epoch, but not the very first
-            self.optimizer.final_step(calc_metrics=False)
             if isinstance(self.optimizer, mcmc.HMC):
                 self.optimizer.sample_momentum()
-            # Calculate metrics using the momentum and parameter left by
-            # `final_step`
-            self.optimizer.initial_step(calc_metrics=True)
+            self.optimizer.initial_step(
+                calc_metrics=False, save_state=self.reject_samples)
         else:
             # Any intermediate step
             self.optimizer.step(calc_metrics=store_metrics)
@@ -318,7 +338,6 @@ class VerletSGLDRunner(SGLDRunner):
         elif initial_step:
             # First step of an epoch
             store_metrics = True
-            delta_energy = self.optimizer.delta_energy(self._initial_loss, loss)
             self._initial_loss = loss.item()
             self._total_energy += delta_energy
             total_energy = self._total_energy
@@ -329,10 +348,11 @@ class VerletSGLDRunner(SGLDRunner):
                 total_energy = self._total_energy + delta_energy
 
         if store_metrics:
+            # The metrics are valid for the previous step.
             self.store_metrics(i=i-1, loss=loss.item(), log_prior=log_prior.item(),
                                potential=potential.item(), acc=acc.item(), lr=lr,
                                delta_energy=delta_energy,
-                               total_energy=total_energy, rejected=None,
+                               total_energy=total_energy, rejected=rejected,
                                corresponds_to_sample=initial_step)
         if lr_decay:
             self.scheduler.step()
@@ -342,6 +362,7 @@ class HMCRunner(VerletSGLDRunner):
     def _make_optimizer(self, params):
         assert self.temperature == 1.0, "HMC only implemented for temperature=1."
         assert self.momentum == 1.0, "HMC only works with momentum=1."
+        assert self.descent_epochs == 0, "HMC not implemented for descent epochs with temp=0."
         return mcmc.HMC(
             params=params,
             lr=self.learning_rate, num_data=self.eff_num_data)

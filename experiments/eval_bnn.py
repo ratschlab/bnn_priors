@@ -5,6 +5,7 @@ Evaluation script for the BNN experiments with different data sets and priors.
 import os
 import math
 import json
+import h5py
 
 import numpy as np
 import torch as t
@@ -75,14 +76,18 @@ def get_train_data(data):
 def main(config_file, batch_size, n_samples, run_dir, eval_data, data, skip_first, eval_samples,
         likelihood_eval, accuracy_eval, calibration_eval, ood_eval, marglik_eval):
     assert skip_first < n_samples, "We don't have that many samples to skip"
-    runfile = os.path.join(run_dir, "run.json")
-    with open(runfile) as infile:
+    run_dir = Path(run_dir)
+    with open(run_dir/"run.json") as infile:
         run_data = json.load(infile)
 
     assert "samples.pt" in run_data["artifacts"], "No samples found"
 
-    samples = exp_utils.load_samples(os.path.join(run_dir, "samples.pt"),
+    samples = exp_utils.load_samples(run_dir/"samples.pt",
                                      idx=np.s_[skip_first:])
+    with h5py.File(run_dir/"metrics.h5", "r") as metrics_file:
+        exp_utils.reject_samples_(samples, metrics_file)
+    del samples["steps"]
+    del samples["timestamps"]
 
     if eval_data is None:
         eval_data = data

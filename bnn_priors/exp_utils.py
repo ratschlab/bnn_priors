@@ -15,8 +15,10 @@ import warnings
 import sacred
 from pathlib import Path
 
+from typing import Dict, Iterable, Tuple
 
-def device(device):
+
+def device(device: str):
     if device == "try_cuda":
         if t.cuda.is_available():
             return t.device("cuda:0")
@@ -25,7 +27,7 @@ def device(device):
     return t.device(device)
 
 
-def get_data(data, device):
+def get_data(data: str, device: t.device):
     assert (data[:3] == "UCI" or data[:7] == "cifar10" or data[-5:] == "mnist"
             or data in ["svhn", "random"]), f"Unknown data set {data}"
     if data[:3] == "UCI":
@@ -51,6 +53,8 @@ def get_data(data, device):
         dataset = SVHN(device=device)
     elif data == "random":
         dataset = RandomData(device=device)
+    else:
+        raise ValueError(f"Unknown data='{data}'")
     return dataset
 
 
@@ -73,9 +77,9 @@ def he_zerobias_initialize(model):
 def he_uniform_initialize(model):
     for name, param in model.named_parameters():
         if "weight_prior.p" in name:
-            if "conv" in name or "shortcut" in name:
+            if "conv" in name or "shortcut" in name or param.dim() == 4:
                 t.nn.init.kaiming_uniform_(param.data, a=math.sqrt(5))
-            elif "linear" in name:
+            elif "linear" in name or param.dim() == 2:
                 bound = 1 / math.sqrt(param.size(1))
                 t.nn.init.uniform_(param.data, -bound, bound)
             else:
@@ -83,7 +87,7 @@ def he_uniform_initialize(model):
         elif "bias_prior.p" in name:
             if "conv" in name or "shortcut" in name:
                 raise NotImplementedError(name)
-            elif "linear" in name:
+            elif "linear" in name or param.dim() == 1:
                 bound = 1 / math.sqrt(param.size(0))
                 t.nn.init.uniform_(param.data, -bound, bound)
             else:
@@ -96,7 +100,8 @@ def get_model(x_train, y_train, model, width, depth, weight_prior, weight_loc,
              weight_prior_params, bias_prior_params):
     assert model in ["densenet", "raobdensenet", "resnet18", "thin_resnet18",
                      "resnet34", "classificationdensenet", "test_gaussian",
-                     "googleresnet", "classificationconvnet", "correlatedclassificationconvnet"]
+                     "googleresnet", "classificationconvnet", "correlatedclassificationconvnet",
+                     "linear", "logistic", "raob_linear"]
     if weight_prior in ["cauchy"]:
         # NOTE: Cauchy and anything with infinite variance should use this
         scaling_fn = lambda std, dim: std/dim
@@ -148,9 +153,30 @@ def get_model(x_train, y_train, model, width, depth, weight_prior, weight_loc,
                      prior_b=bias_prior, loc_b=bias_loc, std_b=bias_scale, scaling_fn=scaling_fn,
                      bn=batchnorm, softmax_temp=1., weight_prior_params=weight_prior_params,
                      bias_prior_params=bias_prior_params).to(x_train)
+    elif model == "linear":
+        net = bnn_priors.models.LinearRegression(
+            x_train.size(-1), y_train.size(-1), noise_std=0.5,
+            prior_w=weight_prior, loc_w=weight_loc, std_w=weight_scale,
+            prior_b=bias_prior, loc_b=bias_loc, std_b=bias_scale, scaling_fn=scaling_fn,
+            weight_prior_params=weight_prior_params, bias_prior_params=bias_prior_params).to(x_train)
+    elif model == "logistic":
+        net = bnn_priors.models.LogisticRegression(
+            x_train.size(-1), y_train.size(-1), softmax_temp=1.,
+            prior_w=weight_prior, loc_w=weight_loc, std_w=weight_scale,
+            prior_b=bias_prior, loc_b=bias_loc, std_b=bias_scale, scaling_fn=scaling_fn,
+            weight_prior_params=weight_prior_params, bias_prior_params=bias_prior_params).to(x_train)
+    elif model == "raob_linear":
+        net = bnn_priors.models.RaoBLinearRegression(x_train, y_train, noise_std=0.5)
     elif model == "test_gaussian":
         from testing.test_sgld import GaussianModel
         net = GaussianModel(N=1, D=100)
+
+    if x_train.device != t.device("cpu"):
+        # For some reason, this increases GPU utilization and decreases CPU
+        # utilization. The end result is much faster.
+        the_net = t.nn.DataParallel(net.net)
+        del net.net
+        net.net = the_net
     return net
 
 
@@ -167,8 +193,10 @@ def sample_iter(samples):
         yield dict((k, v[i]) for k, v in samples.items())
 
 
-def evaluate_model(model, dataloader_test, samples, eval_data, likelihood_eval,
-                   accuracy_eval, calibration_eval):
+def evaluate_model(model: bnn_priors.models.AbstractModel,
+                   dataloader_test: Iterable[Tuple[t.Tensor, t.Tensor]],
+                   samples: Dict[str, t.Tensor],
+                   likelihood_eval: bool, accuracy_eval: bool, calibration_eval: bool):
     lps = []
     accs = []
     probs = []
@@ -321,7 +349,7 @@ class HDF5ModelSaver:
         d = {k: v.cpu().detach().unsqueeze(0).numpy()
              for (k, v) in state_dict.items()}
         d["steps"] = np.array([step], dtype=np.int64)
-        d["timestamps"] = np.array([time.time()], dtype=np.int64)
+        d["timestamps"] = np.array([time.time()], dtype=np.float64)
         self._extend_dict(d)
 
     def _extend_dict(self, d):
@@ -353,8 +381,7 @@ class HDF5ModelSaver:
 
             dset = self.f[k]
             if i + length >= len(dset):
-                add = int(math.ceil(length / self.chunk_size)) * self.chunk_size
-                dset.resize(i + add, axis=0)
+                dset.resize(i + length, axis=0)
             dset[i:i+length] = value
         return length
 
@@ -369,12 +396,12 @@ class HDF5ModelSaver:
     def flush(self):
         self.f.flush()
 
-    def load_samples(self):
+    def load_samples(self, idx=slice(None), keep_steps=True):
         try:
             self.f.flush()
         except:
             pass
-        return load_samples(self.path)
+        return load_samples(self.path, idx=idx, keep_steps=keep_steps)
 
 
 class HDF5Metrics(HDF5ModelSaver):
@@ -383,7 +410,7 @@ class HDF5Metrics(HDF5ModelSaver):
         self.chunk_size = chunk_size
         self._step = -2**63
         self._cache = {}
-        self._chunk_i = 0
+        self._chunk_i = -1
         self.last_flush = time.time()
 
     def add_scalar(self, name, value, step, dtype=None):
@@ -411,18 +438,27 @@ class HDF5Metrics(HDF5ModelSaver):
 
     def flush(self, every_s=0):
         "flush every `every_s` seconds"
+        if self._chunk_i < 0:
+            return  # Nothing to flush
+
         now = time.time()
-        if now - self.last_flush > every_s:
-            self._assign_dict_current(self._cache)
+        if every_s <= 0 or now - self.last_flush > every_s:
+            self.last_flush = now
+            trimmed_cache = {k: v[:self._chunk_i+1] for k, v in self._cache.items()}
+            self._assign_dict_current(trimmed_cache)
             self.f.flush()
 
 
-def load_samples(path, idx=slice(None)):
+def load_samples(path, idx=slice(None), keep_steps=True):
     try:
         with h5py.File(path, "r", swmr=True) as f:
-            return {k: t.from_numpy(np.asarray(v[idx]))
-                    for k, v in f.items()
-                    if k not in ["steps", "timestamps"]}
+            if keep_steps:
+                return {k: t.from_numpy(np.asarray(v[idx]))
+                        for k, v in f.items()}
+            else:
+                return {k: t.from_numpy(np.asarray(v[idx]))
+                        for k, v in f.items()
+                        if k not in ["steps", "timestamps"]}
     except OSError:
         samples = t.load(path)
         return {k: v[idx] for k, v in samples.items()}
@@ -437,3 +473,21 @@ def sneaky_artifact(_run, name):
     obs.run_entry["artifacts"].append(name)
     obs.save_json(obs.run_entry, "run.json")
     return Path(obs.dir)/name
+
+
+def reject_samples_(samples, metrics_file):
+    is_sample = metrics_file["acceptance/is_sample"][:]
+    try:
+        rejected_arr = metrics_file["acceptance/rejected"][is_sample]
+    except KeyError:
+        return samples
+    assert np.all((rejected_arr == 0) | (rejected_arr == 1))
+    metrics_steps = metrics_file["steps"][is_sample]
+    rejected = {int(s): bool(r) for (s, r) in zip(metrics_steps, rejected_arr)}
+
+    for i in range(_n_samples_dict(samples)):
+        sample_step = samples["steps"][i].item()
+        if rejected[sample_step]:
+            for k in samples.keys():
+                samples[k][i] = samples[k][i-1]
+    return samples

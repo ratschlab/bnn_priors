@@ -35,8 +35,8 @@ class HMC(VerletSGLD):
     def _update_group_fn(self, g):
         # Ensure momentum and temperature are correct at every step
         # No matter what modifications are done before `self.step`.
-        g['momentum'] = g['temperature'] = 1.
-        return super()._update_group_fn(g)
+        super()._update_group_fn(g)
+        assert g['momentum'] == 1. and g['temperature'] == 1.
 
     def _step_fn(self, group, p, state, is_initial=False, is_final=False,
                  save_state=False, calc_metrics=True):
@@ -45,23 +45,32 @@ class HMC(VerletSGLD):
 
         M_rsqrt = self._preconditioner_default(state, p)
         momentum = state['momentum_buffer']
+
         if is_initial:
+            mom_dot = dot(momentum, momentum)
             # Subtract initial kinetic energy from delta_energy
-            state['delta_energy'] = -self._point_energy(group, p, state)
+            state['delta_energy'] = -.5 * mom_dot
+            if calc_metrics:
+                state['est_temperature'] = mom_dot / p.numel()
 
         if calc_metrics:
             # Temperature diagnostics
             d = p.numel()
+            if not is_final and not is_initial:
+                state['est_temperature'] = dot(momentum, momentum) / d
             # NOTE: p and p.grad are from the same time step
-            # the momentum is from the previous time step
-            state['est_temperature'] = dot(momentum, momentum) / d
             state['est_config_temp'] = dot(p, p.grad) * (group['num_data']/d)
 
         # Gradient step on the momentum
         grad_lr = -.5 * group['grad_v'] * group['bhn'] * M_rsqrt
         momentum.add_(p.grad, alpha=grad_lr)
 
-        if not is_final:
+        if is_final:
+            if calc_metrics:
+                # If it is the final step, p and p.grad correspond to the same time
+                # step as the updated momentum
+                state['est_temperature'] = dot(momentum, momentum) / p.numel()
+        else:
             # Update the parameters:
             p.add_(momentum, alpha=group['bh']*M_rsqrt)
 

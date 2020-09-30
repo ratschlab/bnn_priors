@@ -55,6 +55,18 @@ The usage could be for instance
 python train_bnn.py with weight_prior=laplace inference=HMC data=UCI_wine
 ```
 
+The last of the samples from a past run can be loaded using the `load_samples=/path/to/samples.pt` option.
+
+### Running the SGD training script
+
+The logs are saved to the current directory when running. The script is
+
+``` sh
+mkdir -p logs/1
+cd logs/1
+python ../../experiments/train_sgd.py --lr=0.05 --model=thin_resnet18
+```
+
 ### Reading out the results
 
 Each experiment (so each run of the training script) generates a numbered subdirectory in `logs/`.

@@ -178,9 +178,14 @@ class VerletSGLD(SGLD):
         if calc_metrics:
             # Temperature diagnostics
             d = p.numel()
+            if is_final:
+                # If it is the final step, p and p.grad correspond to the same
+                # time step as `new_momentum`
+                state['est_temperature'] = dot(new_momentum, new_momentum) / d
+            else:
+                # the momentum is from the previous time step
+                state['est_temperature'] = dot(old_momentum, old_momentum) / d
             # NOTE: p and p.grad are (and have to be) from the same time step
-            # the momentum is from the previous time step
-            state['est_temperature'] = dot(old_momentum, old_momentum) / d
             state['est_config_temp'] = dot(p, p.grad) * (group['num_data']/d)
 
         state['momentum_buffer'] = new_momentum
