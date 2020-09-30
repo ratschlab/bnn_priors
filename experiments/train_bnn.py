@@ -22,6 +22,7 @@ from bnn_priors.models import RaoBDenseNet, DenseNet, PreActResNet18, PreActResN
 from bnn_priors.prior import LogNormal
 from bnn_priors import prior
 import bnn_priors.inference
+import bnn_priors.inference_reject
 from bnn_priors import exp_utils
 from bnn_priors.exp_utils import get_prior
 
@@ -61,13 +62,14 @@ def config():
     metrics_skip = 10
     cycles =  5
     temperature = 1.0
-    sampling_decay = True
+    sampling_decay = "cosine"
     momentum = 0.9
     precond_update = 1
     lr = 5e-4
     init_method = "he"
     load_samples = None
     batch_size = None
+    reject_samples = False
     batchnorm = True
     device = "try_cuda"
     save_samples = True
@@ -96,25 +98,26 @@ def get_data(data, batch_size, _run):
     else:
         return exp_utils.get_data(data, device())
 
+
 @ex.capture
-def evaluate_model(model, dataloader_test, samples, data):
+def evaluate_model(model, dataloader_test, samples):
     return exp_utils.evaluate_model(
         model=model, dataloader_test=dataloader_test, samples=samples,
-        eval_data=data, likelihood_eval=True, accuracy_eval=True,
+        likelihood_eval=True, accuracy_eval=True,
         calibration_eval=False)
+
 
 @ex.automain
 def main(inference, model, width, n_samples, warmup, init_method,
          burnin, skip, metrics_skip, cycles, temperature, momentum,
-         precond_update, lr, batch_size, load_samples, save_samples, data,
-         run_id, log_dir, sampling_decay, _run):
-    assert inference in ["SGLD", "HMC", "VerletSGLD", "OurHMC"]
+         precond_update, lr, batch_size, load_samples, save_samples,
+         reject_samples, run_id, log_dir, sampling_decay, _run):
+    assert inference in ["SGLD", "HMC", "VerletSGLD", "OurHMC", "HMCReject", "VerletSGLDReject"]
     assert width > 0
     assert n_samples > 0
     assert cycles > 0
     assert temperature >= 0
 
-    eval_data_name = data
     data = get_data()
 
     x_train = data.norm.train_X
@@ -153,9 +156,11 @@ def main(inference, model, width, n_samples, warmup, init_method,
             exp_utils.sneaky_artifact(_run, "metrics.h5"), "w") as metrics_saver,\
          model_saver_fn() as model_saver:
         if inference == "HMC":
-            kernel = HMC(potential_fn=lambda p: model.get_potential(x_train, y_train, eff_num_data=1*x_train.shape[0])(p),
-                adapt_step_size=False, adapt_mass_matrix=False,
-                step_size=1e-3, num_steps=32)
+            # `model.get_potential` returns a function, no need to use a lambda.
+            _potential_fn = model.get_potential(x_train, y_train, eff_num_data=len(x_train))
+            kernel = HMC(potential_fn=_potential_fn,
+                         adapt_step_size=False, adapt_mass_matrix=False,
+                         step_size=1e-3, num_steps=32)
             mcmc = MCMC(kernel, num_samples=n_samples, warmup_steps=warmup, initial_params=model.params_dict())
         else:
             if inference == "SGLD":
@@ -164,6 +169,10 @@ def main(inference, model, width, n_samples, warmup, init_method,
                 runner_class = bnn_priors.inference.VerletSGLDRunner
             elif inference == "OurHMC":
                 runner_class = bnn_priors.inference.HMCRunner
+            elif inference == "VerletSGLDReject":
+                runner_class = bnn_priors.inference_reject.VerletSGLDRunnerReject
+            elif inference == "HMCReject":
+                runner_class = bnn_priors.inference_reject.HMCRunnerReject
 
             assert (n_samples * skip) % cycles == 0
             sample_epochs = n_samples * skip // cycles
@@ -174,11 +183,11 @@ def main(inference, model, width, n_samples, warmup, init_method,
             num_workers = (0 if isinstance(data.norm.train, t.utils.data.TensorDataset) else 2)
             dataloader = t.utils.data.DataLoader(data.norm.train, batch_size=batch_size, shuffle=True, drop_last=False, num_workers=num_workers)
             dataloader_test = t.utils.data.DataLoader(data.norm.test, batch_size=batch_size, shuffle=False, drop_last=False, num_workers=num_workers)
-            mcmc = runner_class(model=model, dataloader=dataloader, dataloader_test=dataloader_test, eval_data=eval_data_name, epochs_per_cycle=epochs_per_cycle,
+            mcmc = runner_class(model=model, dataloader=dataloader, dataloader_test=dataloader_test, epochs_per_cycle=epochs_per_cycle,
                                 warmup_epochs=warmup, sample_epochs=sample_epochs, learning_rate=lr,
                                 skip=skip, metrics_skip=metrics_skip, sampling_decay=sampling_decay, cycles=cycles, temperature=temperature,
                                 momentum=momentum, precond_update=precond_update,
-                                metrics_saver=metrics_saver, model_saver=model_saver)
+                                metrics_saver=metrics_saver, model_saver=model_saver, reject_samples=reject_samples)
 
         mcmc.run(progressbar=True)
     samples = mcmc.get_samples()

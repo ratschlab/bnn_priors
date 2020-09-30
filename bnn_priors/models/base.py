@@ -3,11 +3,10 @@ from .. import prior
 from torch import nn
 import torch
 import abc
-from typing import List, Sequence, Dict, Union
+from typing import Dict, Union, Tuple
 from collections import OrderedDict
 import contextlib
 import collections
-import itertools
 
 __all__ = ('RegressionModel', 'RaoBRegressionModel', 'ClassificationModel', 'AbstractModel')
 
@@ -21,9 +20,7 @@ class AbstractModel(nn.Module, abc.ABC):
     """
     def __init__(self, net: nn.Module):
         super().__init__()
-        # For some reason, this increases GPU utilization and decreases CPU
-        # utilization. The end result is much faster.
-        self.net = torch.nn.DataParallel(net)
+        self.net = net
 
     def log_prior(self):
         "log p(params)"
@@ -47,21 +44,22 @@ class AbstractModel(nn.Module, abc.ABC):
         unbiased minibatch estimate of log-likelihood
         log p(y | x, self.parameters)
         """
-        return self.log_likelihood_avg(x, y) * eff_num_data
+        ll, _ = self._log_likelihood_preds(x, y, eff_num_data)
+        return ll
 
     def log_likelihood_avg(self, x: torch.Tensor, y: torch.Tensor):
         """
         unbiased minibatch estimate of log-likelihood per datapoint
         """
-        lla, _ = self._log_likelihood_avg_preds(x, y)
+        lla, _ = self._log_likelihood_preds(x, y, eff_num_data=1)
         return lla
 
-    def _log_likelihood_avg_preds(self, x: torch.Tensor, y: torch.Tensor):
+    def _log_likelihood_preds(self, x: torch.Tensor, y: torch.Tensor, eff_num_data: int):
         # compute batch size using zeroth dim of inputs (log_prob_batch doesn't work with RaoB).
         assert x.shape[0] == y.shape[0]
         batch_size = x.shape[0]
         preds = self(x)
-        return preds.log_prob(y).sum() / batch_size, preds
+        return preds.log_prob(y).sum() * (eff_num_data / batch_size), preds
 
     def potential(self, x, y, eff_num_data):
         """
@@ -72,14 +70,14 @@ class AbstractModel(nn.Module, abc.ABC):
         return - (self.log_likelihood(x, y, eff_num_data) + self.log_prior())
 
     def _split_potential_preds(self, x, y, eff_num_data):
-        lla, preds = self._log_likelihood_avg_preds(x, y)
+        lla, preds = self._log_likelihood_preds(x, y, eff_num_data=1)
         loss = -lla
         log_prior = self.log_prior()
         potential_avg = loss - log_prior/eff_num_data
         return loss, log_prior, potential_avg, preds
 
     @abc.abstractmethod
-    def split_potential_and_acc(self, x, y, eff_num_data):
+    def split_potential_and_acc(self, x, y, eff_num_data) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor, torch.distributions.Distribution]:
         pass
 
     def potential_avg(self, x, y, eff_num_data):
@@ -87,7 +85,7 @@ class AbstractModel(nn.Module, abc.ABC):
         return -(self.log_likelihood_avg(x, y) + self.log_prior()/eff_num_data)
 
     def params_dict(self):
-        return OrderedDict(self.named_parameters())
+        return OrderedDict((n, p.detach()) for (n, p) in self.named_parameters())
 
     def sample_all_priors(self):
         for _, v in prior.named_priors(self):
@@ -116,15 +114,14 @@ class AbstractModel(nn.Module, abc.ABC):
             for prefix, mod in self.named_modules():
                 for name, param in mod.named_parameters(recurse=False):
                     full_name = prefix + ("" if prefix == "" else ".") + name
-                    pmd[full_name] = _PmdItem(name, mod, True, param)
+                    pmd[full_name] = self._PmdItem(name, mod, True, param)
 
-                for name, buffer in mod.named_buffers(recurse=False):
+                for name, buf in mod.named_buffers(recurse=False):
                     full_name = prefix + ("" if prefix == "" else ".") + name
-                    pmd[full_name] = _PmdItem(name, mod, False, buffer)
+                    pmd[full_name] = self._PmdItem(name, mod, False, buf)
 
-        assert len(param_dict) == len(pmd)
         try:      # assign `torch.Tensor`s to `nn.Module`s
-            for k, param in param_dict.items():
+            for k, param_or_buffer in param_dict.items():
                 name, mod, is_param, _ = pmd[k]
                 if is_param:
                     mod._parameters[name] = param_or_buffer
@@ -132,11 +129,11 @@ class AbstractModel(nn.Module, abc.ABC):
                     mod._buffers[name] = param_or_buffer
             yield
         finally:  # Restore `nn.Parameter`s
-            for _, (name, mod, is_param, param_or_buffer) in pmd.items():
+            for name, mod, is_param, param_or_buffer in pmd.values():
                 if is_param:
                     mod._parameters[name] = param_or_buffer
                 else:
-                    mod._parameters[name] = param_or_buffer
+                    mod._buffers[name] = param_or_buffer
 
 
 class RegressionModel(AbstractModel):
@@ -186,6 +183,26 @@ class ClassificationModel(AbstractModel):
         return loss, log_prior, potential_avg, acc, preds
 
 
+class PriorOnlyModel(AbstractModel):
+    def __init__(self, prior_dist):
+        super().__init__(torch.nn.Identity())
+        self.prior_dist = prior_dist
+        self.p = torch.nn.Parameter(prior_dist.sample())
+
+    likelihood_dist = NotImplemented
+    def log_likelihood(self):
+        return 0.
+
+    def log_likelihood_avg(self, x, y):
+        return 0.
+
+    def split_potential_and_acc(self, x, y, eff_num_data):
+        loss = torch.zeros(())
+        log_prior = self.prior_dist.log_prob(self.p).sum()
+        potential_avg = log_prior
+        return loss, log_prior, potential_avg, loss, torch.distributions.Normal(loc=y, scale=torch.ones_like(y))
+
+
 class RaoBRegressionModel(RegressionModel):
     """Rao-Blackwellised version of Gaussian univariate regression. It integrates
     out the weights of the last layer analytically during inference. The last
@@ -201,8 +218,8 @@ class RaoBRegressionModel(RegressionModel):
         assert x_train.size(0) == y_train.size(0)
         assert y_train.size(1) == 1
         super().__init__(net, noise_std)
-        self.x_train = x_train
-        self.y_train = y_train
+        self.register_buffer("x_train", x_train)
+        self.register_buffer("y_train", y_train)
         self.last_layer_std = last_layer_std
 
     def _log_likelihood_constants(self, y, n_feat, sig):
@@ -276,7 +293,7 @@ class RaoBRegressionModel(RegressionModel):
         #return Py.log_prob(y).sum()
 
     def _posterior_w(self, x, y):
-        "returns mean and lower triangular precision of p(w | x,y)"
+        "returns mean and lower triangular precision of whitened p(w | x,y)"
         f = self.net(x) * self.last_layer_std
         sig = prior.value_or_call(self.noise_std)**2
         # Precision matrix
@@ -286,6 +303,15 @@ class RaoBRegressionModel(RegressionModel):
         FY = (f.t()@y).to(torch.float64)
         white_mean = FY.triangular_solve(L, upper=False).solution
         return white_mean/sig, L
+
+    def posterior_w(self):
+        "returns mean and the root of the covariance, Cov=L^T L"
+        white_w_mean, L_w = self._posterior_w(self.x_train, self.y_train)
+
+        mean = white_w_mean.triangular_solve(L_w, upper=False, transpose=True).solution
+        eye = torch.eye(L_w.size(-1), dtype=L_w.dtype, device=L_w.device)
+        L = eye.triangular_solve(L_w, upper=False).solution
+        return mean, L
 
     def likelihood_dist(self, f: torch.Tensor):
         white_w_mean, L_w = self._posterior_w(self.x_train, self.y_train)

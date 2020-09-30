@@ -41,22 +41,24 @@ class TestHDF5Saver(unittest.TestCase):
 
                     if step%31 == 0:
                         metrics.flush()
+                        with h5py.File(fname, "r", swmr=True) as read_metrics:
+                            for k in read_metrics.keys():
+                                assert len(read_metrics[k]) == step+2
 
-            the_len = 104
+
+            the_len = 101
             buf = np.zeros(the_len, dtype=np.int64)
             with h5py.File(fname, "r") as f:
                 for k in f.keys():
                     assert len(f[k]) == the_len
                     if k != "timestamps":
-                        assert np.all(f[k][101:] == -2**63)
                         assert f[k][0] == -1
 
-                assert np.all( np.isnan(f["timestamps"][101:]))
-                assert np.all(~np.isnan(f["timestamps"][:101]))
+                assert np.all(~np.isnan(f["timestamps"][:]))
 
-                assert np.array_equal(f["steps"][:101], np.arange(-1, 100))
+                assert np.array_equal(f["steps"][:], np.arange(-1, 100))
                 assert np.array_equal(f["steps"][:], f["re_step"][:])
 
-                assert np.array_equal(f["step5"][1:101:5], np.arange(100//5))
-                assert np.array_equal(f["step11"][1:101:11], np.arange(100//11 + 1))
-                assert np.array_equal(f["step23"][1:101:23], np.arange(100//23 + 1))
+                assert np.array_equal(f["step5"][1::5], np.arange(100//5))
+                assert np.array_equal(f["step11"][1::11], np.arange(100//11 + 1))
+                assert np.array_equal(f["step23"][1::23], np.arange(100//23 + 1))
