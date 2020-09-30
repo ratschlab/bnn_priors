@@ -77,9 +77,9 @@ def he_zerobias_initialize(model):
 def he_uniform_initialize(model):
     for name, param in model.named_parameters():
         if "weight_prior.p" in name:
-            if "conv" in name or "shortcut" in name:
+            if "conv" in name or "shortcut" in name or param.dim() == 4:
                 t.nn.init.kaiming_uniform_(param.data, a=math.sqrt(5))
-            elif "linear" in name:
+            elif "linear" in name or param.dim() == 2:
                 bound = 1 / math.sqrt(param.size(1))
                 t.nn.init.uniform_(param.data, -bound, bound)
             else:
@@ -87,7 +87,7 @@ def he_uniform_initialize(model):
         elif "bias_prior.p" in name:
             if "conv" in name or "shortcut" in name:
                 raise NotImplementedError(name)
-            elif "linear" in name:
+            elif "linear" in name or param.dim() == 1:
                 bound = 1 / math.sqrt(param.size(0))
                 t.nn.init.uniform_(param.data, -bound, bound)
             else:

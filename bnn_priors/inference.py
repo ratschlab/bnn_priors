@@ -203,8 +203,8 @@ class SGLDRunner:
             likelihood_eval=True, accuracy_eval=True, calibration_eval=False)
         self.model.train()
 
-        results = {"test/log_prob": results["lp_ensemble"],
-                    "test/acc": results["acc_mean"]}
+        results = {"test/loss": -results["lp_ensemble"],
+                   "test/acc": results["acc_mean"]}
         for k, v in results.items():
             self.metrics_saver.add_scalar(k, v, step)
         return results

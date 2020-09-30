@@ -140,7 +140,7 @@ def main(inference, model, width, n_samples, warmup, init_method,
         else:
             raise ValueError(f"unknown init_method={init_method}")
     else:
-        state_dict = exp_utils.load_samples(load_samples, idx=-1)
+        state_dict = exp_utils.load_samples(load_samples, idx=-1, keep_steps=False)
         model.load_state_dict(state_dict)
         del state_dict
 
