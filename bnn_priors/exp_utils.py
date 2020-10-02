@@ -386,6 +386,9 @@ class HDF5ModelSaver:
         return length
 
     def _create_dset(self, name, shape, dtype):
+        # int64 stores NaN as -2**63
+        assert dtype in [np.float32, np.float64, np.int64], "accepts NaNs"
+
         return self.f.create_dataset(
             name, dtype=dtype,
             shape=(0,                *shape),

@@ -59,6 +59,13 @@ class TestHDF5Saver(unittest.TestCase):
                 assert np.array_equal(f["steps"][:], np.arange(-1, 100))
                 assert np.array_equal(f["steps"][:], f["re_step"][:])
 
+
+                # -2**63 is the minimum possible int64, and is what
+                # converts np.nan to if assigned to an array of int64. That is:
+                a = np.zeros([1], dtype=np.int64)
+                a[0] = np.nan
+                assert a[0] == -2**63, "will be true"
+
                 assert np.array_equal(f["step5"][1::5], np.arange(100//5))
                 for i in range(1, 5):
                     assert np.all(f["step5"][1+i::5] == -2**63)
