@@ -5,7 +5,7 @@ from torch.utils.data import TensorDataset
 
 from bnn_priors.data import Dataset
 
-__all__ = ('RandomData','Synthetic')
+__all__ = ('RandomData', 'Synthetic', 'RandomOODTestData')
 
 
 class RandomData:
@@ -49,6 +49,43 @@ class RandomData:
 
     def denormalize_y(self, y):
         return self.y_std * y + self.y_mean
+
+
+class RandomOODTestData(RandomData):
+    def __init__(self, dim=20, n_points=2000, dtype='float32', device="cpu"):
+        len_train = n_points//2
+        X_unnorm = t.from_numpy(np.random.uniform(low=-1., high=1., size=[len_train, dim]).astype(dtype))
+        y_unnorm = t.from_numpy(np.random.uniform(low=-1., high=1., size=[len_train, 1]).astype(dtype))
+
+        X_test_unnorm = t.from_numpy(np.random.uniform(low=1., high=2., size=[n_points-len_train, dim]).astype(dtype))
+        y_test_unnorm = t.from_numpy(np.random.uniform(low=1., high=2., size=[n_points-len_train, 1]).astype(dtype))
+
+        X_unnorm = t.cat([X_unnorm, X_test_unnorm])
+        y_unnorm = t.cat([y_unnorm, y_test_unnorm])
+
+        index_train = np.arange(len_train)
+        index_test  = np.arange(len_train, n_points)
+
+        # record unnormalized dataset
+        self.unnorm = Dataset(X_unnorm, y_unnorm, index_train, index_test, device)
+
+        # compute normalization constants based on training set
+        self.X_std = t.std(self.unnorm.train_X, 0)
+        self.X_std[self.X_std == 0] = 1. # ensure we don't divide by zero
+        self.X_mean = t.mean(self.unnorm.train_X, 0)
+
+        self.y_mean = t.mean(self.unnorm.train_y)
+        self.y_std  = t.std(self.unnorm.train_y)
+
+        X_norm = (self.unnorm.X - self.X_mean)/self.X_std
+        y_norm = (self.unnorm.y - self.y_mean)/self.y_std
+
+        self.norm = Dataset(X_norm, y_norm, index_train, index_test, device)
+
+        self.num_train_set = self.unnorm.X.shape[0]
+        self.in_shape   = self.unnorm.X.shape[1:]
+        self.out_shape  = self.unnorm.y.shape[1:]
+
 
     
 class Synthetic:

@@ -90,10 +90,11 @@ def get_data(data, batch_size, _run):
         dataset = get_data(data)
         x_train = dataset.norm.train_X
         y_train = dataset.norm.train_y
-        net = get_model(x_train=x_train, y_train=y_train, weight_prior=prior, weight_prior_params={})
-        net.sample_all_priors()
-        data = Synthetic(dataset=dataset, model=net, batch_size=batch_size, device=device())
+        model = get_model(x_train=x_train, y_train=y_train, weight_prior=prior, weight_prior_params={})
+        model.sample_all_priors()
+        data = Synthetic(dataset=dataset, model=model, batch_size=batch_size, device=device())
         t.save(data, exp_utils.sneaky_artifact(_run, "synthetic_data.pt"))
+        t.save(model, exp_utils.sneaky_artifact(_run, "true_model.pt"))
         return data
     else:
         return exp_utils.get_data(data, device())
