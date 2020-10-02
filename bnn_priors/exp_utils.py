@@ -355,7 +355,7 @@ class HDF5ModelSaver:
         length = self._assign_dict_current(d)
         self.__i += length
 
-    def _assign_dict_current(self, d):
+    def _assign_dict_current(self, d) -> int:
         """
        Assigns all data from dictionary `d` to the positions
         `self.__i:self.__i+self.chunk_size` in the HDF5 file.
@@ -382,6 +382,7 @@ class HDF5ModelSaver:
             if i + length >= len(dset):
                 dset.resize(i + length, axis=0)
             dset[i:i+length] = value
+        assert length is not None
         return length
 
     def _create_dset(self, name, shape, dtype):
