@@ -35,7 +35,7 @@ class TestHDF5Saver(unittest.TestCase):
                     if step==-1 or step%5 == 0:
                         metrics.add_scalar("step5", step//5, step)
                     if step==-1 or step%11 == 0:
-                        metrics.add_scalar("step11", step//11, step)
+                        metrics.add_scalar("step11", float(step//11), step)
                     if step==-1 or step%23 == 0:
                         metrics.add_scalar("step23", step//23, step)
 
@@ -59,6 +59,22 @@ class TestHDF5Saver(unittest.TestCase):
                 assert np.array_equal(f["steps"][:], np.arange(-1, 100))
                 assert np.array_equal(f["steps"][:], f["re_step"][:])
 
+
+                # -2**63 is the minimum possible int64. It is what numpy
+                # converts NaNs to when assigning them to arrays of size larger than 1
+                # (for some reason arrays with 1 element throw a ValueError)
+                a = np.zeros([2], dtype=np.int64)
+                a[:] = np.nan
+                assert np.all(a[:] == -2**63), "will be true"
+
                 assert np.array_equal(f["step5"][1::5], np.arange(100//5))
-                assert np.array_equal(f["step11"][1::11], np.arange(100//11 + 1))
+                for i in range(1, 5):
+                    assert np.all(f["step5"][1+i::5] == -2**63)
+
+                assert np.array_equal(f["step11"][1::11], np.arange(100//11 + 1).astype(np.float64))
+                for i in range(1, 11):
+                    assert np.all(np.isnan(f["step11"][1+i::11]))
+
                 assert np.array_equal(f["step23"][1::23], np.arange(100//23 + 1))
+                for i in range(1, 23):
+                    assert np.all(f["step23"][1+i::23] == -2**63)

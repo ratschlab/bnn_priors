@@ -355,7 +355,7 @@ class HDF5ModelSaver:
         length = self._assign_dict_current(d)
         self.__i += length
 
-    def _assign_dict_current(self, d):
+    def _assign_dict_current(self, d) -> int:
         """
        Assigns all data from dictionary `d` to the positions
         `self.__i:self.__i+self.chunk_size` in the HDF5 file.
@@ -382,9 +382,13 @@ class HDF5ModelSaver:
             if i + length >= len(dset):
                 dset.resize(i + length, axis=0)
             dset[i:i+length] = value
+        assert length is not None
         return length
 
     def _create_dset(self, name, shape, dtype):
+        # int64 stores NaN as -2**63
+        assert dtype in [np.float32, np.float64, np.int64], "accepts NaNs"
+
         return self.f.create_dataset(
             name, dtype=dtype,
             shape=(0,                *shape),
@@ -418,6 +422,7 @@ class HDF5Metrics(HDF5ModelSaver):
             if self._chunk_i >= self.chunk_size:
                 self._extend_dict(self._cache)
                 self._chunk_i = 0
+                self._scrub_cache()
 
             self._step = step
             self._append("steps", step, np.int64)
@@ -426,6 +431,10 @@ class HDF5Metrics(HDF5ModelSaver):
         elif step < self._step:
             raise ValueError(f"step went backwards ({self._step} -> {step})")
         self._append(name, value, type(value))
+
+    def _scrub_cache(self):
+        for v in self._cache.values():
+            v[:] = np.nan
 
     def _append(self, name, value, dtype):
         try:
