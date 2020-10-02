@@ -60,8 +60,12 @@ class TestHDF5Saver(unittest.TestCase):
                 assert np.array_equal(f["steps"][:], f["re_step"][:])
 
 
-                # -2**63 is the minimum possible int64. It is what `h5py`
-                # converts NaNs to when assigning them to int64 data sets.
+                # -2**63 is the minimum possible int64. It is what numpy
+                # converts NaNs to when assigning them to arrays of size larger than 1
+                # (for some reason arrays with 1 element throw a ValueError)
+                a = np.zeros([2], dtype=np.int64)
+                a[:] = np.nan
+                assert np.all(a[:] == -2**63), "will be true"
 
                 assert np.array_equal(f["step5"][1::5], np.arange(100//5))
                 for i in range(1, 5):
