@@ -35,7 +35,7 @@ class TestHDF5Saver(unittest.TestCase):
                     if step==-1 or step%5 == 0:
                         metrics.add_scalar("step5", step//5, step)
                     if step==-1 or step%11 == 0:
-                        metrics.add_scalar("step11", step//11, step)
+                        metrics.add_scalar("step11", float(step//11), step)
                     if step==-1 or step%23 == 0:
                         metrics.add_scalar("step23", step//23, step)
 
@@ -60,19 +60,16 @@ class TestHDF5Saver(unittest.TestCase):
                 assert np.array_equal(f["steps"][:], f["re_step"][:])
 
 
-                # -2**63 is the minimum possible int64, and is what
-                # converts np.nan to if assigned to an array of int64. That is:
-                a = np.zeros([1], dtype=np.int64)
-                a[0] = np.nan
-                assert a[0] == -2**63, "will be true"
+                # -2**63 is the minimum possible int64. It is what `h5py`
+                # converts NaNs to when assigning them to int64 data sets.
 
                 assert np.array_equal(f["step5"][1::5], np.arange(100//5))
                 for i in range(1, 5):
                     assert np.all(f["step5"][1+i::5] == -2**63)
 
-                assert np.array_equal(f["step11"][1::11], np.arange(100//11 + 1))
+                assert np.array_equal(f["step11"][1::11], np.arange(100//11 + 1).astype(np.float64))
                 for i in range(1, 11):
-                    assert np.all(f["step11"][1+i::11] == -2**63)
+                    assert np.all(np.isnan(f["step11"][1+i::11]))
 
                 assert np.array_equal(f["step23"][1::23], np.arange(100//23 + 1))
                 for i in range(1, 23):
