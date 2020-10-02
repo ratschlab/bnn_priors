@@ -4,7 +4,7 @@ import numpy as np
 import time
 from sklearn.metrics import average_precision_score, roc_auc_score
 import torch as t
-from bnn_priors.data import UCI, CIFAR10Augmented, CIFAR10, CIFAR10_C, MNIST, RotatedMNIST, FashionMNIST, SVHN, RandomData
+import bnn_priors.data
 from bnn_priors.models import RaoBDenseNet, DenseNet, PreActResNet18, ThinPreActResNet18, PreActResNet34, ClassificationDenseNet, ResNet, ClassificationConvNet
 import bnn_priors.models
 from bnn_priors.prior import LogNormal
@@ -28,31 +28,31 @@ def device(device: str):
 
 
 def get_data(data: str, device: t.device):
-    assert (data[:3] == "UCI" or data[:7] == "cifar10" or data[-5:] == "mnist"
-            or data in ["svhn", "random"]), f"Unknown data set {data}"
     if data[:3] == "UCI":
         uci_dataset = data.split("_")[1]
         assert uci_dataset in ["boston", "concrete", "energy", "kin8nm",
                                "naval", "power", "protein", "wine", "yacht"]
         # TODO: do we ever use a different split than 0?
-        dataset = UCI(uci_dataset, 0, device=device)
+        dataset = bnn_priors.data.UCI(uci_dataset, 0, device=device)
     elif data[:8] == "cifar10c":
         corruption = data.split("-")[1]
-        dataset = CIFAR10_C(corruption, device=device)
+        dataset = bnn_priors.data.CIFAR10_C(corruption, device=device)
     elif data == "cifar10":
-        dataset = CIFAR10(device=device)
+        dataset = bnn_priors.data.CIFAR10(device=device)
     elif data == "cifar10_augmented":
-        dataset = CIFAR10Augmented(device=device)
+        dataset = bnn_priors.data.CIFAR10Augmented(device=device)
     elif data == "mnist":
-        dataset = MNIST(device=device)
+        dataset = bnn_priors.data.MNIST(device=device)
     elif data == "rotated_mnist":
-        dataset = RotatedMNIST(device=device)
+        dataset = bnn_priors.data.RotatedMNIST(device=device)
     elif data == "fashion_mnist":
-        dataset = FashionMNIST(device=device)
+        dataset = bnn_priors.data.FashionMNIST(device=device)
     elif data == "svhn":
-        dataset = SVHN(device=device)
+        dataset = bnn_priors.data.SVHN(device=device)
     elif data == "random":
-        dataset = RandomData(device=device)
+        dataset = bnn_priors.data.RandomData(device=device)
+    elif data == "random_ood_test":
+        dataset = bnn_priors.data.RandomOODTestData(device=device)
     else:
         raise ValueError(f"Unknown data='{data}'")
     return dataset
