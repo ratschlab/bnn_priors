@@ -5,7 +5,7 @@ from torch.utils.data import TensorDataset
 
 from bnn_priors.data import Dataset
 
-__all__ = ('RandomData','Synthetic')
+__all__ = ('RandomData', 'Synthetic', 'RandomOODTestData')
 
 
 class RandomData:
@@ -52,7 +52,7 @@ class RandomData:
 
 
 class RandomOODTestData(RandomData):
-    def __init__(self, dim=5, n_points=20, dtype='float32', device="cpu"):
+    def __init__(self, dim=20, n_points=2000, dtype='float32', device="cpu"):
         len_train = n_points//2
         X_unnorm = t.from_numpy(np.random.uniform(low=-1., high=1., size=[len_train, dim]).astype(dtype))
         y_unnorm = t.from_numpy(np.random.uniform(low=-1., high=1., size=[len_train, 1]).astype(dtype))

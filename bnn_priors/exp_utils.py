@@ -28,8 +28,6 @@ def device(device: str):
 
 
 def get_data(data: str, device: t.device):
-    assert (data[:3] == "UCI" or data[:7] == "cifar10" or data[-5:] == "mnist"
-            or data in ["svhn", "random"]), f"Unknown data set {data}"
     if data[:3] == "UCI":
         uci_dataset = data.split("_")[1]
         assert uci_dataset in ["boston", "concrete", "energy", "kin8nm",
