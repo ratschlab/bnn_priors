@@ -1,6 +1,5 @@
 import torch
 import math
-from scipy.stats import chi2
 import numpy as np
 from collections import OrderedDict
 from typing import Sequence, Optional, Callable, Tuple, Dict, Union
