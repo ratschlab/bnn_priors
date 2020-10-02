@@ -418,6 +418,7 @@ class HDF5Metrics(HDF5ModelSaver):
             if self._chunk_i >= self.chunk_size:
                 self._extend_dict(self._cache)
                 self._chunk_i = 0
+                self._scrub_cache()
 
             self._step = step
             self._append("steps", step, np.int64)
@@ -426,6 +427,10 @@ class HDF5Metrics(HDF5ModelSaver):
         elif step < self._step:
             raise ValueError(f"step went backwards ({self._step} -> {step})")
         self._append(name, value, type(value))
+
+    def _scrub_cache(self):
+        for v in self._cache.values():
+            v[:] = np.nan
 
     def _append(self, name, value, dtype):
         try:
