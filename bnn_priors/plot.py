@@ -1,17 +1,23 @@
 import numpy as np
 import scipy.stats
+import scipy.signal
 from matplotlib import collections as pltc
 import matplotlib.pyplot as plt
 import torch
 from gpytorch.distributions import MultivariateNormal
 from gpytorch.lazy import DiagLazyTensor
 from typing import Optional, Union, Tuple, Dict
-import h5py
+
+
+def get_sizes(model: torch.nn.Module) -> Dict[str, int]:
+    return {k: p.numel() for k, p in model.state_dict().items()}
 
 
 def weighted_var_se(w, x):
-    """Computes the variance of a weighted mean following Cochran 1977
-    definition (https://stats.stackexchange.com/questions/25895/computing-standard-error-in-weighted-mean-estimation)
+    """Computes the variance of a weighted mean following Cochran 1977.
+
+    Adapted from a stats.SE answer copyright Ming K, licensed under CC BY-SA 3.0.
+    https://stats.stackexchange.com/a/33959/172619
     """
     n, = w.shape
     assert x.shape[-1] == n
@@ -29,7 +35,22 @@ def weighted_var_se(w, x):
     return xWbar, se
 
 
-def temperature_stderr(ax, metrics, temp_group, samples,
+def ewma(array, alpha):
+    """
+    Exponential weighted moving average with decay alpha.
+
+    Copyright snooper77 and William Miller, licensed under CC BY-SA 4.0
+    https://stackoverflow.com/a/59199643/4521118
+    """
+    if alpha == 0.0:
+        return array
+    b = [1-alpha]
+    a = [1, -alpha]
+    zi = scipy.signal.lfiltic(b, a, array[0:1], [0])
+    return scipy.signal.lfilter(b, a, array, zi=zi)[0]
+
+
+def temperature_stderr(ax, metrics, temp_group, sizes: Dict[str, int], ewma_alpha:float=0.0,
                        mask:Union[slice, np.ndarray]=slice(None), label=None, legend=True,
                        line_kwargs={}, confidence_kwargs={}):
     """Plots the weighted mean and standard error of the various parameters'
@@ -44,7 +65,7 @@ def temperature_stderr(ax, metrics, temp_group, samples,
 
     temps = np.stack([temperatures[k][mask] for k in keys], axis=1)
     # Weights: number of elements of each parameter
-    weights = np.array([np.prod(samples[k].shape[1:]) for k in keys], dtype=float)
+    weights = np.array([sizes[k] for k in keys], dtype=float)
 
     _mean, var_se = weighted_var_se(weights, temps)
 
@@ -53,13 +74,13 @@ def temperature_stderr(ax, metrics, temp_group, samples,
 
     steps = metrics["steps"][mask]
     line, *_ = ax.plot(steps, metrics["temperature"][mask], linestyle='--', **line_kwargs)
-    gp_posterior(ax, torch.from_numpy(steps), dist, color=line.get_color(), label=label, **confidence_kwargs)
+    gp_posterior(ax, torch.from_numpy(steps), dist, ewma_alpha=ewma_alpha, color=line.get_color(), label=label, **confidence_kwargs)
 
     if legend:
         ax.legend()
 
 
-def _gamma_confidence(samples, c: Union[float, np.ndarray]=0.95) -> Dict[
+def _gamma_confidence(sizes: Dict[str, int], c: Union[float, np.ndarray]=0.95) -> Dict[
         str, Tuple[np.ndarray, np.ndarray]]:
     """Calculates the confidence intervals for the kinetic temperature of the
     momentum of each parameter. Assumes the target temperature is 1.
@@ -71,20 +92,19 @@ def _gamma_confidence(samples, c: Union[float, np.ndarray]=0.95) -> Dict[
         per parameters. `lower` and `upper` have the same shape as `c`.
     """
     d = {}
-    for k, v in samples.items():
-        df = int(np.prod(v.shape[1:]))
+    for k, df in sizes.items():
         lower = scipy.stats.chi2.ppf((1-c)/2, df=df, scale=1/df)
         upper = scipy.stats.chi2.ppf((1+c)/2, df=df, scale=1/df)
         d[k] = (lower, upper)
     return d
 
 def kinetic_temperature_intervals(
-        ax, metrics, samples, mask:Union[slice, np.ndarray]=slice(None),
-        confidences=[0.05, 0.25, 0.50, 0.75, 0.95],
+        ax, metrics, sizes: Dict[str, int], mask:Union[slice, np.ndarray]=slice(None),
+        ewma_alpha:float=0.0, confidences=[0.05, 0.25, 0.50, 0.75, 0.95],
         label="confidence", legend=True, cmap=None, hline_kwargs={}, plot_kwargs={}):
 
     confidences = np.array(confidences)
-    intervals = _gamma_confidence(samples, confidences)
+    intervals = _gamma_confidence(sizes, confidences)
     temperature = metrics["temperature"][mask]
 
     keys = list(metrics["est_temperature"].keys())
@@ -108,17 +128,24 @@ def kinetic_temperature_intervals(
     steps = metrics["steps"][mask]
     for confidence, count, color in zip(confidences, counts, colors):
         line = ax.axhline(confidence, linestyle="--", linewidth=0.5, color=color, **hline_kwargs)
-        ax.plot(steps, count, linestyle="-", color=line.get_color(),
-                label=f"{label} {confidence:.2f}", **plot_kwargs)
+        count = ewma(count, ewma_alpha)
+        kwargs = dict(linestyle="-", color=line.get_color(),
+                       label=f"{label} {confidence:.2f}")
+        kwargs.update(plot_kwargs)
+        ax.plot(steps, count, **kwargs)
+
     if legend:
         ax.legend()
 
 
 def metric(ax, metrics, name, mask:Union[slice, np.ndarray]=slice(None),
+           ewma_alpha:float=0.0,
            legend=True, iqr_ylim=None, transform=(lambda x: x),
            plot_kwargs={}):
-    val = transform(metrics[name][mask])
-    ax.plot(metrics["steps"][mask], val, label=name, **plot_kwargs)
+    val = ewma(transform(metrics[name][mask]), ewma_alpha)
+    kwargs = dict(label=name)
+    kwargs.update(plot_kwargs)
+    ax.plot(metrics["steps"][mask], val, **kwargs)
     if legend:
         ax.legend()
     if iqr_ylim is not None:
@@ -129,9 +156,6 @@ def metric(ax, metrics, name, mask:Union[slice, np.ndarray]=slice(None),
         ax.set_ylim((lower, upper))
 
 
-# Functions below taken from Adrià's Noisy Input GP project
-
-
 def n(t):
     try:
         return t.cpu().detach().numpy()
@@ -140,7 +164,9 @@ def n(t):
     return t
 
 
-def gp_posterior(ax, x: torch.Tensor, preds: MultivariateNormal, label:Optional[str]=None, sort=True, fill_alpha=0.05, **kwargs):
+def gp_posterior(ax, x: torch.Tensor, preds: MultivariateNormal,
+                 ewma_alpha:float=0.0, label:Optional[str]=None, sort=True,
+                 fill_alpha=0.05, **kwargs):
     x = x.view(-1)
     if sort:
         # i = x.argsort(dim=-2)[:, 0]
@@ -149,15 +175,19 @@ def gp_posterior(ax, x: torch.Tensor, preds: MultivariateNormal, label:Optional[
             i = slice(None, None, None)
     else:
         i = slice(None, None, None)
-    x = x[i]
+    x = n(x[i])
 
     preds_mean = preds.mean.view(-1)
-    line, *_ = ax.plot(n(x), n(preds_mean[i]), **kwargs)
+    mean = ewma(n(preds_mean[i]), ewma_alpha)
+    line, *_ = ax.plot(x, mean, **kwargs)
     if label is not None:
         line.set_label(label)
 
     C = line.get_color()
     lower, upper = (p.view(-1) for p in preds.confidence_region())
-    ax.fill_between(n(x), n(lower[i]), n(upper[i]), alpha=fill_alpha, color=C)
-    ax.plot(n(x), n(lower[i]), color=C, linewidth=0.5)
-    ax.plot(n(x), n(upper[i]), color=C, linewidth=0.5)
+
+    lower = ewma(n(lower[i]), ewma_alpha)
+    upper = ewma(n(upper[i]), ewma_alpha)
+    ax.fill_between(x, lower, upper, alpha=fill_alpha, color=C)
+    ax.plot(x, lower, color=C, linewidth=0.5)
+    ax.plot(x, upper, color=C, linewidth=0.5)
