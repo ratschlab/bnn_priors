@@ -16,9 +16,12 @@ class VerletSGLDRunnerReject(SGLDRunner):
             momentum=self.momentum, temperature=self.temperature)
 
     def _exact_model_potential_and_grad(self, dataloader):
-        self.model.zero_grad()
+        # for x, y in dataloader:
+        #     return self._model_potential_and_grad(x, y)[:3]
+
+        self.optimizer.zero_grad()
         log_prior = self.model.log_prior()
-        log_norm_prior = log_prior / self.eff_num_data
+        log_norm_prior = log_prior / -self.eff_num_data
         log_norm_prior.backward()
 
         loss = 0.
@@ -27,7 +30,7 @@ class VerletSGLDRunnerReject(SGLDRunner):
             this_loss.backward()
             loss = loss + this_loss
 
-        potential = loss - log_norm_prior
+        potential = loss + log_norm_prior
         return loss, log_prior, potential
 
     def run(self, progressbar=False):
@@ -153,8 +156,12 @@ class VerletSGLDRunnerReject(SGLDRunner):
                     self.scheduler.step()
 
                 # Update preconditioner, increment progressbar at the end of the epoch
-                if self.precond_update is not None and epoch % self.precond_update == 0:
+                if self.precond_update is not None and (epoch+1) % self.precond_update == 0:
                     self.optimizer.update_preconditioner()
+
+                # Write metrics to disk every 2 minutes
+                self.metrics_saver.flush(every_s=120)
+
                 if progressbar:
                     progressbar.update(1)
         # Close the progressbar at the end of the training procedure
