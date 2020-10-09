@@ -129,14 +129,14 @@ class SGLDRunner:
             return (0 <= sampling_epoch) and (sampling_epoch % self.skip == 0)
 
         step = -1  # used for `self.metrics_saver.add_scalar`, must start at 0 and never reset
+        postfix = {}
         for cycle in range(self.cycles):
             if progressbar:
                 epochs = tqdm(range(self.epochs_per_cycle), position=0,
-                              leave=True, desc=f"Cycle {cycle}, Sampling")
+                              leave=True, desc=f"Cycle {cycle}, Sampling", mininterval=2.0)
             else:
                 epochs = range(self.epochs_per_cycle)
 
-            postfix = {}
             for epoch in epochs:
                 for g in self.optimizer.param_groups:
                     g['temperature'] = 0. if epoch < self.descent_epochs else self.temperature
@@ -164,8 +164,8 @@ class SGLDRunner:
                     if progressbar and store_metrics:
                         postfix["train/loss"] = train_loss.item()/(i+1)
                         postfix["train/acc"] = train_acc.item()/(i+1)
-                        epochs.set_postfix(postfix)
-                self.metrics_saver.flush(every_s=120)
+                        epochs.set_postfix(postfix, refresh=False)
+                self.metrics_saver.flush(every_s=30)
 
                 if self.precond_update is not None and epoch % self.precond_update == 0:
                     self.optimizer.update_preconditioner()
@@ -176,7 +176,7 @@ class SGLDRunner:
                 results = self._evaluate_model(state_dict, step)
                 if progressbar:
                     postfix.update(results)
-                    epochs.set_postfix(postfix)
+                    epochs.set_postfix(postfix, refresh=False)
 
         # Save metrics for the last sample
         (x, y) = next(iter(self.dataloader))

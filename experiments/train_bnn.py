@@ -73,6 +73,7 @@ def config():
     batchnorm = True
     device = "try_cuda"
     save_samples = True
+    progressbar = True
     run_id = uuid.uuid4().hex
     log_dir = str(Path(__file__).resolve().parent.parent/"logs")
     if log_dir is not None:
@@ -112,7 +113,7 @@ def evaluate_model(model, dataloader_test, samples):
 def main(inference, model, width, n_samples, warmup, init_method,
          burnin, skip, metrics_skip, cycles, temperature, momentum,
          precond_update, lr, batch_size, load_samples, save_samples,
-         reject_samples, run_id, log_dir, sampling_decay, _run):
+         reject_samples, run_id, log_dir, sampling_decay, progressbar, _run):
     assert inference in ["SGLD", "HMC", "VerletSGLD", "OurHMC", "HMCReject", "VerletSGLDReject"]
     assert width > 0
     assert n_samples > 0
@@ -190,7 +191,7 @@ def main(inference, model, width, n_samples, warmup, init_method,
                                 momentum=momentum, precond_update=precond_update,
                                 metrics_saver=metrics_saver, model_saver=model_saver, reject_samples=reject_samples)
 
-        mcmc.run(progressbar=True)
+        mcmc.run(progressbar=progressbar)
     samples = mcmc.get_samples()
     model.eval()
 

@@ -38,13 +38,13 @@ class VerletSGLDRunnerReject(SGLDRunner):
         self.scheduler = self._make_scheduler(self.optimizer)
 
         if progressbar:
-            progressbar = tqdm.tqdm(total=self.cycles*self.epochs_per_cycle)
+            progressbar = tqdm.tqdm(total=self.cycles*self.epochs_per_cycle, mininterval=2.0)
         assert progressbar is False or isinstance(progressbar, tqdm.std.tqdm)
 
         def _enter_epoch(desc, temperature):
             "Run this at the beginning of each epoch"
             if progressbar:
-                progressbar.set_description(desc)
+                progressbar.set_description(desc, refresh=False)
             for g in self.optimizer.param_groups:
                 g['temperature'] = temperature
 
@@ -66,8 +66,8 @@ class VerletSGLDRunnerReject(SGLDRunner):
         self._initial_loss = loss.item()
         self._total_energy = 0.
 
+        postfix = {}
         for cycle in range(self.cycles):
-            postfix = {}
             for epoch in range(self.epochs_per_cycle):
                 if epoch < self.descent_epochs:
                     _enter_epoch(f"Cycle {cycle}, epoch {epoch}, Descent", 0.)
@@ -97,7 +97,7 @@ class VerletSGLDRunnerReject(SGLDRunner):
                         if progressbar:
                             postfix["train/loss"] = loss.item()
                             postfix["train/acc"] = acc.item()
-                            progressbar.set_postfix(postfix)
+                            progressbar.set_postfix(postfix, refresh=False)
 
                     # Omit the scheduler step in the last iteration, because we
                     # want to run it after `optimizer.final_step`
@@ -137,7 +137,7 @@ class VerletSGLDRunnerReject(SGLDRunner):
                     if progressbar:
                         postfix.update(eval_results)
                         postfix["train/loss"] = loss.item()
-                        progressbar.set_postfix(postfix)
+                        progressbar.set_postfix(postfix, refresh=False)
                     self.scheduler.step()
 
                     # First step for the next epoch, using the same gradient
@@ -152,7 +152,7 @@ class VerletSGLDRunnerReject(SGLDRunner):
                     eval_results = self._evaluate_model(self.model.state_dict(), step)
                     if progressbar:
                         postfix.update(eval_results)
-                        progressbar.set_postfix(postfix)
+                        progressbar.set_postfix(postfix, refresh=False)
                     self.scheduler.step()
 
                 # Update preconditioner, increment progressbar at the end of the epoch
@@ -160,7 +160,7 @@ class VerletSGLDRunnerReject(SGLDRunner):
                     self.optimizer.update_preconditioner()
 
                 # Write metrics to disk every 2 minutes
-                self.metrics_saver.flush(every_s=120)
+                self.metrics_saver.flush(every_s=30)
 
                 if progressbar:
                     progressbar.update(1)
