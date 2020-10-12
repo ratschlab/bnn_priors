@@ -167,8 +167,7 @@ def get_model(x_train, y_train, model, width, depth, weight_prior, weight_loc,
     elif model == "raob_linear":
         net = bnn_priors.models.RaoBLinearRegression(x_train, y_train, noise_std=0.5)
     elif model == "test_gaussian":
-        from testing.test_sgld import GaussianModel
-        net = GaussianModel(N=1, D=100)
+        net = bnn_priors.models.GaussianModel(N=1, D=100)
 
     if x_train.device != t.device("cpu"):
         # For some reason, this increases GPU utilization and decreases CPU

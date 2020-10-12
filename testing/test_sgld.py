@@ -5,30 +5,9 @@ import math
 import scipy.stats
 
 from bnn_priors import prior
-from bnn_priors.models import AbstractModel
+from bnn_priors.models import GaussianModel
 from bnn_priors.mcmc import SGLD
 
-
-class GaussianModel(AbstractModel):
-    likelihood_dist = NotImplemented
-    def log_likelihood(self):
-        return 0.
-    def __init__(self, N, D, mean=0., std=1.):
-        super().__init__(torch.nn.Identity())
-        for i in range(N):
-            setattr(self, str(i), prior.Normal(torch.Size([D]), mean, std))
-
-    def log_likelihood_avg(self, x, y):
-        return 0.
-
-    def potential_avg_closure(self):
-        self.zero_grad()
-        loss = self.potential_avg(None, None, 1.)
-        loss.backward()
-        return loss
-
-    def split_potential_and_acc(self, x, y, eff_num_data):
-        raise NotImplementedError
 
 class SGLDTest(unittest.TestCase):
     def test_distribution_preservation(self, n_vars=50, n_dim=1000, n_samples=200):

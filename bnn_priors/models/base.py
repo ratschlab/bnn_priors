@@ -183,26 +183,6 @@ class ClassificationModel(AbstractModel):
         return loss, log_prior, potential_avg, acc, preds
 
 
-class PriorOnlyModel(AbstractModel):
-    def __init__(self, prior_dist):
-        super().__init__(torch.nn.Identity())
-        self.prior_dist = prior_dist
-        self.p = torch.nn.Parameter(prior_dist.sample())
-
-    likelihood_dist = NotImplemented
-    def log_likelihood(self):
-        return 0.
-
-    def log_likelihood_avg(self, x, y):
-        return 0.
-
-    def split_potential_and_acc(self, x, y, eff_num_data):
-        loss = torch.zeros(())
-        log_prior = self.prior_dist.log_prob(self.p).sum()
-        potential_avg = log_prior
-        return loss, log_prior, potential_avg, loss, torch.distributions.Normal(loc=y, scale=torch.ones_like(y))
-
-
 class RaoBRegressionModel(RegressionModel):
     """Rao-Blackwellised version of Gaussian univariate regression. It integrates
     out the weights of the last layer analytically during inference. The last

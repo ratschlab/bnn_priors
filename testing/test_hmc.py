@@ -6,11 +6,10 @@ import math
 
 from gpytorch.distributions import MultivariateNormal
 from bnn_priors.mcmc import HMC
-from bnn_priors.models import DenseNet
+from bnn_priors.models import DenseNet, GaussianModel
 from bnn_priors import prior
 
 from .test_verlet_sgld import store_verlet_state, zip_allclose, new_model_loss
-from .test_sgld import GaussianModel
 from .utils import requires_float64
 
 
