@@ -1,12 +1,14 @@
 import numpy as np
 import scipy.stats
 import scipy.signal
-from matplotlib import collections as pltc
 import matplotlib.pyplot as plt
+import matplotlib.colors as mcolors
+from matplotlib.collections import LineCollection
 import torch
 from gpytorch.distributions import MultivariateNormal
 from gpytorch.lazy import DiagLazyTensor
 from typing import Optional, Union, Tuple, Dict
+
 
 
 def get_sizes(model: torch.nn.Module) -> Dict[str, int]:
@@ -154,6 +156,18 @@ def metric(ax, metrics, name, mask:Union[slice, np.ndarray]=slice(None),
         lower = max(median - iqr_ylim*iqr, all_min-0.05*iqr)
         upper = min(median + iqr_ylim*iqr, all_max+0.05*iqr)
         ax.set_ylim((lower, upper))
+
+
+def vlines(ax, metrics, mask, plot_kwargs={}):
+    x_vlines = metrics["steps"][mask]
+    vlines = np.zeros((len(x_vlines), 2, 2))
+    vlines[:, :, 0] = x_vlines[:, None]
+    vlines[:, 0, 1] = 0.  # ymin
+    vlines[:, 1, 1] = 1.  # ymax
+    trans = ax.get_xaxis_transform(which='grid')
+    kwargs = dict(color="red", linestyle="--", transform=trans)
+    kwargs.update(plot_kwargs)
+    ax.add_collection(LineCollection(vlines, **kwargs))
 
 
 def n(t):
