@@ -16,9 +16,6 @@ class VerletSGLDRunnerReject(SGLDRunner):
             momentum=self.momentum, temperature=self.temperature)
 
     def _exact_model_potential_and_grad(self, dataloader):
-        # for x, y in dataloader:
-        #     return self._model_potential_and_grad(x, y)[:3]
-
         self.optimizer.zero_grad()
         log_prior = self.model.log_prior()
         log_norm_prior = log_prior / -self.eff_num_data
@@ -63,11 +60,15 @@ class VerletSGLDRunnerReject(SGLDRunner):
                            potential=potential.item(), acc=0.,
                            lr=self.optimizer.param_groups[0]["lr"], corresponds_to_sample=True,
                            delta_energy=0., total_energy=0., rejected=False)
-        self._initial_loss = loss.item()
+        self._initial_potential = potential.item()
         self._total_energy = 0.
 
+        assert self.dataloader.sampler.generator is None
+        generator = self.dataloader.sampler.generator = torch.Generator()
         postfix = {}
         for cycle in range(self.cycles):
+            generator.seed()
+            cycle_random_state = generator.get_state()
             for epoch in range(self.epochs_per_cycle):
                 if epoch < self.descent_epochs:
                     _enter_epoch(f"Cycle {cycle}, epoch {epoch}, Descent", 0.)
@@ -76,6 +77,7 @@ class VerletSGLDRunnerReject(SGLDRunner):
                 else:
                     _enter_epoch(f"Cycle {cycle}, epoch {epoch}, Sampling", self.temperature)
 
+                generator.set_state(cycle_random_state)
                 # Run one epoch of potentially-stochastic gradient descent
                 for i, (x, y) in enumerate(self.dataloader):
                     step += 1
@@ -84,7 +86,7 @@ class VerletSGLDRunnerReject(SGLDRunner):
                     self.optimizer.step(calc_metrics=store_metrics)
 
                     if store_metrics:
-                        delta_energy = self.optimizer.delta_energy(self._initial_loss, loss)
+                        delta_energy = self.optimizer.delta_energy(self._initial_potential, potential)
                         self.store_metrics(i=step,
                                            loss=loss.item(),
                                            log_prior=log_prior.item(),
@@ -97,6 +99,7 @@ class VerletSGLDRunnerReject(SGLDRunner):
                         if progressbar:
                             postfix["train/loss"] = loss.item()
                             postfix["train/acc"] = acc.item()
+                            postfix["Δₑ"] = delta_energy
                             progressbar.set_postfix(postfix, refresh=False)
 
                     # Omit the scheduler step in the last iteration, because we
@@ -110,9 +113,9 @@ class VerletSGLDRunnerReject(SGLDRunner):
                     # Do the sample's `final_step` using an exact gradient
                     loss, log_prior, potential = self._exact_model_potential_and_grad(self.dataloader)
                     self.optimizer.final_step(calc_metrics=True)
-                    delta_energy = self.optimizer.delta_energy(self._initial_loss, loss)
+                    delta_energy = self.optimizer.delta_energy(self._initial_potential, potential)
                     self._total_energy += delta_energy
-                    self._initial_loss = loss.item()
+                    self._initial_potential = potential.item()
 
                     rejected = False
                     if self.reject_samples:
@@ -137,6 +140,7 @@ class VerletSGLDRunnerReject(SGLDRunner):
                     if progressbar:
                         postfix.update(eval_results)
                         postfix["train/loss"] = loss.item()
+                        postfix["Δₑ"] = delta_energy
                         progressbar.set_postfix(postfix, refresh=False)
                     self.scheduler.step()
 

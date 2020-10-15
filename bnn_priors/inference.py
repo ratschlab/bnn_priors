@@ -154,7 +154,7 @@ class SGLDRunner:
                         # This is the first step after a sampling epoch
                         (i == 0 and _is_sampling_epoch(epoch-1)))
 
-                    loss_, acc_ = self.step(
+                    loss_, acc_, delta_energy = self.step(
                         step, x.to(self._params[0].device).detach(), y.to(self._params[0].device).detach(),
                         store_metrics=store_metrics,
                         initial_step=initial_step)
@@ -164,6 +164,8 @@ class SGLDRunner:
                     if progressbar and store_metrics:
                         postfix["train/loss"] = train_loss.item()/(i+1)
                         postfix["train/acc"] = train_acc.item()/(i+1)
+                        if delta_energy is not None:
+                            postfix["Δₑ"] = delta_energy
                         epochs.set_postfix(postfix, refresh=False)
                 self.metrics_saver.flush(every_s=30)
 
@@ -241,7 +243,7 @@ class SGLDRunner:
             self.store_metrics(i=i-1, loss=loss.item(), log_prior=log_prior.item(),
                                potential=potential.item(), acc=acc.item(), lr=lr,
                                corresponds_to_sample=initial_step)
-        return loss, acc
+        return loss, acc, None
 
     def get_samples(self):
         """
@@ -301,6 +303,7 @@ class VerletSGLDRunner(SGLDRunner):
         lr = self.optimizer.param_groups[0]["lr"]
 
         rejected = None
+        delta_energy = None
         if i == 0:
             # The very first step
             if isinstance(self.optimizer, mcmc.HMC):
@@ -316,7 +319,7 @@ class VerletSGLDRunner(SGLDRunner):
             # not modified), its gradient, and the new momentum as updated by
             # `final_step`.
             self.optimizer.final_step(calc_metrics=True)
-            delta_energy = self.optimizer.delta_energy(self._initial_loss, loss)
+            delta_energy = self.optimizer.delta_energy(self._initial_potential, potential)
             if self.reject_samples:
                 rejected, _ = self.optimizer.maybe_reject(delta_energy)
 
@@ -333,18 +336,18 @@ class VerletSGLDRunner(SGLDRunner):
             # Very first step
             store_metrics = True
             total_energy = delta_energy = self.optimizer.delta_energy(0., 0.)
-            self._initial_loss = loss.item()
+            self._initial_potential = potential.item()
             self._total_energy = 0.
         elif initial_step:
             # First step of an epoch
             store_metrics = True
-            self._initial_loss = loss.item()
+            self._initial_potential = potential.item()
             self._total_energy += delta_energy
             total_energy = self._total_energy
         else:
             # Any step
             if store_metrics:
-                delta_energy = self.optimizer.delta_energy(self._initial_loss, loss)
+                delta_energy = self.optimizer.delta_energy(self._initial_potential, loss)
                 total_energy = self._total_energy + delta_energy
 
         if store_metrics:
@@ -356,7 +359,7 @@ class VerletSGLDRunner(SGLDRunner):
                                corresponds_to_sample=initial_step)
         if lr_decay:
             self.scheduler.step()
-        return loss, acc
+        return loss, acc, delta_energy
 
 class HMCRunner(VerletSGLDRunner):
     def _make_optimizer(self, params):

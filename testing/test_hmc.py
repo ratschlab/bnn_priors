@@ -89,7 +89,7 @@ class HMCTest(unittest.TestCase):
                     rejected, _ = sgld.maybe_reject(delta_energy)
                     if rejected:
                         with torch.no_grad():
-                            assert np.allclose(prev_loss, model.potential_avg().item())
+                            assert np.allclose(prev_loss, model.potential_avg(None, None, 1.).item())
                     #     print(f"Rejected sample, with P(accept)={math.exp(-delta_energy)}")
                     # else:
                     #     print(f"Accepted sample, with P(accept)={math.exp(-delta_energy)}")

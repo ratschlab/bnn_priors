@@ -24,7 +24,7 @@ class VerletSGLD(SGLD):
                                  have a gradient
         raise_on_nan: whether to complain if a gradient is not all finite.
     """
-    def delta_energy(self, prev_loss: float, loss: float) -> float:
+    def delta_energy(self, prev_potential: float, potential: float) -> float:
         "Calculates the difference in energy since the last `initial_step` and now."
         num_data = self.param_groups[0]['num_data']
         assert all(g['num_data'] == num_data for g in self.param_groups),\
@@ -36,9 +36,9 @@ class VerletSGLD(SGLD):
                 point_energy = self._point_energy(group, p, state)
                 delta_energy += state['delta_energy'] + point_energy
 
-        if isinstance(loss, torch.Tensor):
-            loss = loss.item()
-        delta_energy += (loss - prev_loss) * num_data
+        if isinstance(potential, torch.Tensor):
+            potential = potential.item()
+        delta_energy += (potential - prev_potential) * num_data
         return delta_energy
 
     def _point_energy(self, group, p, state):

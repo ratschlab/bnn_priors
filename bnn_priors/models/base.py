@@ -152,6 +152,11 @@ class RegressionModel(AbstractModel):
     def likelihood_dist(self, f: torch.Tensor):
         return torch.distributions.Normal(f, prior.value_or_call(self.noise_std))
 
+    def acc_mse(self, preds, y):
+        diff = preds.mean - y
+        mse = torch.einsum("nd,nd->n", diff, diff)
+        return mse
+
     def split_potential_and_acc(self, x, y, eff_num_data):
         loss, log_prior, potential_avg, preds = (
             self._split_potential_preds(x, y, eff_num_data))
@@ -175,6 +180,9 @@ class ClassificationModel(AbstractModel):
 
     def likelihood_dist(self, f: torch.Tensor):
         return torch.distributions.Categorical(logits=f/prior.value_or_call(self.softmax_temp))
+
+    def acc_mse(self, preds, y):
+        return torch.argmax(preds.logits, dim=1).eq(y).to(torch.float32)
 
     def split_potential_and_acc(self, x, y, eff_num_data):
         loss, log_prior, potential_avg, preds = (
