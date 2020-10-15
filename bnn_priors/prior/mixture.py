@@ -15,6 +15,7 @@ __all__ = ('Mixture', 'get_prior', 'ScaleMixture')
 
 def get_prior(prior_name):
     priors = {"gaussian": Normal,
+             "convcorrnormal": ConvCorrelatedNormal,
              "lognormal": LogNormal,
              "laplace": Laplace,
              "cauchy": Cauchy,

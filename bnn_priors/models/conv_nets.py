@@ -11,7 +11,7 @@ from .base import RegressionModel, ClassificationModel
 from .dense_nets import LinearPrior
 from .. import prior
 
-__all__ = ('Conv2dPrior', 'PreActResNet18', 'PreActResNet34', 'ClassificationConvNet', 'ThinPreActResNet18')
+__all__ = ('Conv2dPrior', 'PreActResNet18', 'PreActResNet34', 'ClassificationConvNet', 'CorrelatedClassificationConvNet', 'ThinPreActResNet18')
 
 def Conv2dPrior(in_channels, out_channels, kernel_size=3, stride=1,
             padding=0, dilation=1, groups=1, padding_mode='zeros',
@@ -53,6 +53,37 @@ def ClassificationConvNet(in_channels, img_height, out_features, width, depth=3,
         layers.append(Conv2dPrior(width, width, kernel_size=3, padding=1, prior_w=prior_w, loc_w=loc_w,
                        std_w=std_w, prior_b=prior_b, loc_b=loc_b, std_b=std_b,
                        scaling_fn=scaling_fn, weight_prior_params=weight_prior_params,
+                        bias_prior_params=bias_prior_params))
+        layers.append(nn.ReLU())
+        layers.append(nn.MaxPool2d(2))
+    layers.append(nn.Flatten())
+    reshaped_size = width*(img_height//2**(depth-1))**2
+    layers.append(LinearPrior(reshaped_size, out_features, prior_w=prior_w, loc_w=loc_w,
+                       std_w=std_w, prior_b=prior_b, loc_b=loc_b, std_b=std_b,
+                       scaling_fn=scaling_fn, weight_prior_params=weight_prior_params,
+                        bias_prior_params=bias_prior_params))
+    return ClassificationModel(nn.Sequential(*layers), softmax_temp)
+
+
+def CorrelatedClassificationConvNet(in_channels, img_height, out_features, width, depth=3, softmax_temp=1.,
+                           prior_w=prior.Normal, loc_w=0., std_w=2**.5,
+                           prior_b=prior.Normal, loc_b=0., std_b=1.,
+                           scaling_fn=None, weight_prior_params={}, bias_prior_params={}):
+    # This is the same as `ClassificationConvNet`, but with the `ConvCorrelatedNormal` prior. The scaling is chosen
+    # to be such that the same prior is obtained when no correlation is given.
+    assert depth >= 2, "We can't have less than two layers"
+    conv_prior_w = prior.ConvCorrelatedNormal
+    conv_weight_prior_params = {k: v for k, v in weight_prior_params.items() if k == 'lengthscale'}
+    layers = [Reshape(-1, in_channels, img_height, img_height),
+              Conv2dPrior(in_channels, width, kernel_size=3, padding=1, prior_w=conv_prior_w, loc_w=loc_w,
+                       std_w=std_w, prior_b=prior_b, loc_b=loc_b, std_b=std_b,
+                       scaling_fn=scaling_fn, weight_prior_params=conv_weight_prior_params,
+                        bias_prior_params=bias_prior_params),
+            nn.ReLU(), nn.MaxPool2d(2)]
+    for _ in range(depth-2):
+        layers.append(Conv2dPrior(width, width, kernel_size=3, padding=1, prior_w=conv_prior_w, loc_w=loc_w,
+                       std_w=std_w, prior_b=prior_b, loc_b=loc_b, std_b=std_b,
+                       scaling_fn=scaling_fn, weight_prior_params=conv_weight_prior_params,
                         bias_prior_params=bias_prior_params))
         layers.append(nn.ReLU())
         layers.append(nn.MaxPool2d(2))
