@@ -141,8 +141,6 @@ class SGLDRunner:
                 for g in self.optimizer.param_groups:
                     g['temperature'] = 0. if epoch < self.descent_epochs else self.temperature
 
-                train_loss = 0.
-                train_acc = 0.
                 for i, (x, y) in enumerate(self.dataloader):
                     step += 1
                     store_metrics = (
@@ -154,16 +152,14 @@ class SGLDRunner:
                         # This is the first step after a sampling epoch
                         (i == 0 and _is_sampling_epoch(epoch-1)))
 
-                    loss_, acc_, delta_energy = self.step(
+                    loss, acc, delta_energy = self.step(
                         step, x.to(self._params[0].device).detach(), y.to(self._params[0].device).detach(),
                         store_metrics=store_metrics,
                         initial_step=initial_step)
 
-                    train_loss += loss_
-                    train_acc += acc_
                     if progressbar and store_metrics:
-                        postfix["train/loss"] = train_loss.item()/(i+1)
-                        postfix["train/acc"] = train_acc.item()/(i+1)
+                        postfix["train/loss"] = loss.item()
+                        postfix["train/acc"] = acc.item()
                         if delta_energy is not None:
                             postfix["Δₑ"] = delta_energy
                         epochs.set_postfix(postfix, refresh=False)

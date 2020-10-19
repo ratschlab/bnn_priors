@@ -23,7 +23,9 @@ class VerletSGLDRunnerReject(SGLDRunner):
 
         loss = 0.
         for x, y in dataloader:
-            this_loss = self.model.log_likelihood(x, y, -x.size(0)/self.eff_num_data)
+            this_loss = self.model.log_likelihood(x.to(self._params[0].device),
+                                                  y.to(self._params[0].device),
+                                                  -x.size(0)/self.eff_num_data)
             this_loss.backward()
             loss = loss + this_loss
 
@@ -77,11 +79,14 @@ class VerletSGLDRunnerReject(SGLDRunner):
                 else:
                     _enter_epoch(f"Cycle {cycle}, epoch {epoch}, Sampling", self.temperature)
 
-                generator.set_state(cycle_random_state)
                 # Run one epoch of potentially-stochastic gradient descent
+                # make sure the epochs' data points are always in the same order for this cycle.
+                generator.set_state(cycle_random_state)
+
                 for i, (x, y) in enumerate(self.dataloader):
                     step += 1
-                    loss, log_prior, potential, acc = self._model_potential_and_grad(x, y)
+                    loss, log_prior, potential, acc = self._model_potential_and_grad(
+                        x.to(self._params[0].device), y.to(self._params[0].device))
                     store_metrics = (step % self.metrics_skip) == 0
                     self.optimizer.step(calc_metrics=store_metrics)
 
