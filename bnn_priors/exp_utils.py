@@ -5,7 +5,7 @@ import time
 from sklearn.metrics import average_precision_score, roc_auc_score
 import torch as t
 import bnn_priors.data
-from bnn_priors.models import RaoBDenseNet, DenseNet, PreActResNet18, ThinPreActResNet18, PreActResNet34, ClassificationDenseNet, ResNet, ClassificationConvNet, CorrelatedClassificationConvNet
+from bnn_priors.models import RaoBDenseNet, DenseNet, PreActResNet18, ThinPreActResNet18, PreActResNet34, ClassificationDenseNet, ResNet, ClassificationConvNet, CorrelatedClassificationConvNet, CorrelatedResNet
 import bnn_priors.models
 from bnn_priors.prior import LogNormal
 from bnn_priors import prior
@@ -101,6 +101,7 @@ def get_model(x_train, y_train, model, width, depth, weight_prior, weight_loc,
     assert model in ["densenet", "raobdensenet", "resnet18", "thin_resnet18",
                      "resnet34", "classificationdensenet", "test_gaussian",
                      "googleresnet", "classificationconvnet", "correlatedclassificationconvnet",
+                     "correlatedgoogleresnet",
                      "linear", "logistic", "raob_linear"]
     if weight_prior in ["cauchy"]:
         # NOTE: Cauchy and anything with infinite variance should use this
@@ -153,6 +154,11 @@ def get_model(x_train, y_train, model, width, depth, weight_prior, weight_loc,
                      prior_b=bias_prior, loc_b=bias_loc, std_b=bias_scale, scaling_fn=scaling_fn,
                      bn=batchnorm, softmax_temp=1., weight_prior_params=weight_prior_params,
                      bias_prior_params=bias_prior_params).to(x_train)
+    elif model == "correlatedgoogleresnet":
+        net = CorrelatedResNet(prior_w=weight_prior, loc_w=weight_loc, std_w=weight_scale, depth=20,
+                     prior_b=bias_prior, loc_b=bias_loc, std_b=bias_scale, scaling_fn=scaling_fn,
+                     bn=batchnorm, softmax_temp=1., weight_prior_params=weight_prior_params,
+                    bias_prior_params=bias_prior_params).to(x_train)
     elif model == "linear":
         net = bnn_priors.models.LinearRegression(
             x_train.size(-1), y_train.size(-1), noise_std=0.5,
