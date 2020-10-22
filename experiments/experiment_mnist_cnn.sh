@@ -5,7 +5,7 @@ logdir='../results/201022_mnist_cnn'
 #priors=( gaussian laplace student-t ) # cauchy gennorm improper horseshoe mixture scale_mixture scale_mixture_empirical )
 priors=( gaussian improper convcorrnormal convcorrnormal_empirical convcorrnormal_gamma )
 scales=( 1.41 ) # 1.41 2.82
-temps=( 0.01 1.0 ) # 0.0 0.1 1.0
+temps=( 0.001 0.01 0.05 0.1 0.5 1.0 ) # 0.0 0.1 1.0
 mixtures=( "g_l_s_c_gn" "ge_le_se_gne" )
 dfs=( 3 )
 
