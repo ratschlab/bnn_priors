@@ -31,17 +31,20 @@ class Normal(LocScale):
 
 
 class ConvCorrelatedNormal(Prior):
-    def __init__(self, shape, loc, scale, *, lengthscale=1.0):
+    def __init__(self, shape, loc, scale, *, lengthscale=1.0, dtype="float32"):
+        # generates all the points in a grid from (0,0) to (shape[-2], shape[-1])
         p = np.mgrid[:shape[-2], :shape[-1]].reshape(2, -1).T
+        # computes the matrix of Euclidean distances between all the points in p
         d = np.sum((p[:, None, :] - p[None, :, :]) ** 2.0, 2) ** 0.5
+        # RBF kernel
         cov = np.exp(-d / lengthscale) * scale ** 2.0
         chol = np.linalg.cholesky(cov)
 
-        if type(loc) == float:
+        if isinstance(loc, float):
             loc = np.zeros(shape[-2] * shape[-1]) + loc
 
-        super().__init__(shape, loc=torch.from_numpy(loc.astype('float32')),
-                         scale_tril=torch.from_numpy(chol.astype('float32')))
+        super().__init__(shape, loc=torch.from_numpy(loc.astype(dtype)),
+                         scale_tril=torch.from_numpy(chol.astype(dtype)))
 
     def log_prob(self) -> torch.Tensor:
         return self._dist_obj().log_prob(self.p.reshape(self.p.shape[:-2] + (-1,))).sum()
