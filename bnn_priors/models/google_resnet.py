@@ -34,9 +34,10 @@ class BasicBlock(nn.Module):
 def ResNet(softmax_temp=1., depth=20, num_classes=10,
            prior_w=prior.Normal, loc_w=0., std_w=2**.5,
            prior_b=prior.Normal, loc_b=0., std_b=1.,
-           scaling_fn=None, bn=True, weight_prior_params={}, bias_prior_params={}):
+           scaling_fn=None, bn=True, weight_prior_params={}, bias_prior_params={},
+           conv_prior_w=prior.Normal):
     conv_kwargs = dict(
-        prior_w=prior_w, loc_w=loc_w, std_w=std_w,
+        prior_w=conv_prior_w, loc_w=loc_w, std_w=std_w,
         prior_b=None, scaling_fn=scaling_fn,
         weight_prior_params=weight_prior_params,
         bias_prior_params=bias_prior_params)
@@ -75,3 +76,17 @@ def ResNet(softmax_temp=1., depth=20, num_classes=10,
                     weight_prior_params=weight_prior_params,
                     bias_prior_params=bias_prior_params)]
     return ClassificationModel(nn.Sequential(*layers), softmax_temp=softmax_temp)
+
+
+def CorrelatedResNet(softmax_temp=1., depth=20, num_classes=10,
+           prior_w=prior.Normal, loc_w=0., std_w=2**.5,
+           prior_b=prior.Normal, loc_b=0., std_b=1.,
+           scaling_fn=None, bn=True, weight_prior_params={}, bias_prior_params={},
+           conv_prior_w=prior.ConvCorrelatedNormal):
+    return ResNet(
+        softmax_temp=softmax_temp, depth=depth, num_classes=num_classes,
+        prior_w=prior_w, loc_w=loc_w, std_w=std_w,
+        prior_b=prior_b, loc_b=loc_b, std_b=std_b,
+        scaling_fn=scaling_fn, bn=bn, weight_prior_params=weight_prior_params,
+        bias_prior_params=bias_prior_params,
+        conv_prior_w=conv_prior_w)

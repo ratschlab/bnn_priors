@@ -102,7 +102,7 @@ def LogisticRegression(in_features, out_features, softmax_temp=1.,
                      prior_w=prior.Normal, loc_w=0., std_w=2**.5,
                      prior_b=prior.Normal, loc_b=0., std_b=1.,
                      scaling_fn=None, weight_prior_params={}, bias_prior_params={}):
-    return ClassificatioModel(LinearPrior(
+    return ClassificationModel(LinearPrior(
         in_features, out_features,
         prior_w=prior_w, loc_w=loc_w, std_w=std_w,
         prior_b=prior_b, loc_b=loc_b, std_b=std_b,

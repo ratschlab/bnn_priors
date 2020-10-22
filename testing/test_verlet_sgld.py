@@ -3,18 +3,28 @@ import numpy as np
 import torch
 import math
 import scipy.stats
+from typing import Tuple, List
 
 from gpytorch.distributions import MultivariateNormal
 from bnn_priors.mcmc import VerletSGLD
-from bnn_priors.models import DenseNet
+from bnn_priors.models import DenseNet, GaussianModel, NealFunnelT
 from bnn_priors import prior
 
 from .utils import requires_float64
-from .test_sgld import GaussianModel
 
-def store_verlet_state(sgld):
+def store_verlet_state(sgld) -> Tuple[List[torch.Tensor], List[torch.Tensor]]:
     return zip(*((p.detach().clone(), state['momentum_buffer'].detach().clone())
                  for p, state in sgld.state.items()))
+
+def store_verlet_grad_state(sgld) -> Tuple[
+        List[torch.Tensor], List[torch.Tensor], List[torch.Tensor]]:
+    return zip(*((p.detach().clone(), p.grad.detach().clone(),
+                  state['momentum_buffer'].detach().clone())
+                 for p, state in sgld.state.items()))
+
+def dot(a, b):
+    "return (a*b).sum().item()"
+    return (a.view(-1) @ b.view(-1)).item()
 
 def zip_allclose(sequence_a, sequence_b):
     return (torch.allclose(a, b) for a, b in zip(sequence_a, sequence_b))
@@ -137,6 +147,71 @@ class VerletSGLDTest(unittest.TestCase):
         _, pvalue = scipy.stats.ks_1samp(kinetic_temp, chi2, mode='exact')
         assert_or_store(pvalue >= 0.3, "the kinetic temperature is not Chi^2 with p<0.3")
         return success
+
+    def test_accept_prob(self, n_samples=10, seed=145):
+        torch.manual_seed(seed)
+        model = NealFunnelT()
+        temperature = 3/4
+        momentum = 127/128
+        # `num_data=1` to prevent scaling the Gaussian potential
+        sgld = VerletSGLD(model.parameters(), lr=1/32, num_data=1,
+                          momentum=momentum, temperature=temperature)
+        # Because `num_data=1`, we can say that time step squared is learning rate
+        time_step_sq = sgld.param_groups[0]['lr']
+        preconditioners = []
+
+        model.sample_all_priors()
+        # Set the preconditioner randomly
+        for p in model.parameters():
+            state = sgld.state[p]
+            state['preconditioner'] = (torch.rand(()).item() + 0.2) / math.sqrt(4)
+            preconditioners.append(state['preconditioner'])
+        sgld.sample_momentum()
+
+        # Run sampler and store intermediate states
+        states = []
+        U0 = model.potential_avg_closure().item()
+        states.append(list(store_verlet_grad_state(sgld)))
+        sgld.initial_step()
+        for s in range(1, n_samples):
+            model.potential_avg_closure()
+            states.append(list(store_verlet_grad_state(sgld)))
+            sgld.step()
+            if s == n_samples-1:
+                U1 = model.potential_avg_closure().item()
+                sgld.final_step()
+                states.append(list(store_verlet_grad_state(sgld)))
+
+        # Calculate delta_energy clearly
+        delta_energy_ref = 0.
+        _, grads0, _ = states[0]
+        _, grads1, _ = states[-1]
+        for g0, g1, precond in zip(grads0, grads1, preconditioners):
+            C = (time_step_sq * precond**2 / 8)
+            delta_energy_ref += C*(dot(g1, g1) - dot(g0, g0))
+
+        point_energies = 0.
+        group = sgld.param_groups[0]
+        for g0, g1, p in zip(grads0, grads1, group['params']):
+            p.grad = g0
+            point_energies -= sgld._point_energy(group, p, sgld.state[p])
+            p.grad = g1
+            point_energies += sgld._point_energy(group, p, sgld.state[p])
+
+        assert np.allclose(delta_energy_ref, point_energies)
+
+        for i in range(1, len(states)):
+            params0, grads0, _ = states[i-1]
+            params1, grads1, _ = states[i]
+            for p0, p1, g0, g1 in zip(params0, params1, grads0, grads1):
+                delta_energy_ref += -.5 * dot(p1-p0, g1+g0)
+
+        delta_energy_ref += (U1 - U0)
+
+        # Now compare with iterative
+        delta_energy = sgld.delta_energy(U0, U1)
+
+        assert np.allclose(delta_energy_ref, delta_energy), f"{delta_energy_ref} != {delta_energy}"
 
 
 if __name__ == '__main__':

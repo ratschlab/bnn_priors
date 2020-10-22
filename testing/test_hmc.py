@@ -6,11 +6,10 @@ import math
 
 from gpytorch.distributions import MultivariateNormal
 from bnn_priors.mcmc import HMC
-from bnn_priors.models import DenseNet
+from bnn_priors.models import DenseNet, GaussianModel
 from bnn_priors import prior
 
 from .test_verlet_sgld import store_verlet_state, zip_allclose, new_model_loss
-from .test_sgld import GaussianModel
 from .utils import requires_float64
 
 
@@ -90,7 +89,7 @@ class HMCTest(unittest.TestCase):
                     rejected, _ = sgld.maybe_reject(delta_energy)
                     if rejected:
                         with torch.no_grad():
-                            assert np.allclose(prev_loss, model.potential_avg().item())
+                            assert np.allclose(prev_loss, model.potential_avg(None, None, 1.).item())
                     #     print(f"Rejected sample, with P(accept)={math.exp(-delta_energy)}")
                     # else:
                     #     print(f"Accepted sample, with P(accept)={math.exp(-delta_energy)}")

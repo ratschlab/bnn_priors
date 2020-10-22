@@ -5,7 +5,7 @@ import time
 from sklearn.metrics import average_precision_score, roc_auc_score
 import torch as t
 import bnn_priors.data
-from bnn_priors.models import RaoBDenseNet, DenseNet, PreActResNet18, ThinPreActResNet18, PreActResNet34, ClassificationDenseNet, ResNet, ClassificationConvNet
+from bnn_priors.models import RaoBDenseNet, DenseNet, PreActResNet18, ThinPreActResNet18, PreActResNet34, ClassificationDenseNet, ResNet, ClassificationConvNet, CorrelatedClassificationConvNet, CorrelatedResNet
 import bnn_priors.models
 from bnn_priors.prior import LogNormal
 from bnn_priors import prior
@@ -100,7 +100,8 @@ def get_model(x_train, y_train, model, width, depth, weight_prior, weight_loc,
              weight_prior_params, bias_prior_params):
     assert model in ["densenet", "raobdensenet", "resnet18", "thin_resnet18",
                      "resnet34", "classificationdensenet", "test_gaussian",
-                     "googleresnet", "classificationconvnet",
+                     "googleresnet", "classificationconvnet", "correlatedclassificationconvnet",
+                     "correlatedgoogleresnet",
                      "linear", "logistic", "raob_linear"]
     if weight_prior in ["cauchy"]:
         # NOTE: Cauchy and anything with infinite variance should use this
@@ -121,14 +122,15 @@ def get_model(x_train, y_train, model, width, depth, weight_prior, weight_loc,
                         prior_w=weight_prior, loc_w=weight_loc, std_w=weight_scale,
                         prior_b=bias_prior, loc_b=bias_loc, std_b=bias_scale, scaling_fn=scaling_fn,
                         weight_prior_params=weight_prior_params, bias_prior_params=bias_prior_params).to(x_train)
-    elif model == "classificationconvnet":
+    elif model == "classificationconvnet" or model == "correlatedclassificationconvnet":
         if len(x_train.shape) == 4:
             in_channels = x_train.shape[1]
             img_height = x_train.shape[-2]
         else:
             in_channels = 1
             img_height = int(math.sqrt(x_train.shape[-1]))
-        net = ClassificationConvNet(in_channels, img_height, y_train.max()+1, width, depth, softmax_temp=1.,
+        network_class = ClassificationConvNet if model == "classificationconvnet" else CorrelatedClassificationConvNet
+        net = network_class(in_channels, img_height, y_train.max()+1, width, depth, softmax_temp=1.,
                         prior_w=weight_prior, loc_w=weight_loc, std_w=weight_scale,
                         prior_b=bias_prior, loc_b=bias_loc, std_b=bias_scale, scaling_fn=scaling_fn,
                         weight_prior_params=weight_prior_params, bias_prior_params=bias_prior_params).to(x_train)
@@ -152,6 +154,11 @@ def get_model(x_train, y_train, model, width, depth, weight_prior, weight_loc,
                      prior_b=bias_prior, loc_b=bias_loc, std_b=bias_scale, scaling_fn=scaling_fn,
                      bn=batchnorm, softmax_temp=1., weight_prior_params=weight_prior_params,
                      bias_prior_params=bias_prior_params).to(x_train)
+    elif model == "correlatedgoogleresnet":
+        net = CorrelatedResNet(prior_w=weight_prior, loc_w=weight_loc, std_w=weight_scale, depth=20,
+                     prior_b=bias_prior, loc_b=bias_loc, std_b=bias_scale, scaling_fn=scaling_fn,
+                     bn=batchnorm, softmax_temp=1., weight_prior_params=weight_prior_params,
+                    bias_prior_params=bias_prior_params).to(x_train)
     elif model == "linear":
         net = bnn_priors.models.LinearRegression(
             x_train.size(-1), y_train.size(-1), noise_std=0.5,
@@ -167,8 +174,7 @@ def get_model(x_train, y_train, model, width, depth, weight_prior, weight_loc,
     elif model == "raob_linear":
         net = bnn_priors.models.RaoBLinearRegression(x_train, y_train, noise_std=0.5)
     elif model == "test_gaussian":
-        from testing.test_sgld import GaussianModel
-        net = GaussianModel(N=1, D=100)
+        net = bnn_priors.models.GaussianModel(N=1, D=100)
 
     if x_train.device != t.device("cpu"):
         # For some reason, this increases GPU utilization and decreases CPU
@@ -484,7 +490,7 @@ def sneaky_artifact(_run, name):
 
 
 def reject_samples_(samples, metrics_file):
-    is_sample = metrics_file["acceptance/is_sample"][:]
+    is_sample = (metrics_file["acceptance/is_sample"][:] == 1)
     try:
         rejected_arr = metrics_file["acceptance/rejected"][is_sample]
     except KeyError:

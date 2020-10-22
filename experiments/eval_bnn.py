@@ -117,7 +117,7 @@ def main(config_file, batch_size, n_samples, run_dir, eval_data, data, skip_firs
         raise NotImplementedError("The OOD error is not defined for this type of data.")
 
     results = evaluate_model(model=model, dataloader_test=dataloader_test,
-                             samples=samples, eval_data=eval_data)
+                             samples=samples)
     
     if ood_eval:
         train_data = get_train_data()

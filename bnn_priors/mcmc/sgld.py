@@ -1,6 +1,5 @@
 import torch
 import math
-from scipy.stats import chi2
 import numpy as np
 from collections import OrderedDict
 from typing import Sequence, Optional, Callable, Tuple, Dict, Union
@@ -53,12 +52,18 @@ class SGLD(torch.optim.Optimizer):
             return v
 
     @torch.no_grad()
-    def sample_momentum(self):
+    def sample_momentum(self, keep=0.0):
         "Sample the momenta for all the parameters"
+        assert 0 <= keep and keep <= 1.
+        if keep == 1.:
+            return
         for group in self.param_groups:
-            std = math.sqrt(group['temperature'])
+            std = math.sqrt(group['temperature']*(1-keep))
             for p in group['params']:
-                self.state[p]['momentum_buffer'] = torch.randn_like(p).mul_(std)
+                if keep == 0.0:
+                    self.state[p]['momentum_buffer'] = torch.randn_like(p).mul_(std)
+                else:
+                    self.state[p]['momentum_buffer'].mul_(math.sqrt(keep)).add_(torch.randn_like(p), alpha=std)
 
     @torch.no_grad()
     def step(self, closure: Optional[Callable[..., torch.Tensor]]=None,
@@ -153,23 +158,3 @@ class SGLD(torch.optim.Optimizer):
             # ^(1/2) to form the preconditioner,
             # ^(-1/2) because we want the preconditioner's inverse square root.
             self.state[p]['preconditioner'] = (new_M / min_s)**(-1/4)
-
-    def kinetic_temperature_intervals(self, c: Union[float, np.ndarray]=0.95) -> Dict[
-            torch.nn.Parameter, Tuple[np.ndarray, np.ndarray]]:
-        """Calculates the confidence intervals for the kinetic temperature of the
-        momentum of each parameter. Assumes the target temperature is 1.
-
-        Arguments:
-            c: the target confidence levels for the intervals
-        Returns:
-            "parameter -> (lower, upper)" dictionary of confidence intervals
-            per parameters. `lower` and `upper` have the same shape as `c`.
-        """
-        d = OrderedDict()
-        for group in self.param_groups:
-            for p in group["params"]:
-                df = p.numel()
-                lower = chi2.ppf((1-c)/2, df=df, scale=1/df)
-                upper = chi2.ppf((1+c)/2, df=df, scale=1/df)
-                d[p] = (lower, upper)
-        return d

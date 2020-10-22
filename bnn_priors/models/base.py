@@ -152,6 +152,11 @@ class RegressionModel(AbstractModel):
     def likelihood_dist(self, f: torch.Tensor):
         return torch.distributions.Normal(f, prior.value_or_call(self.noise_std))
 
+    def acc_mse(self, preds, y):
+        diff = preds.mean - y
+        mse = torch.einsum("nd,nd->n", diff, diff)
+        return mse
+
     def split_potential_and_acc(self, x, y, eff_num_data):
         loss, log_prior, potential_avg, preds = (
             self._split_potential_preds(x, y, eff_num_data))
@@ -176,31 +181,14 @@ class ClassificationModel(AbstractModel):
     def likelihood_dist(self, f: torch.Tensor):
         return torch.distributions.Categorical(logits=f/prior.value_or_call(self.softmax_temp))
 
+    def acc_mse(self, preds, y):
+        return torch.argmax(preds.logits, dim=1).eq(y).to(torch.float32)
+
     def split_potential_and_acc(self, x, y, eff_num_data):
         loss, log_prior, potential_avg, preds = (
             self._split_potential_preds(x, y, eff_num_data))
         acc = torch.argmax(preds.logits, dim=1).eq(y).to(torch.float32)
         return loss, log_prior, potential_avg, acc, preds
-
-
-class PriorOnlyModel(AbstractModel):
-    def __init__(self, prior_dist):
-        super().__init__(torch.nn.Identity())
-        self.prior_dist = prior_dist
-        self.p = torch.nn.Parameter(prior_dist.sample())
-
-    likelihood_dist = NotImplemented
-    def log_likelihood(self):
-        return 0.
-
-    def log_likelihood_avg(self, x, y):
-        return 0.
-
-    def split_potential_and_acc(self, x, y, eff_num_data):
-        loss = torch.zeros(())
-        log_prior = self.prior_dist.log_prob(self.p).sum()
-        potential_avg = log_prior
-        return loss, log_prior, potential_avg, loss, torch.distributions.Normal(loc=y, scale=torch.ones_like(y))
 
 
 class RaoBRegressionModel(RegressionModel):

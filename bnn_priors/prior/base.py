@@ -57,7 +57,7 @@ class Prior(nn.Module, abc.ABC):
 
     def _sample_value(self, shape: torch.Size):
         dist = self._dist_obj()
-        dim = len(dist.event_shape)
+        dim = len(dist.event_shape) + len(dist.batch_shape)
         if dim != 0:
             shape = shape[:-dim]
         return dist.sample(sample_shape=shape)
