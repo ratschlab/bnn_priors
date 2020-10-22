@@ -72,7 +72,10 @@ def CorrelatedClassificationConvNet(in_channels, img_height, out_features, width
     # This is the same as `ClassificationConvNet`, but with the `ConvCorrelatedNormal` prior. The scaling is chosen
     # to be such that the same prior is obtained when no correlation is given.
     assert depth >= 2, "We can't have less than two layers"
-    conv_prior_w = prior.ConvCorrelatedNormal
+    # TODO: ideally we should be able to specify different priors for conv weight and dense weight
+    # But for now it probably suffices to be able to change the conv weight prior to try different ones
+    conv_prior_w = prior_w
+    prior_w = prior.Normal
     conv_weight_prior_params = {k: v for k, v in weight_prior_params.items() if k == 'lengthscale'}
     layers = [Reshape(-1, in_channels, img_height, img_height),
               Conv2dPrior(in_channels, width, kernel_size=3, padding=1, prior_w=conv_prior_w, loc_w=loc_w,
