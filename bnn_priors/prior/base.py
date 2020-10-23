@@ -1,8 +1,7 @@
 import torch
 import torch.nn as nn
 import abc
-from typing import Dict, Sequence
-import contextlib
+import numpy as np
 
 
 __all__ = ('value_or_call', 'Prior', 'named_priors', 'named_params_with_prior')
@@ -29,6 +28,8 @@ class Prior(nn.Module, abc.ABC):
             assert str(key) != "p", "repeated name of parameter"
             if isinstance(arg, float):
                 arg = torch.tensor(arg)
+            elif isinstance(arg, np.ndarray):
+                arg = torch.from_numpy(arg).to(torch.get_default_dtype())
 
             if isinstance(arg, nn.Module):
                 self.add_module(str(key), arg)

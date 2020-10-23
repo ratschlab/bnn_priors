@@ -40,23 +40,19 @@ class Normal(LocScale):
 
 
 class ConvCorrelatedNormal(Prior):
-    def __init__(self, shape, loc, scale, *, lengthscale=1.0, dtype="float32"):
-        if isinstance(lengthscale, float):
-            lengthscale = torch.tensor(lengthscale)
-        if isinstance(scale, float):
-            scale = torch.tensor(scale)
-        if isinstance(loc, float):
-            loc = np.zeros(shape[-2] * shape[-1]) + loc
-        if isinstance(loc, np.ndarray):
-            loc = torch.from_numpy(loc.astype(dtype))
-        
+    def __init__(self, shape, loc, scale, *, lengthscale=1.0):
+        """Samples `.p` from a correlated Gaussian of dimension
+        `shape[-2]*shape[-1]`"""
+        if isinstance(loc, float) or len(loc.shape) == 0:
+            # `MultivariateNormal` complains about zero-dim loc
+            loc = torch.tensor(loc).unsqueeze(0)
+
         # generates all the points in a grid from (0,0) to (shape[-2], shape[-1])
         p = np.mgrid[:shape[-2], :shape[-1]].reshape(2, -1).T
         # computes the matrix of Euclidean distances between all the points in p
         d = np.sum((p[:, None, :] - p[None, :, :]) ** 2.0, 2) ** 0.5
-        d = torch.from_numpy(d.astype(dtype))
-
-        super().__init__(shape, loc=loc, scale=scale, distance_matrix=d, lengthscale=lengthscale)
+        super().__init__(shape, loc=loc, scale=scale, distance_matrix=d,
+                         lengthscale=lengthscale)
 
     def log_prob(self) -> torch.Tensor:
         return self._dist_obj().log_prob(self.p.reshape(self.p.shape[:-2] + (-1,))).sum()
