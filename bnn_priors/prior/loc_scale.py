@@ -1,16 +1,25 @@
 import numpy as np
 import torch.distributions as td
+import torch.nn as nn
 import torch
 import math
 from gpytorch.utils.transforms import inv_softplus
 
-from .base import Prior
+from .base import Prior, value_or_call
 from .transformed import Gamma, Uniform, HalfCauchy
 from .distributions import GeneralizedNormal
 
 
 __all__ = ('LocScale', 'Normal', 'ConvCorrelatedNormal', 'Laplace', 'Cauchy', 'StudentT', 'LogNormal',
            'Improper', 'PositiveImproper', 'GenNorm')
+
+
+class SquaredExponentialNormal(td.MultivariateNormal):
+    """Multivariate Normal with a squared exponential kernel as covariance"""
+    def __init__(self, loc, scale, distance_matrix, lengthscale):
+        cov = torch.exp(- distance_matrix / lengthscale) * scale ** 2.0
+        chol = torch.cholesky(cov)
+        super().__init__(loc=loc, scale_tril=chol)
 
 
 class LocScale(Prior):
@@ -31,20 +40,19 @@ class Normal(LocScale):
 
 
 class ConvCorrelatedNormal(Prior):
-    def __init__(self, shape, loc, scale, *, lengthscale=1.0, dtype="float32"):
+    def __init__(self, shape, loc, scale, *, lengthscale=1.0):
+        """Samples `.p` from a correlated Gaussian of dimension
+        `shape[-2]*shape[-1]`"""
+        if isinstance(loc, float) or len(loc.shape) == 0:
+            # `MultivariateNormal` complains about zero-dim loc
+            loc = torch.tensor(loc).unsqueeze(0)
+
         # generates all the points in a grid from (0,0) to (shape[-2], shape[-1])
         p = np.mgrid[:shape[-2], :shape[-1]].reshape(2, -1).T
         # computes the matrix of Euclidean distances between all the points in p
         d = np.sum((p[:, None, :] - p[None, :, :]) ** 2.0, 2) ** 0.5
-        # RBF kernel
-        cov = np.exp(-d / lengthscale) * scale ** 2.0
-        chol = np.linalg.cholesky(cov)
-
-        if isinstance(loc, float):
-            loc = np.zeros(shape[-2] * shape[-1]) + loc
-
-        super().__init__(shape, loc=torch.from_numpy(loc.astype(dtype)),
-                         scale_tril=torch.from_numpy(chol.astype(dtype)))
+        super().__init__(shape, loc=loc, scale=scale, distance_matrix=d,
+                         lengthscale=lengthscale)
 
     def log_prob(self) -> torch.Tensor:
         return self._dist_obj().log_prob(self.p.reshape(self.p.shape[:-2] + (-1,))).sum()
@@ -54,7 +62,9 @@ class ConvCorrelatedNormal(Prior):
 
         return torch.reshape(dist.sample(sample_shape=shape[:-2]), shape)
 
-    _dist = td.MultivariateNormal
+    # we have to move the kernel evaluation into the _dist, so that the hierarchical versions of this prior work
+    # for fixed parameters, we could consider precomputing it to save a bit of time here
+    _dist = SquaredExponentialNormal
 
 
 class Laplace(LocScale):

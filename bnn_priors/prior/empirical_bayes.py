@@ -4,10 +4,21 @@ import math
 from gpytorch.utils.transforms import inv_softplus
 
 from .base import Prior
-from .loc_scale import Normal, Laplace, StudentT, GenNorm, PositiveImproper
+from .loc_scale import Normal, Laplace, StudentT, GenNorm, PositiveImproper, ConvCorrelatedNormal
 
 
-__all__ = ('NormalEmpirical', 'LaplaceEmpirical', 'StudentTEmpirical', 'GenNormEmpirical')
+__all__ = ('NormalEmpirical', 'LaplaceEmpirical', 'StudentTEmpirical',
+           'GenNormEmpirical', 'ConvCorrNormalEmpirical')
+
+
+class ConvCorrNormalEmpirical(ConvCorrelatedNormal):
+    def __init__(self, shape, loc, scale, lengthscale=1.0):
+        lengthscale_prior = PositiveImproper(shape=[], loc=lengthscale, scale=1.)
+        scale_prior = PositiveImproper(shape=[], loc=scale, scale=1.)
+        with torch.no_grad():
+            lengthscale_prior.p.data = inv_softplus(torch.tensor(lengthscale))
+            scale_prior.p.data = inv_softplus(torch.tensor(scale))
+        super().__init__(shape, loc, scale=scale_prior, lengthscale=lengthscale_prior)
 
 
 class NormalEmpirical(Normal):

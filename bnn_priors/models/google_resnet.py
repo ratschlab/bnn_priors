@@ -79,14 +79,14 @@ def ResNet(softmax_temp=1., depth=20, num_classes=10,
 
 
 def CorrelatedResNet(softmax_temp=1., depth=20, num_classes=10,
-           prior_w=prior.Normal, loc_w=0., std_w=2**.5,
+           prior_w=prior.ConvCorrelatedNormal, loc_w=0., std_w=2**.5,
            prior_b=prior.Normal, loc_b=0., std_b=1.,
            scaling_fn=None, bn=True, weight_prior_params={}, bias_prior_params={},
-           conv_prior_w=prior.ConvCorrelatedNormal):
+           dense_prior_w=prior.Normal):
     return ResNet(
         softmax_temp=softmax_temp, depth=depth, num_classes=num_classes,
-        prior_w=prior_w, loc_w=loc_w, std_w=std_w,
+        prior_w=dense_prior_w, loc_w=loc_w, std_w=std_w,
         prior_b=prior_b, loc_b=loc_b, std_b=std_b,
         scaling_fn=scaling_fn, bn=bn, weight_prior_params=weight_prior_params,
         bias_prior_params=bias_prior_params,
-        conv_prior_w=conv_prior_w)
+        conv_prior_w=prior_w)
