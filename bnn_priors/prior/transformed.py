@@ -5,7 +5,7 @@ from gpytorch.utils.transforms import inv_softplus
 
 from .base import Prior
 
-__all__ = ('Uniform', 'Gamma', 'HalfCauchy')
+__all__ = ('Uniform', 'Gamma', 'HalfCauchy', 'JohnsonSU')
 
 
 class Uniform(Prior):
@@ -77,3 +77,34 @@ class HalfCauchy(Prior):
 
     def log_prob(self):
         return self._dist_obj().log_prob(self()).sum()
+
+
+
+class JohnsonSU(Prior):
+    _dist = NotImplemented
+    def __init__(self, shape, loc, scale, inner_loc=0., inner_scale=1.):
+        super().__init__(shape, loc=loc, scale=scale, inner_loc=inner_loc,
+                         inner_scale=inner_scale)
+
+    def forward(self):
+        return self.loc + self.scale * self.p
+
+    def log_prob(self):
+        p_sq = self.p**2
+        log_div = torch.log1p(p_sq).sum()
+
+        y = self.inner_loc + self.inner_scale * torch.log(self.p + torch.sqrt(p_sq + 1))
+        base_lp = td.Normal(0., 1.).log_prob(y).sum()
+
+        # Account for broadcasting the scales
+        multiplier = y.numel() / self.inner_scale.numel()
+        inner_scale_mul = self.inner_scale.log().sum() * multiplier
+
+        multiplier = y.numel() / self.scale.numel()
+        scale_mul = self.scale.log().sum() * multiplier
+
+        return base_lp - .5*log_div - scale_mul + inner_scale_mul
+
+    def _sample_value(self, shape: torch.Size):
+        x = (torch.randn(shape) - self.inner_loc) / self.inner_scale
+        return torch.sinh(x)

@@ -90,6 +90,26 @@ class PriorTest(unittest.TestCase):
         _generic_logp_test(prior.GenNorm, torch.Size([2, 2]),
                            np_logpdf=np_logpdf, loc=loc, scale=scale, beta=beta)
 
+    def test_johnson_su(self):
+        loc = -0.5
+        scale = 1.5
+        inner_loc = 0.4
+        inner_scale = 0.7
+
+        kwargs = dict(loc=loc, scale=scale, inner_loc=inner_loc, inner_scale=inner_scale)
+        np_kwargs = dict(loc=loc, scale=scale, a=inner_loc, b=inner_scale)
+
+        def np_cdf(x):
+            return stats.johnsonsu.cdf(x, **np_kwargs)
+        _generic_sample_test(prior.JohnsonSU, np_cdf=np_cdf, **kwargs)
+        _generic_positive_test(prior.JohnsonSU, **kwargs)
+
+        def np_logpdf(x):
+            return stats.johnsonsu.logpdf(x, **np_kwargs)
+        _generic_logp_test(prior.JohnsonSU, torch.Size([2, 2]),
+                           np_logpdf=np_logpdf, **kwargs)
+
+
     def test_loc_scale_log_prob(self):
         size = torch.Size([3, 2])
         loc = torch.Tensor([0.4, -1.3])
