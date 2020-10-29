@@ -1,12 +1,7 @@
-import numpy as np
 import torch.distributions as td
-import torch.nn as nn
 import torch
-import math
-from gpytorch.utils.transforms import inv_softplus
 
-from .base import Prior, value_or_call
-from .transformed import Gamma, Uniform, HalfCauchy
+from .base import Prior
 from .distributions import GeneralizedNormal
 
 

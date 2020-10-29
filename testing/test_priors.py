@@ -44,6 +44,21 @@ def _generic_sample_test(prior_class, td_class=NotImplemented, n_samples=100000,
     assert p > 0.3
 
 
+def _generic_multivariate_test(prior_class, N, atol_mean, atol_cov):
+    loc = torch.tensor([1., 2., 3., 4.])
+    cov = torch.randn(4, 4)
+    cov = cov @ cov.t()
+    dist = prior.FixedCovNormal((N, 2, 2), loc=loc, cov=cov)
+
+    p = dist().view((-1, 4))
+    mean = p.mean(0)
+    assert torch.allclose(mean, loc.to(p), atol=0.01)
+
+    b = p - mean
+    empirical_cov = (b.t() @ b) / len(b)
+    assert torch.allclose(empirical_cov, cov.to(p), atol=0.01)
+
+
 class PriorTest(unittest.TestCase):
     def test_uniform(self):
         _generic_sample_test(prior.Uniform, td.Uniform, low=-0.3, high=1.7)
@@ -161,3 +176,12 @@ class PriorTest(unittest.TestCase):
 
         _generic_sample_test(prior.Improper, td.Normal, loc=loc, scale=scale)
         _generic_positive_test(prior.Improper, loc=loc, scale=scale)
+
+
+    def test_fixed_cov_normal(self):
+        torch.manual_seed(102)
+        _generic_multivariate_test(prior.FixedCovNormal, 200000, 0.01, 0.01)
+
+    def test_fixed_cov_laplace(self):
+        torch.manual_seed(102)
+        _generic_multivariate_test(prior.FixedCovLaplace, 400000, 0.01, 0.01)
