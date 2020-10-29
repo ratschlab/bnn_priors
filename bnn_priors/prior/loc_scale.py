@@ -1,5 +1,6 @@
 import torch.distributions as td
 import torch
+import numpy as np
 
 from .base import Prior
 from .distributions import GeneralizedNormal

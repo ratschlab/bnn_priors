@@ -18,6 +18,7 @@ def get_prior(prior_name):
              "convcorrnormal": ConvCorrelatedNormal,
              "convcorrnormal_empirical": ConvCorrNormalEmpirical,
              "convcorrnormal_gamma": ConvCorrNormalGamma,
+             "datadrivencorrnormal": Normal,
              "lognormal": LogNormal,
              "laplace": Laplace,
              "cauchy": Cauchy,
