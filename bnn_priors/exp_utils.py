@@ -110,7 +110,7 @@ def get_model(x_train, y_train, model, width, depth, weight_prior, weight_loc,
                      "resnet34", "classificationdensenet", "test_gaussian",
                      "googleresnet", "classificationconvnet", "correlatedclassificationconvnet",
                      "correlatedgoogleresnet",
-                     "linear", "logistic", "raob_linear", "datadrivengaussconv"]
+                     "linear", "logistic", "raob_linear", "datadrivengaussconv", "datadrivendoublegammaconv"]
     if weight_prior in ["cauchy"]:
         # NOTE: Cauchy and anything with infinite variance should use this
         scaling_fn = lambda std, dim: std/dim
@@ -130,7 +130,8 @@ def get_model(x_train, y_train, model, width, depth, weight_prior, weight_loc,
                         prior_w=weight_prior, loc_w=weight_loc, std_w=weight_scale,
                         prior_b=bias_prior, loc_b=bias_loc, std_b=bias_scale, scaling_fn=scaling_fn,
                         weight_prior_params=weight_prior_params, bias_prior_params=bias_prior_params).to(x_train)
-    elif model == "classificationconvnet" or model == "correlatedclassificationconvnet" or model == "datadrivengaussconv":
+    elif model in ["classificationconvnet", "correlatedclassificationconvnet",
+                   "datadrivengaussconv", "datadrivendoublegammaconv"]:
         if len(x_train.shape) == 4:
             in_channels = x_train.shape[1]
             img_height = x_train.shape[-2]
@@ -144,6 +145,8 @@ def get_model(x_train, y_train, model, width, depth, weight_prior, weight_loc,
             network_class = CorrelatedClassificationConvNet
         elif model == "datadrivengaussconv":
             network_class = bnn_priors.models.DataDrivenGaussianClassificationConvNet
+        elif model == "datadrivendoublegammaconv":
+            network_class = bnn_priors.models.DataDrivenDoubleGammaClassificationConvNet
         net = network_class(in_channels, img_height, y_train.max()+1, width, depth, softmax_temp=1.,
                         prior_w=weight_prior, loc_w=weight_loc, std_w=weight_scale,
                         prior_b=bias_prior, loc_b=bias_loc, std_b=bias_scale, scaling_fn=scaling_fn,
