@@ -94,6 +94,14 @@ def he_uniform_initialize(model):
                 raise NotImplementedError(name)
 
 
+class DummyModule(t.nn.Module):
+    def __init__(self, module):
+        super().__init__()
+        self.module = module
+
+    def forward(self, *args, **kwargs):
+        return self.module(*args, **kwargs)
+
 
 def get_model(x_train, y_train, model, width, depth, weight_prior, weight_loc,
              weight_scale, bias_prior, bias_loc, bias_scale, batchnorm,
@@ -181,8 +189,10 @@ def get_model(x_train, y_train, model, width, depth, weight_prior, weight_loc,
         # For some reason, this increases GPU utilization and decreases CPU
         # utilization. The end result is much faster.
         the_net = t.nn.DataParallel(net.net)
-        del net.net
-        net.net = the_net
+    else:
+        the_net = DummyModule(net.net)
+    del net.net
+    net.net = the_net
     return net
 
 
