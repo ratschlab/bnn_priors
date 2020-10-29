@@ -11,11 +11,11 @@ from . import loc_scale
 from .transformed import DoubleGamma
 
 
-__all__ = ('FixedCovNormal', 'FixedCovLaplace')
+__all__ = ('FixedCovNormal', 'FixedCovLaplace', 'FixedCovDoubleGamma')
 
 
 class ConvCovarianceMixin:
-    def __init__(self, shape, loc, cov):
+    def __init__(self, shape, loc, cov, **kwargs):
         vals, vecs = torch.symeig(cov.to(torch.float64), eigenvectors=True)
         sqrt_vals = vals.sqrt()
         scale = sqrt_vals.unsqueeze(-1) * vecs.t()  # PCA whitening
@@ -23,7 +23,8 @@ class ConvCovarianceMixin:
 
         dt = torch.get_default_dtype()
         Prior.__init__(self, shape, loc=loc, scale=scale.to(dt),
-                       scale_for_logdet=log_sqrt_vals.to(dt))
+                       scale_for_logdet=log_sqrt_vals.to(dt),
+                       **kwargs)
 
     def forward(self):
         flat_p = self.p.reshape(self.p.shape[:-2] + (-1,))
@@ -47,3 +48,18 @@ class FixedCovLaplace(ConvCovarianceMixin, loc_scale.Laplace):
     def _dist(self, **kwargs):
         # scale=sqrt(1/2) makes it have variance=1
         return td.Laplace(loc=0., scale=math.sqrt(1/2))
+
+class FixedCovDoubleGamma(ConvCovarianceMixin, DoubleGamma):
+    def __init__(self, shape, loc, cov, concentration):
+        ConvCovarianceMixin.__init__(self, shape, loc, cov, concentration=concentration)
+
+    def _dist(self, concentration, **kwargs):
+        """
+        Mean of Gamma (with rate=1): concentration
+        var. of Gamma (with rate=1): concentration
+        thus, var. of DoubleGamma (with rate=1): concentration**2 + concentration
+
+        thus, stddev = sqrt(concentration*(1+concentration)) / rate
+        """
+        rate = (concentration * (1+concentration)) ** .5
+        return td.Gamma(concentration=concentration, rate=rate)
