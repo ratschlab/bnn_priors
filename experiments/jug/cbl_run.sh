@@ -16,7 +16,7 @@ if [ -z "$MY_PATH" ] ; then
 fi
 
 
-for host in cartwright laplace poisson vapnik gosset julia fields huygens jarvis \
+for host in huygens cartwright laplace poisson vapnik gosset julia fields jarvis \
     euler robbins stroustrup vartak curie sagarmatha ariadne grothendieck; do
     ssh "$host" 'tmux new-session -s 0; top -n 1 -b | head -n 15; nvidia-smi'
     echo "For host $host, should I set CUDA_VISIBLE_DEVICES? ([0,1,2,...])? Should I skip?"
