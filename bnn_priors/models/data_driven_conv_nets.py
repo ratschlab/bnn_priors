@@ -21,7 +21,7 @@ def DataDrivenGaussianClassificationConvNet(
         return std
     assert depth == 3, "That's what we have data"
 
-    mean_covs = pd.read_pickle(Path(__file__).parent/"mean_covs.pkl.gz")
+    mean_covs = pd.read_pickle(Path(__file__).parent/"mean_covs_mnist_classification.pkl.gz")
     # 2**(depth-1) is because of the MaxPool
     reshaped_size = width*(img_height//2**(depth-1))**2
 
