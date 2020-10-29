@@ -182,6 +182,17 @@ class PriorTest(unittest.TestCase):
         torch.manual_seed(102)
         _generic_multivariate_test(prior.FixedCovNormal, 200000, 0.01, 0.01)
 
+    @requires_float64
+    def test_fixed_cov_normal_density(self):
+        torch.manual_seed(102)
+        loc = torch.tensor([1., 2., 3., 4.])
+        cov = torch.randn(4, 4)
+        cov = cov @ cov.t()
+        dist = prior.FixedCovNormal((10, 2, 2), loc=loc, cov=cov)
+
+        lp_torch = td.MultivariateNormal(loc, cov).log_prob(dist().view((-1, 4)))
+        assert np.allclose(lp_torch.sum().item(), dist.log_prob().item())
+
     def test_fixed_cov_laplace(self):
         torch.manual_seed(102)
-        _generic_multivariate_test(prior.FixedCovLaplace, 400000, 0.01, 0.01)
+        _generic_multivariate_test(prior.FixedCovLaplace, 200000, 0.01, 0.01)

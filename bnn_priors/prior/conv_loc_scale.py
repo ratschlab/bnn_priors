@@ -16,11 +16,14 @@ __all__ = ('FixedCovNormal', 'FixedCovLaplace')
 
 class ConvCovarianceMixin:
     def __init__(self, shape, loc, cov):
-        vals, vecs = torch.symeig(cov, eigenvectors=True)
+        vals, vecs = torch.symeig(cov.to(torch.float64), eigenvectors=True)
         sqrt_vals = vals.sqrt()
         scale = sqrt_vals.unsqueeze(-1) * vecs.t()  # PCA whitening
-        Prior.__init__(self, shape, loc=loc, scale=scale,
-                       scale_for_logdet=sqrt_vals)
+        log_sqrt_vals = sqrt_vals.log()
+
+        dt = torch.get_default_dtype()
+        Prior.__init__(self, shape, loc=loc, scale=scale.to(dt),
+                       scale_for_logdet=log_sqrt_vals.to(dt))
 
     def forward(self):
         flat_p = self.p.reshape(self.p.shape[:-2] + (-1,))
