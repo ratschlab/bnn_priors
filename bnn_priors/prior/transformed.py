@@ -5,7 +5,7 @@ from gpytorch.utils.transforms import inv_softplus
 
 from .base import Prior
 
-__all__ = ('Uniform', 'Gamma', 'HalfCauchy', 'JohnsonSU')
+__all__ = ('Uniform', 'Gamma', 'HalfCauchy', 'JohnsonSU', 'DoubleGamma')
 
 
 class Uniform(Prior):
@@ -108,3 +108,26 @@ class JohnsonSU(Prior):
     def _sample_value(self, shape: torch.Size):
         x = (torch.randn(shape) - self.inner_loc) / self.inner_scale
         return torch.sinh(x)
+
+
+
+class DoubleGamma(Prior):
+    def __init__(self, shape, loc, scale, concentration):
+        super().__init__(shape, loc=loc, scale=scale, concentration=concentration)
+
+    def forward(self):
+        return self.loc + self.scale * self.p
+
+    def _dist(self, loc, scale, concentration):
+        return td.Gamma(concentration=concentration, rate=1.)
+
+    def _sample_value(self, shape: torch.Size):
+        x = super()._sample_value(shape)
+        sign = torch.randint(0, 2, shape, dtype=x.dtype).mul_(2).sub_(1)
+        return x*sign
+
+    def log_prob(self):
+        multiplier = self.p.numel() / self.scale.numel()
+        scale_mul = self.scale.log().sum() * multiplier
+        c = math.log(2) * self.p.numel()
+        return self._dist_obj().log_prob(self.p.abs()).sum() - scale_mul - c

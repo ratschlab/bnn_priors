@@ -66,6 +66,23 @@ class PriorTest(unittest.TestCase):
         _generic_logp_test(prior.Gamma, torch.Size([2, 2]), td.Gamma,
                            concentration=concentration, rate=rate)
 
+    def test_double_gamma(self):
+        concentration = 0.3
+        scale = 1.4
+        loc = -0.4
+        ls = dict(loc=loc, scale=scale)
+        def np_cdf(x):
+            return stats.dgamma.cdf(x, a=concentration, **ls)
+        _generic_sample_test(prior.DoubleGamma, np_cdf=np_cdf,
+                             concentration=concentration, **ls)
+        _generic_positive_test(prior.DoubleGamma, concentration=concentration, **ls)
+
+        def np_logpdf(x):
+            return stats.dgamma.logpdf(x, a=concentration, **ls)
+        _generic_logp_test(prior.DoubleGamma, torch.Size([2, 2]),
+                           np_logpdf=np_logpdf, concentration=concentration,
+                           **ls)
+
     def test_log_normal(self):
         _generic_sample_test(prior.LogNormal, td.LogNormal, loc=0.3, scale=1.2)
         _generic_positive_test(prior.LogNormal, loc=0.3, scale=1.2)
