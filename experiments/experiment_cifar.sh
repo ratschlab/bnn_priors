@@ -9,7 +9,7 @@ scales=( 1.41 ) # 1.41 2.82
 temps=( 0.001 0.01 0.05 0.1 0.5 1.0 ) # 0.0 0.1 1.0
 mixtures=( "g_l_s_c_gn" "ge_le_se_gne" )
 dfs=( 3 )
-lens="../lengths.pkl" #TODO
+lens="../bnn_priors/models/cifar10_fitted_lengthscales.pkl.gz"
 
 for prior in "${priors[@]}"
 do
@@ -30,7 +30,7 @@ do
             elif [[ $prior == "convcorrnormal" ]]; then
                 bsub -n 2 -W 120:00 -J "bnn" -sp 40 -g /vincent/experiments -G ms_raets -R "rusage[mem=64000,ngpus_excl_p=1]" "source activate bnn; python train_bnn.py with weight_prior=$prior data=cifar10 inference=SGLD model=correlatedgoogleresnet warmup=30 burnin=15 skip=1 n_samples=100 lr=0.1 momentum=0.98 weight_scale=$scale cycles=20 batch_size=128 temperature=$temp save_samples=True log_dir=$logdir batchnorm=True"
             elif [[ $prior == "convcorrnormal_fitted_ls" ]]; then
-                bsub -n 2 -W 120:00 -J "bnn" -sp 40 -g /vincent/experiments -G ms_raets -R "rusage[mem=64000,ngpus_excl_p=1]" "source activate bnn; python train_bnn.py with weight_prior=$prior data=cifar10 inference=SGLD model=correlatedgoogleresnet warmup=30 burnin=15 skip=1 n_samples=100 lr=0.1 momentum=0.98 weight_scale=$scale cycles=20 batch_size=128 temperature=$temp save_samples=True log_dir=$logdir batchnorm=True weight_prior_params.lens=$lens"#TODO
+                bsub -n 2 -W 120:00 -J "bnn" -sp 40 -g /vincent/experiments -G ms_raets -R "rusage[mem=64000,ngpus_excl_p=1]" "source activate bnn; python train_bnn.py with weight_prior=$prior data=cifar10 inference=SGLD model=correlatedgoogleresnet warmup=30 burnin=15 skip=1 n_samples=100 lr=0.1 momentum=0.98 weight_scale=$scale cycles=20 batch_size=128 temperature=$temp save_samples=True log_dir=$logdir batchnorm=True weight_prior_params.lengthscale_dict_file=$lens"
             else
                 bsub -n 2 -W 120:00 -J "bnn" -sp 40 -g /vincent/experiments -G ms_raets -R "rusage[mem=32000,ngpus_excl_p=1]" "source activate bnn; python train_bnn.py with weight_prior=$prior data=cifar10 inference=SGLD model=googleresnet warmup=30 burnin=15 skip=1 n_samples=100 lr=0.1 momentum=0.98 weight_scale=$scale cycles=20 batch_size=128 temperature=$temp save_samples=True log_dir=$logdir batchnorm=True"
             fi

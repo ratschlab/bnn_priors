@@ -5,6 +5,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch import Tensor
+import pandas as pd
 
 from .layers import Conv2d
 from .base import RegressionModel, ClassificationModel
@@ -171,6 +172,11 @@ class PreActResNet(nn.Module):
         self.weight_prior_params = weight_prior_params
         self.bias_prior_params = bias_prior_params
 
+        if prior_w == prior.ConvCorrelatedNormal:
+            dense_prior_w = prior.Normal
+        else:
+            dense_prior_w = prior_w
+
         # `self.in_planes` gets modified, so we use `in_planes`.
         self.conv1 = Conv2dPrior(3, in_planes, kernel_size=3, stride=1, padding=1, prior_b=None,
                            prior_w=self.prior_w, loc_w=self.loc_w, std_w=self.std_w,
@@ -181,7 +187,7 @@ class PreActResNet(nn.Module):
         self.layer3 = self._make_layer(block, 4 * in_planes, num_blocks[2], stride=2)
         self.layer4 = self._make_layer(block, 8 * in_planes, num_blocks[3], stride=2)
         self.linear = LinearPrior(8 * in_planes, num_classes,
-                            prior_w=self.prior_w, loc_w=self.loc_w, std_w=self.std_w,
+                            prior_w=dense_prior_w, loc_w=self.loc_w, std_w=self.std_w,
                             prior_b=self.prior_b, loc_b=self.loc_b, std_b=self.std_b,
                             scaling_fn=self.scaling_fn, weight_prior_params=self.weight_prior_params,
                             bias_prior_params=self.bias_prior_params)
@@ -214,7 +220,15 @@ def PreActResNet18(softmax_temp=1.,
              prior_w=prior.Normal, loc_w=0., std_w=2**.5,
              prior_b=prior.Normal, loc_b=0., std_b=1.,
             scaling_fn=None, bn=True, weight_prior_params={}, bias_prior_params={}):
-    return ClassificationModel(PreActResNet(PreActBlock,
+    k = 'lengthscale_dict_file'
+    weight_prior_params = {k: v for k, v in weight_prior_params.items()}
+    if k in weight_prior_params:
+        ldf = weight_prior_params[k]
+        del weight_prior_params[k]
+    else:
+        ldf = None
+
+    model = ClassificationModel(PreActResNet(PreActBlock,
                                         [2,2,2,2], bn=bn,
                                         prior_w=prior_w,
                                        loc_w=loc_w,
@@ -225,6 +239,19 @@ def PreActResNet18(softmax_temp=1.,
                                        scaling_fn=scaling_fn, in_planes=64,
                                        weight_prior_params=weight_prior_params,
                                         bias_prior_params=bias_prior_params), softmax_temp)
+
+    if ldf is not None:
+        lengthscale_dict = pd.read_pickle(ldf)
+        sd = model.state_dict()
+        for k, v in lengthscale_dict.items():
+            assert k.startswith("net.module.") and k.endswith(".p")
+            new_k = "net." + k[len("net.module."):-len(".p")] + ".lengthscale"
+            sd[ new_k ][...] = v
+
+        model.load_state_dict(sd)
+
+    return model
+
 
 def ThinPreActResNet18(softmax_temp=1.,
                        prior_w=prior.Normal, loc_w=0., std_w=2**.5,

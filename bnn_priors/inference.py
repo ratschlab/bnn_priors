@@ -252,7 +252,7 @@ class SGLDRunner:
             samples (dict): Dictionary of torch.tensors with num_samples*cycles samples for each parameter of the model
         """
         if self.model_saver is None:
-            return self._samples
+            return {k: v for (k, v) in self._samples.items() if k != "steps"}
         return self.model_saver.load_samples(keep_steps=False)
 
     def store_metrics(self, i, loss, log_prior, potential, acc, lr,
