@@ -8,6 +8,8 @@ scales=( 1.41 ) # 1.41 2.82
 temps=( 0.001 0.01 0.05 0.1 0.5 1.0 ) # 0.0 0.1 1.0
 mixtures=( "g_l_s_c_gn" "ge_le_se_gne" )
 dfs=( 3 )
+len1=1.14015
+len2=0.72203
 
 for prior in "${priors[@]}"
 do
@@ -30,7 +32,7 @@ do
             elif [[ $prior == "convcorrnormal" ]]; then
                 bsub -n 2 -W 120:00 -J "bnn" -sp 40 -g /vincent/experiments -G ms_raets -R "rusage[mem=16000,ngpus_excl_p=1]" "source activate bnn; python train_bnn.py with weight_prior=$prior data=mnist inference=SGLD model=correlatedclassificationconvnet width=64 warmup=30 burnin=10 skip=1 n_samples=100 lr=0.01 weight_scale=$scale cycles=20 batch_size=128 temperature=$temp save_samples=True log_dir=$logdir"
             elif [[ $prior == "convcorrnormal_fitted_ls" ]]; then
-                bsub -n 2 -W 120:00 -J "bnn" -sp 40 -g /vincent/experiments -G ms_raets -R "rusage[mem=16000,ngpus_excl_p=1]" "source activate bnn; python train_bnn.py with weight_prior=$prior data=mnist inference=SGLD model=correlatedclassificationconvnet width=64 warmup=30 burnin=10 skip=1 n_samples=100 lr=0.01 weight_scale=$scale cycles=20 batch_size=128 temperature=$temp save_samples=True log_dir=$logdir weight_prior_params={"'"'"lengthscale_1"'"'": 1.14015, "'"'"lengthscale_2"'"'": 0.72203}"
+                bsub -n 2 -W 120:00 -J "bnn" -sp 40 -g /vincent/experiments -G ms_raets -R "rusage[mem=16000,ngpus_excl_p=1]" "source activate bnn; python train_bnn.py with weight_prior=$prior data=mnist inference=SGLD model=correlatedclassificationconvnet width=64 warmup=30 burnin=10 skip=1 n_samples=100 lr=0.01 weight_scale=$scale cycles=20 batch_size=128 temperature=$temp save_samples=True log_dir=$logdir weight_prior_params.lengthscale_1=$len1 weight_prior_params.lengthscale_2=$len2"
             elif [[ $prior == "datadriven"* ]]; then
                 bsub -n 2 -W 120:00 -J "bnn" -sp 40 -g /vincent/experiments -G ms_raets -R "rusage[mem=16000,ngpus_excl_p=1]" "source activate bnn; python train_bnn.py with weight_prior=$prior data=mnist inference=SGLD model=datadrivengaussconv width=64 warmup=30 burnin=10 skip=1 n_samples=100 lr=0.01 weight_scale=$scale cycles=20 batch_size=128 temperature=$temp save_samples=True log_dir=$logdir"
             else
