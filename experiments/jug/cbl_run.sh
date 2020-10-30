@@ -16,16 +16,16 @@ if [ -z "$MY_PATH" ] ; then
 fi
 
 
-for host in huygens cartwright laplace poisson vapnik gosset julia fields jarvis \
+for host in huygens cartwright laplace poisson vapnik gosset julia fields \
     euler robbins stroustrup vartak curie sagarmatha ariadne grothendieck; do
-    ssh "$host" 'tmux new-session -s 0; top -n 1 -b | head -n 15; nvidia-smi'
+    ssh "$host" 'tmux new-session -s 0 -d; top -n 1 -b | head -n 15; nvidia-smi'
     echo "For host $host, should I set CUDA_VISIBLE_DEVICES? ([0,1,2,...])? Should I skip?"
     read command
     if [ "$command" = "skip" ]; then
         echo "Skipping..."
     elif [ "$command" = "" ]; then
-        ssh "$host" "tmux new-window -n $1; tmux send-keys \"workon py37\" ENTER \"jug status $MY_PATH/$1\" ENTER"
+        ssh "$host" "tmux new-window -n $1; tmux send-keys \"workon py37\" ENTER \"jug execute $MY_PATH/$1\" ENTER"
     else
-        ssh "$host" "tmux new-window -n $1; tmux send-keys \"export CUDA_VISIBLE_DEVICES=$command\" ENTER \"workon py37\" ENTER \"jug status $MY_PATH/$1\" ENTER"
+        ssh "$host" "tmux new-window -n $1; tmux send-keys \"export CUDA_VISIBLE_DEVICES=$command\" ENTER \"workon py37\" ENTER \"jug execute $MY_PATH/$1\" ENTER"
     fi
 done

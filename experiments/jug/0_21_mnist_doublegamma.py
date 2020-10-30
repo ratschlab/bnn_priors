@@ -18,23 +18,14 @@ def train_bnn(**config):
         raise SystemError(f"Process returned with code {complete.returncode}")
     return complete
 
-log_dir = experiments_dir.parent/"logs/0_2_mnist_doublegamma"
+log_dir = experiments_dir.parent/"logs/0_21_mnist_doublegamma"
 jug.set_jugdir(str(log_dir/"jugdir"))
 
 config = dict(data="mnist", inference="SGLD", width=64, warmup=30, burnin=10, weight_scale=1.41,
               skip=1, n_samples=100, lr=0.1, cycles=20, batch_size=128, save_samples=True,
-              log_dir=str(log_dir))
+              log_dir=str(log_dir), init_method="prior")
 
 model = "datadrivendoublegammaconv"
 prior = "datadrivencorrdoublegamma"
 for temperature in [0.001, 0.01, 0.05, 0.1, 0.5, 1.0]:
     train_bnn(model=model, weight_prior=prior, temperature=temperature, **config)
-
-
-for model, prior in [("classificationconvnet", "gaussian"),
-                     ("classificationconvnet", "improper"),
-                     ("correlatedclassificationconvnet", "convcorrnormal"),
-                     ("datadrivengaussconv", "datadrivencorrnormal"),
-                     ("datadrivendoublegammaconv", "datadrivencorrdoublegamma")]:
-    for temperature in [0.0001, 0.005]:
-        train_bnn(model=model, weight_prior=prior, temperature=temperature, **config)
