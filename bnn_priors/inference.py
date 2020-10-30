@@ -163,7 +163,6 @@ class SGLDRunner:
                         if delta_energy is not None:
                             postfix["Δₑ"] = delta_energy
                         epochs.set_postfix(postfix, refresh=False)
-                self.metrics_saver.flush(every_s=30)
 
                 if self.precond_update is not None and epoch % self.precond_update == 0:
                     self.optimizer.update_preconditioner()
@@ -175,6 +174,10 @@ class SGLDRunner:
                 if progressbar:
                     postfix.update(results)
                     epochs.set_postfix(postfix, refresh=False)
+
+                # Important to put here because no new metrics are added
+                # Write metrics to disk every 30 seconds
+                self.metrics_saver.flush(every_s=10)
 
         # Save metrics for the last sample
         (x, y) = next(iter(self.dataloader))
