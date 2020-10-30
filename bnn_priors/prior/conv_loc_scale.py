@@ -80,7 +80,7 @@ class FixedCovDoubleGamma(ConvCovarianceMixin, DoubleGamma):
 
     def _sample_value(self, shape: torch.Size):
         flat_shape = shape[:-2] + (shape[-2]*shape[-1],)
-        flat_p = Prior._sample_value(self, flat_shape)
+        flat_p = Prior._sample_value(self, flat_shape).to(self.scale)
         sign = torch.randint(0, 2, flat_shape, dtype=flat_p.dtype).mul_(2).sub_(1)
         trf_p = (flat_p*sign) @ self.scale + self.loc
         return trf_p.view(shape)
