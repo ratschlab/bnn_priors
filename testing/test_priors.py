@@ -201,3 +201,21 @@ class PriorTest(unittest.TestCase):
         torch.manual_seed(102)
         _generic_multivariate_test(
             prior.FixedCovDoubleGamma, 400000, 0.01, 0.01, concentration=0.3)
+
+    @requires_float64
+    def test_fixed_cov_double_gamma_density(self):
+        torch.manual_seed(102)
+        loc = torch.tensor([1., 2., 3., 4.])
+        cov = torch.eye(4) * torch.tensor([2., 3., .5, 1.])
+        concentration = 0.3
+
+        dist_full = prior.FixedCovDoubleGamma(
+            (10, 2, 2), loc=loc, cov=cov, concentration=concentration)
+        dist = prior.DoubleGamma(
+            (10, 2, 2), loc.view((2, 2)), (cov.diag().view((2, 2)) / (concentration * (1+concentration)))**.5,
+            concentration=concentration)
+
+        with torch.no_grad():
+            dist.p.data[...] = dist_full.p.data[...]
+
+        assert torch.allclose(dist_full.log_prob(), dist.log_prob())

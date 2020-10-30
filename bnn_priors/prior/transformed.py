@@ -79,21 +79,18 @@ class HalfCauchy(Prior):
         return self._dist_obj().log_prob(self()).sum()
 
 
-
 class JohnsonSU(Prior):
     _dist = NotImplemented
     def __init__(self, shape, loc, scale, inner_loc=0., inner_scale=1.):
         super().__init__(shape, loc=loc, scale=scale, inner_loc=inner_loc,
                          inner_scale=inner_scale)
 
-    def forward(self):
-        return self.loc + self.scale * self.p
-
     def log_prob(self):
-        p_sq = self.p**2
+        p = (self.p - self.loc) / self.scale
+        p_sq = p**2
         log_div = torch.log1p(p_sq).sum()
 
-        y = self.inner_loc + self.inner_scale * torch.log(self.p + torch.sqrt(p_sq + 1))
+        y = self.inner_loc + self.inner_scale * torch.log(p + torch.sqrt(p_sq + 1))
         base_lp = td.Normal(0., 1.).log_prob(y).sum()
 
         # Account for broadcasting the scales
@@ -107,7 +104,7 @@ class JohnsonSU(Prior):
 
     def _sample_value(self, shape: torch.Size):
         x = (torch.randn(shape) - self.inner_loc) / self.inner_scale
-        return torch.sinh(x)
+        return self.loc + self.scale * torch.sinh(x)
 
 
 
@@ -115,19 +112,17 @@ class DoubleGamma(Prior):
     def __init__(self, shape, loc, scale, concentration):
         super().__init__(shape, loc=loc, scale=scale, concentration=concentration)
 
-    def forward(self):
-        return self.loc + self.scale * self.p
-
     def _dist(self, loc, scale, concentration):
         return td.Gamma(concentration=concentration, rate=1.)
 
     def _sample_value(self, shape: torch.Size):
         x = super()._sample_value(shape)
         sign = torch.randint(0, 2, shape, dtype=x.dtype).mul_(2).sub_(1)
-        return x*sign
+        return (x*sign) * self.scale + self.loc
 
     def log_prob(self):
+        white_p = (self.p - self.loc).abs() / self.scale
         multiplier = self.p.numel() / self.scale.numel()
         scale_mul = self.scale.log().sum() * multiplier
         c = math.log(2) * self.p.numel()
-        return self._dist_obj().log_prob(self.p.abs()).sum() - scale_mul - c
+        return self._dist_obj().log_prob(white_p).sum() - scale_mul - c
