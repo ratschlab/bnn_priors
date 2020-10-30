@@ -65,8 +65,8 @@ def get_eval_data(data, eval_data):
         return exp_utils.get_data(eval_data, device())
     else:
         return exp_utils.get_data(data, device())
-    
-    
+
+
 @ex.capture
 def get_train_data(data):
     return exp_utils.get_data(data, device())
@@ -112,13 +112,13 @@ def main(config_file, batch_size, n_samples, run_dir, eval_data, data, skip_firs
 
     if calibration_eval and not (eval_data[:7] == "cifar10" or eval_data[-5:] == "mnist"):
         raise NotImplementedError("The calibration is not defined for this type of data.")
-        
+
     if ood_eval and not (eval_data[:7] == "cifar10" or eval_data[-5:] == "mnist" or eval_data == "svhn"):
         raise NotImplementedError("The OOD error is not defined for this type of data.")
 
     results = evaluate_model(model=model, dataloader_test=dataloader_test,
                              samples=samples)
-    
+
     if ood_eval:
         train_data = get_train_data()
         dataloader_train = t.utils.data.DataLoader(train_data.norm.test, batch_size=batch_size)
@@ -127,14 +127,16 @@ def main(config_file, batch_size, n_samples, run_dir, eval_data, data, skip_firs
                                    dataloader_test=dataloader_test,
                                    samples=samples)
         results = {**results, **ood_results}
-        
+
     if marglik_eval:
         if eval_samples is None:
             eval_samples = samples
         else:
             eval_samples = exp_utils.load_samples(eval_samples, idx=np.s_[skip_first:])
+            del eval_samples["steps"]
+            del eval_samples["timestamps"]
         marglik_results = evaluate_marglik(model=model, train_samples=samples,
                                            eval_samples=eval_samples)
         results = {**results, **marglik_results}
-        
+
     return results
