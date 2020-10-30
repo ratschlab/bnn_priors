@@ -1,7 +1,7 @@
 #!/bin/bash
 
 exp_dir="../results/201029_mnist_cnn"
-eval_samples=12
+eval_samples=10
 skip=30
 
 config_files=($(ls $exp_dir/*/config.json))
