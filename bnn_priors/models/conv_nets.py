@@ -76,21 +76,27 @@ def CorrelatedClassificationConvNet(in_channels, img_height, out_features, width
     # But for now it probably suffices to be able to change the conv weight prior to try different ones
     conv_prior_w = prior_w
     prior_w = prior.Normal
-    conv_weight_prior_params = {k: v for k, v in weight_prior_params.items() if k.startswith('lengthscale')}
-    weight_prior_params = {k: v for k, v in weight_prior_params.items() if k not in conv_weight_prior_params.keys()}
+    conv_weight_prior_params_1 = {}
+    if "lengthscale_1" in weight_prior_params:
+        conv_weight_prior_params_1["lengthscale"] = weight_prior_params["lengthscale_1"]
+
+    conv_weight_prior_params_2 = {}
+    if "lengthscale_2" in weight_prior_params:
+        conv_weight_prior_params_2["lengthscale"] = weight_prior_params["lengthscale_2"]
+
+    weight_prior_params = {k: v for k, v in weight_prior_params.items()
+                           if k not in ["lengthscale_1", "lengthscale_2"]}
     layers = [Reshape(-1, in_channels, img_height, img_height),
               Conv2dPrior(in_channels, width, kernel_size=3, padding=1, prior_w=conv_prior_w, loc_w=loc_w,
-                       std_w=std_w, prior_b=prior_b, loc_b=loc_b, std_b=std_b,
-                       scaling_fn=scaling_fn, weight_prior_params={
-                           'lengthscale': conv_weight_prior_params['lengthscale_1']},
-                        bias_prior_params=bias_prior_params),
+                          std_w=std_w, prior_b=prior_b, loc_b=loc_b, std_b=std_b,
+                          scaling_fn=scaling_fn, weight_prior_params=conv_weight_prior_params_1,
+                          bias_prior_params=bias_prior_params),
             nn.ReLU(), nn.MaxPool2d(2)]
     for _ in range(depth-2):
         layers.append(Conv2dPrior(width, width, kernel_size=3, padding=1, prior_w=conv_prior_w, loc_w=loc_w,
-                       std_w=std_w, prior_b=prior_b, loc_b=loc_b, std_b=std_b,
-                       scaling_fn=scaling_fn, weight_prior_params={
-                           'lengthscale': conv_weight_prior_params['lengthscale_2']},
-                        bias_prior_params=bias_prior_params))
+                      std_w=std_w, prior_b=prior_b, loc_b=loc_b, std_b=std_b,
+                      scaling_fn=scaling_fn, weight_prior_params=conv_weight_prior_params_2,
+                      bias_prior_params=bias_prior_params))
         layers.append(nn.ReLU())
         layers.append(nn.MaxPool2d(2))
     layers.append(nn.Flatten())
