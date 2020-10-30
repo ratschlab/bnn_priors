@@ -1,9 +1,9 @@
 #!/bin/bash
 
-logdir='../results/201029_mnist_cnn'
+logdir='../results/201030_mnist_cnn'
 #priors=( gaussian laplace student-t cauchy gennorm improper gaussian_empirical horseshoe laplace_empirical student-t_empirical gennorm_empirical mixture scale_mixture scale_mixture_empirical )
 #priors=( gaussian laplace student-t ) # cauchy gennorm improper horseshoe mixture scale_mixture scale_mixture_empirical )
-priors=( gaussian improper convcorrnormal datadrivencorrnormal )
+priors=( gaussian improper convcorrnormal convcorrnormal_fitted_ls datadrivencorrnormal )
 scales=( 1.41 ) # 1.41 2.82
 temps=( 0.001 0.01 0.05 0.1 0.5 1.0 ) # 0.0 0.1 1.0
 mixtures=( "g_l_s_c_gn" "ge_le_se_gne" )
@@ -27,8 +27,10 @@ do
                 done
             elif [[ $prior == *"mixture"* ]]; then
                 bsub -n 2 -W 120:00 -J "bnn" -sp 40 -g /vincent/experiments -G ms_raets -R "rusage[mem=16000,ngpus_excl_p=1]" "source activate bnn; python train_bnn.py with weight_prior=$prior data=mnist inference=SGLD model=classificationconvnet width=64 warmup=30 burnin=10 skip=1 n_samples=100 lr=0.01 weight_scale=$scale cycles=20 batch_size=128 temperature=$temp save_samples=True log_dir=$logdir"
-            elif [[ $prior == "convcorr"* ]]; then
+            elif [[ $prior == "convcorrnormal" ]]; then
                 bsub -n 2 -W 120:00 -J "bnn" -sp 40 -g /vincent/experiments -G ms_raets -R "rusage[mem=16000,ngpus_excl_p=1]" "source activate bnn; python train_bnn.py with weight_prior=$prior data=mnist inference=SGLD model=correlatedclassificationconvnet width=64 warmup=30 burnin=10 skip=1 n_samples=100 lr=0.01 weight_scale=$scale cycles=20 batch_size=128 temperature=$temp save_samples=True log_dir=$logdir"
+            elif [[ $prior == "convcorrnormal_fitted_ls" ]]; then
+                bsub -n 2 -W 120:00 -J "bnn" -sp 40 -g /vincent/experiments -G ms_raets -R "rusage[mem=16000,ngpus_excl_p=1]" "source activate bnn; python train_bnn.py with weight_prior=$prior data=mnist inference=SGLD model=correlatedclassificationconvnet width=64 warmup=30 burnin=10 skip=1 n_samples=100 lr=0.01 weight_scale=$scale cycles=20 batch_size=128 temperature=$temp save_samples=True log_dir=$logdir weight_prior_params={"'"'"lengthscale_1"'"'": 1.14015, "'"'"lengthscale_2"'"'": 0.72203}"
             elif [[ $prior == "datadriven"* ]]; then
                 bsub -n 2 -W 120:00 -J "bnn" -sp 40 -g /vincent/experiments -G ms_raets -R "rusage[mem=16000,ngpus_excl_p=1]" "source activate bnn; python train_bnn.py with weight_prior=$prior data=mnist inference=SGLD model=datadrivengaussconv width=64 warmup=30 burnin=10 skip=1 n_samples=100 lr=0.01 weight_scale=$scale cycles=20 batch_size=128 temperature=$temp save_samples=True log_dir=$logdir"
             else
