@@ -2,6 +2,7 @@ import torch.distributions as td
 import torch
 import math
 from gpytorch.utils.transforms import inv_softplus
+from . import distributions
 
 from .base import Prior
 
@@ -113,16 +114,11 @@ class DoubleGamma(Prior):
         super().__init__(shape, loc=loc, scale=scale, concentration=concentration)
 
     def _dist(self, loc, scale, concentration):
-        return td.Gamma(concentration=concentration, rate=1.)
+        return distributions.DoubleGamma(concentration=concentration, rate=1/scale)
 
     def _sample_value(self, shape: torch.Size):
         x = super()._sample_value(shape)
-        sign = torch.randint(0, 2, shape, dtype=x.dtype).mul_(2).sub_(1)
-        return (x*sign) * self.scale + self.loc
+        return x + self.loc
 
     def log_prob(self):
-        white_p = (self.p - self.loc).abs() / self.scale
-        multiplier = self.p.numel() / self.scale.numel()
-        scale_mul = self.scale.log().sum() * multiplier
-        c = math.log(2) * self.p.numel()
-        return self._dist_obj().log_prob(white_p).sum() - scale_mul - c
+        return self._dist_obj().log_prob(self.p - self.loc).sum()
