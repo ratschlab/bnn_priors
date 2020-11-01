@@ -6,13 +6,14 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch import Tensor
 import pandas as pd
+from numbers import Number
 
 from .layers import Conv2d
 from .base import RegressionModel, ClassificationModel
 from .dense_nets import LinearPrior
 from .. import prior
 
-__all__ = ('Conv2dPrior', 'PreActResNet18', 'PreActResNet34', 'ClassificationConvNet', 'CorrelatedClassificationConvNet', 'ThinPreActResNet18')
+__all__ = ('Conv2dPrior', 'PreActResNet18', 'PreActResNet34', 'ClassificationConvNet', 'CorrelatedClassificationConvNet', 'ThinPreActResNet18', 'DataDrivenPreActResNet18')
 
 def Conv2dPrior(in_channels, out_channels, kernel_size=3, stride=1,
             padding=0, dilation=1, groups=1, padding_mode='zeros',
@@ -172,8 +173,10 @@ class PreActResNet(nn.Module):
         self.weight_prior_params = weight_prior_params
         self.bias_prior_params = bias_prior_params
 
-        if prior_w == prior.ConvCorrelatedNormal:
+        if prior_w in [prior.ConvCorrelatedNormal, prior.FixedCovNormal]:
             dense_prior_w = prior.Normal
+        elif prior_w == prior.FixedCovGenNorm:
+            dense_prior_w = prior.GenNorm
         else:
             dense_prior_w = prior_w
 
@@ -220,13 +223,11 @@ def PreActResNet18(softmax_temp=1.,
              prior_w=prior.Normal, loc_w=0., std_w=2**.5,
              prior_b=prior.Normal, loc_b=0., std_b=1.,
             scaling_fn=None, bn=True, weight_prior_params={}, bias_prior_params={}):
-    k = 'lengthscale_dict_file'
-    weight_prior_params = {k: v for k, v in weight_prior_params.items()}
-    if k in weight_prior_params:
-        ldf = weight_prior_params[k]
-        del weight_prior_params[k]
-    else:
-        ldf = None
+
+    load_file_keys = ['lengthscale_dict_file']
+
+    load_file = {k: v for k, v in weight_prior_params.items() if k in load_file_keys}
+    weight_prior_params = {k: v for k, v in weight_prior_params.items() if k not in load_file_keys}
 
     model = ClassificationModel(PreActResNet(PreActBlock,
                                         [2,2,2,2], bn=bn,
@@ -240,15 +241,88 @@ def PreActResNet18(softmax_temp=1.,
                                        weight_prior_params=weight_prior_params,
                                         bias_prior_params=bias_prior_params), softmax_temp)
 
-    if ldf is not None:
-        lengthscale_dict = pd.read_pickle(ldf)
+    if 'lengthscale_dict_file' in load_file:
+        lengthscale_dict = pd.read_pickle(load_file['lengthscale_dict_file'])
         sd = model.state_dict()
         for k, v in lengthscale_dict.items():
             assert k.startswith("net.module.") and k.endswith(".p")
             new_k = "net." + k[len("net.module."):-len(".p")] + ".lengthscale"
             sd[ new_k ][...] = v
-
         model.load_state_dict(sd)
+    return model
+
+
+def DataDrivenPreActResNet18(softmax_temp=1.,
+                             prior_w=prior.Normal, loc_w=0., std_w=2**.5,
+                             prior_b=prior.Normal, loc_b=0., std_b=1.,
+                             scaling_fn=None, bn=True, weight_prior_params={}, bias_prior_params={}):
+    assert scaling_fn is None
+    scaling_fn = (lambda std, dim: std)
+
+    load_file_keys = ['mean_covs_file', 'fits_dict_file']
+    load_file = {k: v for k, v in weight_prior_params.items() if k in load_file_keys}
+    weight_prior_params = {k: v for k, v in weight_prior_params.items() if k not in load_file_keys}
+
+    model = ClassificationModel(PreActResNet(PreActBlock,
+                                        [2,2,2,2], bn=bn,
+                                        prior_w=prior_w,
+                                       loc_w=loc_w,
+                                       std_w=std_w,
+                                       prior_b=prior_b,
+                                       loc_b=loc_b,
+                                       std_b=std_b,
+                                       scaling_fn=scaling_fn, in_planes=64,
+                                       weight_prior_params=weight_prior_params,
+                                        bias_prior_params=bias_prior_params), softmax_temp)
+
+    if 'mean_covs_file' in load_file:
+        loaded_keys = set()
+        mean_covs = pd.read_pickle(load_file['mean_covs_file'])
+        prior_modules = {("net." + k[len("net.module."):-len(".p")]): k
+                         for k in mean_covs.keys()}
+        for name, mod in model.named_modules():
+            if name not in prior_modules:
+                continue
+            key = prior_modules[name]
+            mean, cov = mean_covs[key]
+            loaded_keys.add(key)
+
+            if isinstance(mean, Number):
+                assert mod.loc.numel() == 1
+                mod.loc[...] = float(mean)
+            else:
+                assert mod.loc.shape == mean.shape
+                mod.loc[...] = torch.from_numpy(mean)
+
+            if isinstance(cov, Number):
+                assert mod.scale.numel() == 1
+                mod.scale[...] = cov**.5
+            else:
+                assert mod.scale.shape == cov.shape
+                mod.assign_cov(torch.from_numpy(cov))
+        assert loaded_keys == set(mean_covs.keys())
+
+    if 'fits_dict_file' in load_file:
+        assert prior_w == prior.FixedCovGenNorm
+        loaded_keys = set()
+        _, fits_dict = pd.read_pickle(load_file['fits_dict_file'])
+        prior_modules = {("net." + k[len("net.module."):-len(".p")]): k
+                         for k in fits_dict.keys()}
+        for name, mod in model.named_modules():
+            if name not in prior_modules:
+                continue
+            key = prior_modules[name]
+            loaded_keys.add(key)
+
+            mod.beta[...] = fits_dict[key]["gennorm"][0]
+            if isinstance(mod, prior.FixedCovGenNorm):
+                mod.base_scale[...] = fits_dict[key]["gennorm"][2]
+            else:
+                assert isinstance(mod, prior.GenNorm)
+                mod.loc[...] = fits_dict[key]["gennorm"][1]
+                mod.scale[...] = fits_dict[key]["gennorm"][2]
+
+        assert loaded_keys == set(fits_dict.keys())
 
     return model
 

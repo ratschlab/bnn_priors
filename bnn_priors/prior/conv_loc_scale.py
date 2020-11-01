@@ -10,7 +10,7 @@ from .base import Prior
 from . import distributions
 
 
-__all__ = ('FixedCovNormal', 'FixedCovLaplace', 'FixedCovDoubleGamma', 'FixedCovGenNorm')
+__all__ = ('ConvCovariance', 'FixedCovNormal', 'FixedCovLaplace', 'FixedCovDoubleGamma', 'FixedCovGenNorm')
 
 
 class PCATransform(td.Transform):
@@ -42,6 +42,10 @@ class PCATransform(td.Transform):
 
 class ConvCovariance(Prior):
     def __init__(self, shape, loc, cov, **kwargs):
+        if isinstance(cov, Number) or len(cov.shape) == 0:
+            cov = torch.eye(shape[-2]*shape[-1]) * cov**2  # it is std_dev
+            loc = torch.zeros(shape[-2]*shape[-1]) + loc
+
         scale, inv_scale, log_sqrt_vals = self._break_down_cov(cov)
         dt = torch.get_default_dtype()
         super().__init__(
