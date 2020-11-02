@@ -216,6 +216,8 @@ class SGLDRunner:
         potential.backward()
         for p in self.optimizer.param_groups[0]["params"]:
             p.grad.clamp_(min=-self.grad_max, max=self.grad_max)
+        if torch.isnan(potential).item():
+            raise ValueError("Potential is NaN")
         return loss, log_prior, potential, accs_batch.mean()
 
     def step(self, i, x, y, store_metrics, lr_decay=True, initial_step=False):
