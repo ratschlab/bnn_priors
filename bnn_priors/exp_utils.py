@@ -156,8 +156,20 @@ def get_model(x_train, y_train, model, width, depth, weight_prior, weight_loc,
                             prior_b=bias_prior, loc_b=bias_loc, std_b=bias_scale, scaling_fn=scaling_fn,
                             bn=batchnorm, softmax_temp=1., weight_prior_params=weight_prior_params,
                             bias_prior_params=bias_prior_params).to(x_train)
+    elif model == "vwidth_resnet18":
+        net = PreActResNet18(width=width, prior_w=weight_prior, loc_w=weight_loc, std_w=weight_scale,
+                            prior_b=bias_prior, loc_b=bias_loc, std_b=bias_scale, scaling_fn=scaling_fn,
+                            bn=batchnorm, softmax_temp=1., weight_prior_params=weight_prior_params,
+                            bias_prior_params=bias_prior_params).to(x_train)
     elif model == "datadriven_resnet18":
         net = bnn_priors.models.DataDrivenPreActResNet18(
+            prior_w=weight_prior, loc_w=weight_loc, std_w=weight_scale,
+            prior_b=bias_prior, loc_b=bias_loc, std_b=bias_scale, scaling_fn=None,
+            bn=batchnorm, softmax_temp=1., weight_prior_params=weight_prior_params,
+            bias_prior_params=bias_prior_params).to(x_train)
+    elif model == "vwidth_datadriven_resnet18":
+        net = bnn_priors.models.DataDrivenPreActResNet18(
+            width=width,
             prior_w=weight_prior, loc_w=weight_loc, std_w=weight_scale,
             prior_b=bias_prior, loc_b=bias_loc, std_b=bias_scale, scaling_fn=None,
             bn=batchnorm, softmax_temp=1., weight_prior_params=weight_prior_params,

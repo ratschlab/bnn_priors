@@ -219,7 +219,7 @@ class PreActResNet(nn.Module):
         return out
 
 
-def PreActResNet18(softmax_temp=1.,
+def PreActResNet18(softmax_temp=1., width=64,
              prior_w=prior.Normal, loc_w=0., std_w=2**.5,
              prior_b=prior.Normal, loc_b=0., std_b=1.,
             scaling_fn=None, bn=True, weight_prior_params={}, bias_prior_params={}):
@@ -237,7 +237,7 @@ def PreActResNet18(softmax_temp=1.,
                                        prior_b=prior_b,
                                        loc_b=loc_b,
                                        std_b=std_b,
-                                       scaling_fn=scaling_fn, in_planes=64,
+                                       scaling_fn=scaling_fn, in_planes=width,
                                        weight_prior_params=weight_prior_params,
                                         bias_prior_params=bias_prior_params), softmax_temp)
 
@@ -252,7 +252,7 @@ def PreActResNet18(softmax_temp=1.,
     return model
 
 
-def DataDrivenPreActResNet18(softmax_temp=1.,
+def DataDrivenPreActResNet18(softmax_temp=1., width=64,
                              prior_w=prior.Normal, loc_w=0., std_w=2**.5,
                              prior_b=prior.Normal, loc_b=0., std_b=1.,
                              scaling_fn=None, bn=True, weight_prior_params={}, bias_prior_params={}):
@@ -271,7 +271,7 @@ def DataDrivenPreActResNet18(softmax_temp=1.,
                                        prior_b=prior_b,
                                        loc_b=loc_b,
                                        std_b=std_b,
-                                       scaling_fn=scaling_fn, in_planes=64,
+                                       scaling_fn=scaling_fn, in_planes=width,
                                        weight_prior_params=weight_prior_params,
                                         bias_prior_params=bias_prior_params), softmax_temp)
 
