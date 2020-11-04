@@ -1,6 +1,6 @@
 #!/bin/bash
 
-exp_dir="../results/201029_mnist_cnn"
+exp_dir="../results/201102_mnist_cnn"
 eval_samples=10
 skip=30
 
