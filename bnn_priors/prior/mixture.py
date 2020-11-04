@@ -8,6 +8,7 @@ from .loc_scale import *
 from .transformed import *
 from .hierarchical import *
 from .empirical_bayes import *
+from . import conv_loc_scale
 
 
 __all__ = ('Mixture', 'get_prior', 'ScaleMixture')
@@ -21,6 +22,8 @@ def get_prior(prior_name):
              "convcorrnormal_gamma": ConvCorrNormalGamma,
              "datadrivencorrnormal": Normal,
              "datadrivencorrdoublegamma": DoubleGamma,
+             "fixedcov_normal": conv_loc_scale.FixedCovNormal,
+             "fixedcov_gennorm": conv_loc_scale.FixedCovGenNorm,
              "lognormal": LogNormal,
              "laplace": Laplace,
              "cauchy": Cauchy,

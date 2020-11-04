@@ -1,13 +1,13 @@
-import numpy as np
 from numbers import Number
 import torch
 from torch.distributions import constraints, Gamma
 from torch.distributions.distribution import Distribution
 from torch.distributions.utils import broadcast_all
 from scipy import stats
+import math
 
 
-__all__ = ('GeneralizedNormal',)
+__all__ = ('GeneralizedNormal', 'DoubleGamma')
 
 
 class GeneralizedNormal(Distribution):
@@ -27,7 +27,7 @@ class GeneralizedNormal(Distribution):
     """
     arg_constraints = {'loc': constraints.real, 'scale': constraints.positive, 'beta': constraints.positive}
     support = constraints.real
-    has_rsample = True
+    has_rsample = False
 
     @property
     def mean(self):
@@ -35,7 +35,7 @@ class GeneralizedNormal(Distribution):
 
     @property
     def variance(self):
-        return (self.scale.pow(2) * torch.lgamma(3/self.beta).exp()) / torch.lgamma(1/self.beta).exp()
+        return self.scale.pow(2) * (torch.lgamma(3/self.beta) - torch.lgamma(1/self.beta)).exp()
 
     @property
     def stddev(self):
@@ -64,6 +64,7 @@ class GeneralizedNormal(Distribution):
 
 
     def sample(self, sample_shape=torch.Size()):
+        sample_shape = sample_shape + self.loc.size()
         return torch.tensor(self.scipy_dist.rvs(list(sample_shape)),
                             dtype=self.loc.dtype, device=self.loc.device)
 
@@ -88,3 +89,21 @@ class GeneralizedNormal(Distribution):
 
     def entropy(self):
         return (1/self.beta) - torch.log(self.beta) + torch.log(2*self.scale) + torch.lgamma(1/self.beta)
+
+
+class DoubleGamma(Gamma):
+    mean = 0.
+    @property
+    def variance(self):
+        return self.concentration * (1 + self.concentration) / self.rate.pow(2)
+
+    def rsample(self, sample_shape=torch.Size()):
+        x = super().rsample(sample_shape)
+        sign = torch.randint(0, 2, x.size(), device=x.device, dtype=x.dtype).mul_(2).sub_(1)
+        return x*sign
+
+    def log_prob(self, value):
+        return super().log_prob(value.abs()) - math.log(2)
+
+    entropy = NotImplemented
+    _log_normalizer = NotImplemented

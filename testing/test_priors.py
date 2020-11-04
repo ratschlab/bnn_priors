@@ -212,10 +212,17 @@ class PriorTest(unittest.TestCase):
         dist_full = prior.FixedCovDoubleGamma(
             (10, 2, 2), loc=loc, cov=cov, concentration=concentration)
         dist = prior.DoubleGamma(
-            (10, 2, 2), loc.view((2, 2)), (cov.diag().view((2, 2)) / (concentration * (1+concentration)))**.5,
+            (10, 2, 2), loc.view((2, 2)),
+            scale=(cov.diag().view((2, 2)) / (concentration * (1+concentration)))**.5,
             concentration=concentration)
 
         with torch.no_grad():
             dist.p.data[...] = dist_full.p.data[...]
 
         assert torch.allclose(dist_full.log_prob(), dist.log_prob())
+
+    @requires_float64
+    def test_fixed_cov_gennorm(self):
+        # TODO: increase precision of atol (distribution samples incorrectly)
+        torch.manual_seed(102)
+        _generic_multivariate_test(prior.FixedCovGenNorm, 200000, 0.1, 0.1, beta=0.3)

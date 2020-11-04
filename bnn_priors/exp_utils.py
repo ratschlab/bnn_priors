@@ -106,11 +106,6 @@ class DummyModule(t.nn.Module):
 def get_model(x_train, y_train, model, width, depth, weight_prior, weight_loc,
              weight_scale, bias_prior, bias_loc, bias_scale, batchnorm,
              weight_prior_params, bias_prior_params):
-    assert model in ["densenet", "raobdensenet", "resnet18", "thin_resnet18",
-                     "resnet34", "classificationdensenet", "test_gaussian",
-                     "googleresnet", "classificationconvnet", "correlatedclassificationconvnet",
-                     "correlatedgoogleresnet",
-                     "linear", "logistic", "raob_linear", "datadrivengaussconv", "datadrivendoublegammaconv"]
     if weight_prior in ["cauchy"]:
         # NOTE: Cauchy and anything with infinite variance should use this
         scaling_fn = lambda std, dim: std/dim
@@ -147,6 +142,8 @@ def get_model(x_train, y_train, model, width, depth, weight_prior, weight_loc,
             network_class = bnn_priors.models.DataDrivenGaussianClassificationConvNet
         elif model == "datadrivendoublegammaconv":
             network_class = bnn_priors.models.DataDrivenDoubleGammaClassificationConvNet
+        else:
+            raise ValueError("model="+model)
         net = network_class(in_channels, img_height, y_train.max()+1, width, depth, softmax_temp=1.,
                         prior_w=weight_prior, loc_w=weight_loc, std_w=weight_scale,
                         prior_b=bias_prior, loc_b=bias_loc, std_b=bias_scale, scaling_fn=scaling_fn,
@@ -156,6 +153,24 @@ def get_model(x_train, y_train, model, width, depth, weight_prior, weight_loc,
                             prior_b=bias_prior, loc_b=bias_loc, std_b=bias_scale, scaling_fn=scaling_fn,
                             bn=batchnorm, softmax_temp=1., weight_prior_params=weight_prior_params,
                             bias_prior_params=bias_prior_params).to(x_train)
+    elif model == "vwidth_resnet18":
+        net = PreActResNet18(width=width, prior_w=weight_prior, loc_w=weight_loc, std_w=weight_scale,
+                            prior_b=bias_prior, loc_b=bias_loc, std_b=bias_scale, scaling_fn=scaling_fn,
+                            bn=batchnorm, softmax_temp=1., weight_prior_params=weight_prior_params,
+                            bias_prior_params=bias_prior_params).to(x_train)
+    elif model == "datadriven_resnet18":
+        net = bnn_priors.models.DataDrivenPreActResNet18(
+            prior_w=weight_prior, loc_w=weight_loc, std_w=weight_scale,
+            prior_b=bias_prior, loc_b=bias_loc, std_b=bias_scale, scaling_fn=None,
+            bn=batchnorm, softmax_temp=1., weight_prior_params=weight_prior_params,
+            bias_prior_params=bias_prior_params).to(x_train)
+    elif model == "vwidth_datadriven_resnet18":
+        net = bnn_priors.models.DataDrivenPreActResNet18(
+            width=width,
+            prior_w=weight_prior, loc_w=weight_loc, std_w=weight_scale,
+            prior_b=bias_prior, loc_b=bias_loc, std_b=bias_scale, scaling_fn=None,
+            bn=batchnorm, softmax_temp=1., weight_prior_params=weight_prior_params,
+            bias_prior_params=bias_prior_params).to(x_train)
     elif model == "thin_resnet18":
         net = ThinPreActResNet18(prior_w=weight_prior, loc_w=weight_loc, std_w=weight_scale,
                             prior_b=bias_prior, loc_b=bias_loc, std_b=bias_scale, scaling_fn=scaling_fn,
@@ -193,6 +208,8 @@ def get_model(x_train, y_train, model, width, depth, weight_prior, weight_loc,
         net = bnn_priors.models.RaoBLinearRegression(x_train, y_train, noise_std=0.5)
     elif model == "test_gaussian":
         net = bnn_priors.models.GaussianModel(N=1, D=100)
+    else:
+        raise ValueError("model="+model)
 
     if x_train.device != t.device("cpu"):
         # For some reason, this increases GPU utilization and decreases CPU
