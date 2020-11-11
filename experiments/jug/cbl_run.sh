@@ -17,7 +17,8 @@ fi
 
 
 for host in huygens cartwright laplace poisson vapnik gosset julia fields \
-    euler robbins vartak curie sagarmatha ariadne grothendieck; do
+    ramanujan banach riemann euler robbins vartak curie sagarmatha ariadne \
+    grothendieck babbage neumann gan bernoulli; do
     ssh "$host" 'tmux new-session -s 0 -d; top -n 1 -b | head -n 15; nvidia-smi'
     echo "For host $host, should I set CUDA_VISIBLE_DEVICES? ([0,1,2,...])? Should I skip?"
     read command
