@@ -6,15 +6,14 @@ if [ -z "$1" ]; then
     exit 1
 fi
 
-MY_PATH="$(dirname $0)"              # relative
-MY_PATH="$( cd $MY_PATH && pwd )"  # absolutized and normalized
+MY_PATH="$(python -c 'import pathlib; print(pathlib.Path(".").resolve())')"
+echo $MY_PATH
 if [ -z "$MY_PATH" ] ; then
 	# error; for some reason, the path is not accessible
 	# to the script (e.g. permissions re-evaled after suid)
 	echo "Could not find path of this file."
 	exit 1  # fail
 fi
-
 
 for host in huygens cartwright laplace poisson vapnik gosset julia fields \
     ramanujan banach riemann euler robbins vartak curie sagarmatha ariadne \
