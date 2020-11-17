@@ -51,6 +51,9 @@ class SGLD(torch.optim.Optimizer):
             v = state['preconditioner'] = 1.
             return v
 
+    def delta_energy(self, a, b) -> float:
+        return math.inf
+
     @torch.no_grad()
     def sample_momentum(self, keep=0.0):
         "Sample the momenta for all the parameters"
