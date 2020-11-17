@@ -3,8 +3,8 @@
 logdir='../results/201030_cifar'
 #priors=( gaussian laplace gennorm student-t cauchy improper gaussian_empirical horseshoe laplace_empirical student-t_empirical gennorm_empirical mixture scale_mixture scale_mixture_empirical )
 #priors=( gaussian laplace gennorm student-t cauchy improper mixture scale_mixture )
-priors=( gaussian improper convcorrnormal convcorrnormal_fitted_ls )
-priors=(  )
+#priors=( gaussian improper convcorrnormal convcorrnormal_fitted_ls )
+priors=( convcorrnormal_fitted_ls )
 scales=( 1.41 ) # 1.41 2.82
 temps=( 0.001 0.01 0.05 0.1 0.5 1.0 ) # 0.0 0.1 1.0
 mixtures=( "g_l_s_c_gn" "ge_le_se_gne" )
