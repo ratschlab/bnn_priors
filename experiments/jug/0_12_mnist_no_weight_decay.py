@@ -6,11 +6,12 @@ from pathlib import Path
 import sys
 import os
 
-experiments_dir = Path(__file__).resolve().parent.parent
+experiments_dir = Path(__file__).parent.parent
 
 @jug.TaskGenerator
 def train_sgd(log_dir, **config):
-    os.mkdir(log_dir)
+    os.makedirs(log_dir, exist_ok=False)
+
     script = experiments_dir / "train_sgd.py"
     args = ["nice", "-n19", sys.executable, script,
             *[f"--{k}={v}" for k, v in config.items()]]
@@ -20,10 +21,16 @@ def train_sgd(log_dir, **config):
         raise SystemError(f"Process returned with code {complete.returncode}")
     return complete
 
-name = Path(__file__).name[:-3]
-base_dir = experiments_dir.parent/"logs"/name
+base_dir = experiments_dir.parent/"logs/sgd-no-weight-decay"
 jug.set_jugdir(str(base_dir/"jugdir"))
+for net in ["dense", "conv"]:
 
-for i in range(10):
-    log_dir = base_dir/str(i)
-    train_sgd(str(log_dir), model="thin_resnet18", data="cifar10")
+    for i in reversed(range(10)):
+        log_dir = base_dir/f"mnist_classification{net}net"/str(i)
+        print(log_dir)
+        if net == "dense":
+            train_sgd(str(log_dir), model="classificationdensenet", data="mnist", width=100)
+        elif net == "conv":
+            train_sgd(str(log_dir), model="classificationconvnet", data="mnist", width=64)
+        else:
+            raise ValueError(net)

@@ -16,6 +16,7 @@ parser = argparse.ArgumentParser(description='PyTorch CIFAR10 Training')
 parser.add_argument('--lr', default=0.05, type=float, help='learning rate')
 parser.add_argument('--model', default="thin_resnet18", type=str, help='name of model')
 parser.add_argument('--data', default="cifar10_augmented", type=str, help='name of data set')
+parser.add_argument('--width', default=64, type=int, help='width of nn architecture')
 args = parser.parse_args()
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -30,7 +31,7 @@ testloader = torch.utils.data.DataLoader(data.norm.test, batch_size=100, shuffle
 # Model
 print('==> Building model..')
 model = get_model(data.norm.train_X, data.norm.train_y, model=args.model,
-                  width=64, depth=3,
+                  width=args.width, depth=3,
                   weight_prior="improper", weight_loc=0., weight_scale=1.,
                   bias_prior="improper", bias_loc=0., bias_scale=1.,
                   batchnorm=True, weight_prior_params={}, bias_prior_params={})
@@ -42,8 +43,7 @@ if device == torch.device('cuda'):
 he_uniform_initialize(model)  # We destroyed He init by using priors, bring it back
 
 criterion = nn.CrossEntropyLoss()
-optimizer = optim.SGD(model.parameters(), lr=args.lr,
-                      momentum=0.9, weight_decay=5e-4)
+optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=0.9)
 scheduler = torch.optim.lr_scheduler.StepLR(optimizer, 150, 0.1)  # Decrease to 1/10 every 150 epochs
 
 
