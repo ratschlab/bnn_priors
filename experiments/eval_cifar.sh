@@ -1,6 +1,6 @@
 #!/bin/bash
 
-exp_dir="../results/201030_cifar"
+exp_dir="../results/201126_cifar"
 eval_samples=10
 skip=30
 
