@@ -65,7 +65,9 @@ class GeneralizedNormal(Distribution):
 
     def sample(self, sample_shape=torch.Size()):
         sample_shape = sample_shape + self.loc.size()
-        return torch.tensor(self.scipy_dist.rvs(list(sample_shape)),
+        return torch.tensor(self.scipy_dist.rvs(
+            list(sample_shape),
+            random_state=torch.randint(2**32, ()).item()),  # Make deterministic if torch is seeded
                             dtype=self.loc.dtype, device=self.loc.device)
 
 
