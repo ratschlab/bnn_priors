@@ -168,7 +168,8 @@ class VerletSGLDRunnerReject(SGLDRunner):
                 if self.precond_update is not None and (epoch+1) % self.precond_update == 0:
                     self.optimizer.update_preconditioner()
 
-                # Write metrics to disk every 2 minutes
+                # Important to put here because no new metrics are added
+                # Write metrics to disk every 30 seconds
                 self.metrics_saver.flush(every_s=30)
 
                 if progressbar:

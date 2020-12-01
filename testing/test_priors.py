@@ -44,6 +44,21 @@ def _generic_sample_test(prior_class, td_class=NotImplemented, n_samples=100000,
     assert p > 0.3
 
 
+def _generic_multivariate_test(prior_class, N, atol_mean, atol_cov, **kwargs):
+    loc = torch.tensor([1., 2., 3., 4.])
+    cov = torch.randn(4, 4)
+    cov = cov @ cov.t()
+    dist = prior_class((N, 2, 2), loc=loc, cov=cov, **kwargs)
+
+    p = dist().view((-1, 4))
+    mean = p.mean(0)
+    assert torch.allclose(mean, loc.to(p), atol=atol_mean)
+
+    b = p - mean
+    empirical_cov = (b.t() @ b) / len(b)
+    assert torch.allclose(empirical_cov, cov.to(p), atol=atol_cov)
+
+
 class PriorTest(unittest.TestCase):
     def test_uniform(self):
         _generic_sample_test(prior.Uniform, td.Uniform, low=-0.3, high=1.7)
@@ -65,6 +80,23 @@ class PriorTest(unittest.TestCase):
         rate = torch.Tensor([1.7, 2.1])
         _generic_logp_test(prior.Gamma, torch.Size([2, 2]), td.Gamma,
                            concentration=concentration, rate=rate)
+
+    def test_double_gamma(self):
+        concentration = 0.3
+        scale = 1.4
+        loc = -0.4
+        ls = dict(loc=loc, scale=scale)
+        def np_cdf(x):
+            return stats.dgamma.cdf(x, a=concentration, **ls)
+        _generic_sample_test(prior.DoubleGamma, np_cdf=np_cdf,
+                             concentration=concentration, **ls)
+        _generic_positive_test(prior.DoubleGamma, concentration=concentration, **ls)
+
+        def np_logpdf(x):
+            return stats.dgamma.logpdf(x, a=concentration, **ls)
+        _generic_logp_test(prior.DoubleGamma, torch.Size([2, 2]),
+                           np_logpdf=np_logpdf, concentration=concentration,
+                           **ls)
 
     def test_log_normal(self):
         _generic_sample_test(prior.LogNormal, td.LogNormal, loc=0.3, scale=1.2)
@@ -89,6 +121,7 @@ class PriorTest(unittest.TestCase):
             return stats.gennorm.logpdf(x, beta=beta, loc=loc, scale=scale)
         _generic_logp_test(prior.GenNorm, torch.Size([2, 2]),
                            np_logpdf=np_logpdf, loc=loc, scale=scale, beta=beta)
+
 
     def test_loc_scale_log_prob(self):
         size = torch.Size([3, 2])
@@ -124,3 +157,53 @@ class PriorTest(unittest.TestCase):
 
         _generic_sample_test(prior.Improper, td.Normal, loc=loc, scale=scale)
         _generic_positive_test(prior.Improper, loc=loc, scale=scale)
+
+
+    def test_fixed_cov_normal(self):
+        torch.manual_seed(102)
+        _generic_multivariate_test(prior.FixedCovNormal, 200000, 0.01, 0.01)
+
+    @requires_float64
+    def test_fixed_cov_normal_density(self):
+        torch.manual_seed(102)
+        loc = torch.tensor([1., 2., 3., 4.])
+        cov = torch.randn(4, 4)
+        cov = cov @ cov.t()
+        dist = prior.FixedCovNormal((10, 2, 2), loc=loc, cov=cov)
+
+        lp_torch = td.MultivariateNormal(loc, cov).log_prob(dist().view((-1, 4)))
+        assert np.allclose(lp_torch.sum().item(), dist.log_prob().item())
+
+    def test_fixed_cov_laplace(self):
+        torch.manual_seed(102)
+        _generic_multivariate_test(prior.FixedCovLaplace, 400000, 0.01, 0.01)
+
+    def test_fixed_cov_double_gamma(self):
+        torch.manual_seed(102)
+        _generic_multivariate_test(
+            prior.FixedCovDoubleGamma, 400000, 0.01, 0.01, concentration=0.3)
+
+    @requires_float64
+    def test_fixed_cov_double_gamma_density(self):
+        torch.manual_seed(102)
+        loc = torch.tensor([1., 2., 3., 4.])
+        cov = torch.eye(4) * torch.tensor([2., 3., .5, 1.])
+        concentration = 0.3
+
+        dist_full = prior.FixedCovDoubleGamma(
+            (10, 2, 2), loc=loc, cov=cov, concentration=concentration)
+        dist = prior.DoubleGamma(
+            (10, 2, 2), loc.view((2, 2)),
+            scale=(cov.diag().view((2, 2)) / (concentration * (1+concentration)))**.5,
+            concentration=concentration)
+
+        with torch.no_grad():
+            dist.p.data[...] = dist_full.p.data[...]
+
+        assert torch.allclose(dist_full.log_prob(), dist.log_prob())
+
+    @requires_float64
+    def test_fixed_cov_gennorm(self):
+        # TODO: increase precision of atol (distribution samples incorrectly)
+        torch.manual_seed(102)
+        _generic_multivariate_test(prior.FixedCovGenNorm, 200000, 0.1, 0.1, beta=0.3)

@@ -113,7 +113,7 @@ def evaluate_model(model, dataloader_test, samples):
 def main(inference, model, width, n_samples, warmup, init_method,
          burnin, skip, metrics_skip, cycles, temperature, momentum,
          precond_update, lr, batch_size, load_samples, save_samples,
-         reject_samples, run_id, log_dir, sampling_decay, progressbar, _run):
+         reject_samples, run_id, log_dir, sampling_decay, progressbar, _run, _log):
     assert inference in ["SGLD", "HMC", "VerletSGLD", "OurHMC", "HMCReject", "VerletSGLDReject"]
     assert width > 0
     assert n_samples > 0
@@ -143,8 +143,21 @@ def main(inference, model, width, n_samples, warmup, init_method,
             raise ValueError(f"unknown init_method={init_method}")
     else:
         state_dict = exp_utils.load_samples(load_samples, idx=-1, keep_steps=False)
-        model.load_state_dict(state_dict)
+        model_sd = model.state_dict()
+        for k in state_dict.keys():
+            if k not in model_sd:
+                _log.warning(f"key {k} not in model, ignoring")
+                del state_dict[k]
+            elif model_sd[k].size() != state_dict[k].size():
+                _log.warning(f"key {k} size mismatch, model={model_sd[k].size()}, loaded={state_dict[k].size()}")
+                state_dict[k] = model_sd[k]
+
+        missing_keys = set(model_sd.keys()) - set(state_dict.keys())
+        _log.warning(f"The following keys were not found in loaded state dict: {missing_keys}")
+        model_sd.update(state_dict)
+        model.load_state_dict(model_sd)
         del state_dict
+        del model_sd
 
     if save_samples:
         model_saver_fn = (lambda: exp_utils.HDF5ModelSaver(

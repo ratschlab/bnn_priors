@@ -15,6 +15,8 @@ from bnn_priors.exp_utils import HDF5Metrics, HDF5ModelSaver, get_data, get_mode
 parser = argparse.ArgumentParser(description='PyTorch CIFAR10 Training')
 parser.add_argument('--lr', default=0.05, type=float, help='learning rate')
 parser.add_argument('--model', default="thin_resnet18", type=str, help='name of model')
+parser.add_argument('--data', default="cifar10_augmented", type=str, help='name of data set')
+parser.add_argument('--width', default=64, type=int, help='width of nn architecture')
 args = parser.parse_args()
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -22,14 +24,14 @@ best_acc = 0  # best test accuracy
 start_epoch = 0  # start from epoch 0 or last checkpoint epoch
 
 print('==> Preparing data..')
-data = get_data("cifar10_augmented", device=device)
-trainloader = torch.utils.data.DataLoader(data.norm.train, batch_size=128, shuffle=True, num_workers=2)
-testloader = torch.utils.data.DataLoader(data.norm.test, batch_size=100, shuffle=False, num_workers=2)
+data = get_data(args.data, device=device)
+trainloader = torch.utils.data.DataLoader(data.norm.train, batch_size=128, shuffle=True)
+testloader = torch.utils.data.DataLoader(data.norm.test, batch_size=100, shuffle=False)
 
 # Model
 print('==> Building model..')
 model = get_model(data.norm.train_X, data.norm.train_y, model=args.model,
-                  width=NotImplemented, depth=NotImplemented,
+                  width=args.width, depth=3,
                   weight_prior="improper", weight_loc=0., weight_scale=1.,
                   bias_prior="improper", bias_loc=0., bias_scale=1.,
                   batchnorm=True, weight_prior_params={}, bias_prior_params={})
@@ -41,8 +43,7 @@ if device == torch.device('cuda'):
 he_uniform_initialize(model)  # We destroyed He init by using priors, bring it back
 
 criterion = nn.CrossEntropyLoss()
-optimizer = optim.SGD(model.parameters(), lr=args.lr,
-                      momentum=0.9, weight_decay=5e-4)
+optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=0.9)
 scheduler = torch.optim.lr_scheduler.StepLR(optimizer, 150, 0.1)  # Decrease to 1/10 every 150 epochs
 
 

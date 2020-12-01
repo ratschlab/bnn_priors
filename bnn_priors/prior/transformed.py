@@ -2,10 +2,11 @@ import torch.distributions as td
 import torch
 import math
 from gpytorch.utils.transforms import inv_softplus
+from . import distributions
 
 from .base import Prior
 
-__all__ = ('Uniform', 'Gamma', 'HalfCauchy')
+__all__ = ('Uniform', 'Gamma', 'HalfCauchy', 'DoubleGamma')
 
 
 class Uniform(Prior):
@@ -77,3 +78,18 @@ class HalfCauchy(Prior):
 
     def log_prob(self):
         return self._dist_obj().log_prob(self()).sum()
+
+
+class DoubleGamma(Prior):
+    def __init__(self, shape, loc, scale, concentration):
+        super().__init__(shape, loc=loc, scale=scale, concentration=concentration)
+
+    def _dist(self, loc, scale, concentration):
+        return distributions.DoubleGamma(concentration=concentration, rate=1/scale)
+
+    def _sample_value(self, shape: torch.Size):
+        x = super()._sample_value(shape)
+        return x + self.loc
+
+    def log_prob(self):
+        return self._dist_obj().log_prob(self.p - self.loc).sum()

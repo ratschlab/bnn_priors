@@ -163,7 +163,6 @@ class SGLDRunner:
                         if delta_energy is not None:
                             postfix["Δₑ"] = delta_energy
                         epochs.set_postfix(postfix, refresh=False)
-                self.metrics_saver.flush(every_s=30)
 
                 if self.precond_update is not None and epoch % self.precond_update == 0:
                     self.optimizer.update_preconditioner()
@@ -175,6 +174,10 @@ class SGLDRunner:
                 if progressbar:
                     postfix.update(results)
                     epochs.set_postfix(postfix, refresh=False)
+
+                # Important to put here because no new metrics are added
+                # Write metrics to disk every 30 seconds
+                self.metrics_saver.flush(every_s=10)
 
         # Save metrics for the last sample
         (x, y) = next(iter(self.dataloader))
@@ -213,6 +216,8 @@ class SGLDRunner:
         potential.backward()
         for p in self.optimizer.param_groups[0]["params"]:
             p.grad.clamp_(min=-self.grad_max, max=self.grad_max)
+        if torch.isnan(potential).item():
+            raise ValueError("Potential is NaN")
         return loss, log_prior, potential, accs_batch.mean()
 
     def step(self, i, x, y, store_metrics, lr_decay=True, initial_step=False):
@@ -249,7 +254,7 @@ class SGLDRunner:
             samples (dict): Dictionary of torch.tensors with num_samples*cycles samples for each parameter of the model
         """
         if self.model_saver is None:
-            return self._samples
+            return {k: v for (k, v) in self._samples.items() if k != "steps"}
         return self.model_saver.load_samples(keep_steps=False)
 
     def store_metrics(self, i, loss, log_prior, potential, acc, lr,

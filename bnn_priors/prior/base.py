@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import abc
 import numpy as np
+from numbers import Number
 
 
 __all__ = ('value_or_call', 'Prior', 'named_priors', 'named_params_with_prior')
@@ -26,8 +27,8 @@ class Prior(nn.Module, abc.ABC):
         self.kwargs_keys = list(kwargs.keys())
         for key, arg in kwargs.items():
             assert str(key) != "p", "repeated name of parameter"
-            if isinstance(arg, float):
-                arg = torch.tensor(arg)
+            if isinstance(arg, Number):
+                arg = torch.tensor(arg, dtype=torch.get_default_dtype())
             elif isinstance(arg, np.ndarray):
                 arg = torch.from_numpy(arg).to(torch.get_default_dtype())
 

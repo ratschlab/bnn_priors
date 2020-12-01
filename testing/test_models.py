@@ -4,12 +4,12 @@ import unittest
 from gpytorch.distributions import MultivariateNormal
 
 from bnn_priors.models import RaoBDenseNet, RaoBLinearRegression
+from .utils import requires_float64
 
 
 class TestRaoBDenseNet(unittest.TestCase):
+    @requires_float64
     def test_likelihood(self):
-        torch.set_default_dtype(torch.float64)
-
         x = torch.randn(10, 3)*2
         y = torch.randn(10, 1)*2
 
@@ -28,8 +28,8 @@ class TestRaoBDenseNet(unittest.TestCase):
 
         assert torch.allclose(lik1, lik2)
 
+    @requires_float64
     def test_posterior(self):
-        torch.set_default_dtype(torch.float64)
         torch.manual_seed(2)
         x = torch.randn(10, 3)*2
         y = x @ torch.randn(x.size(1))
