@@ -207,3 +207,8 @@ class PriorTest(unittest.TestCase):
         # TODO: increase precision of atol (distribution samples incorrectly)
         torch.manual_seed(102)
         _generic_multivariate_test(prior.FixedCovGenNorm, 200000, 0.1, 0.1, beta=0.3)
+
+    @requires_float64
+    def test_multivariate_t(self):
+        torch.manual_seed(202)
+        _generic_multivariate_test(prior.MultivariateT, 200000, 0.01, 0.01, df=3, event_dim=2)
