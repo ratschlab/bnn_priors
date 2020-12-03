@@ -65,6 +65,7 @@ sampling_decay="flat"
 gamma = 14.2854713425451
 momenta = [math.exp(-gamma * math.sqrt(lr / 50000)) for lr in learning_rates]
 
+# Also ran the same experiments but with 60 cycles of length 50 each
 for temp in temps:
     for i in range(len(learning_rates)):
         config = dict(weight_prior=prior, data="cifar10_augmented",
