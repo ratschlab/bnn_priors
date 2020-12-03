@@ -138,7 +138,6 @@ class MultivariateT(MultivariateNormal):
                  scale_tril=None,
                  event_dim=1,
                  validate_args=None):
-        assert df > 2., "We need more than 2 degrees of freedom for nice properties"
         assert isinstance(event_dim, int) and event_dim > 0
         super().__init__(loc=loc,
                          covariance_matrix=covariance_matrix,
@@ -157,19 +156,20 @@ class MultivariateT(MultivariateNormal):
         self._batch_shape = torch.Size(batch_shape)
         self._event_shape = torch.Size(event_shape)
 
-        self.df, = broadcast_all(df)
-        assert self.df.dim() == 0, "Non-scalar case unsupported"
-        self.gamma = Gamma(concentration=self.df/2., rate=1./2.)
+        self.df, _ = broadcast_all(df, torch.ones(self._batch_shape))
+        self.gamma = Gamma(concentration=self.df/2., rate=1/2)
 
 
     def rsample(self, sample_shape=torch.Size()):
         shape = self._extended_shape(sample_shape)
         eps = _standard_normal(shape, dtype=self.loc.dtype, device=self.loc.device)
-        # We want 1 gamma for every `event` only
-        r_inv = self.gamma.rsample(sample_shape=sample_shape+self._batch_shape)
-        r_inv = r_inv.view(r_inv.size() + torch.Size([1] * len(self.event_shape)))
 
+        r_inv = self.gamma.rsample(sample_shape=sample_shape)
         scale = ((self.df-2) / r_inv).sqrt()
+        # We want 1 gamma for every `event` only. The size of self.df and this
+        # `.view` provide that
+        scale = scale.view(scale.size() + torch.Size([1] * len(self._event_shape)))
+
         return self.loc + scale * _batch_mv(self._unbroadcasted_scale_tril, eps)
 
     def log_prob(self, value):
@@ -177,15 +177,22 @@ class MultivariateT(MultivariateNormal):
             self._validate_sample(value)
         diff = value - self.loc
         M = _batch_mahalanobis(self._unbroadcasted_scale_tril, diff)
+        n_dim = len(self._event_shape)
+        p = diff.size()[-n_dim:].numel()
+        if n_dim > 1:
+            M = M.sum(tuple(range(-n_dim+1, 0)))
 
         log_diag = self._unbroadcasted_scale_tril.diagonal(dim1=-2, dim2=-1).log()
-        dim = self._event_shape.numel()
-        half_log_det = log_diag.sum() * (dim / log_diag.numel())
+        if n_dim > log_diag.dim():
+            half_log_det = log_diag.sum() * (p / log_diag.numel())
+        else:
+            half_log_det = log_diag.sum(tuple(range(-n_dim, 0))) * (
+                p / log_diag.size()[-n_dim:].numel())
 
         lambda_ = self.df - 2.
-        lp = torch.lgamma((dim+self.df)/2.) \
-                - ((dim/2.) * torch.log(math.pi * lambda_)) \
+        lp = torch.lgamma((p+self.df)/2.) \
+                - ((p/2.) * torch.log(math.pi * lambda_)) \
                 - torch.lgamma(self.df / 2.) \
                 - half_log_det \
-                - ((self.df+dim)/2.) * torch.log(1 + M/lambda_)
+                - ((self.df+p)/2.) * torch.log(1 + M/lambda_)
         return lp

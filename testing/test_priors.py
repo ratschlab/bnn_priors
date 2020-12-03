@@ -2,6 +2,7 @@ import unittest
 import torch
 import numpy as np
 import torch.distributions as td
+import math
 
 from bnn_priors import prior
 from scipy import stats
@@ -212,3 +213,62 @@ class PriorTest(unittest.TestCase):
     def test_multivariate_t(self):
         torch.manual_seed(202)
         _generic_multivariate_test(prior.MultivariateT, 200000, 0.01, 0.01, df=3, event_dim=2)
+
+
+def partial_t_log_pdf(dim, df, half_log_det, mahalanobis):
+    return (torch.lgamma((df + dim)/2)
+            - torch.lgamma(df/2)
+            - dim/2 * torch.log(math.pi*(df-2))
+            - half_log_det
+            -(dim+df)/2 * torch.log(1 + mahalanobis/(df-2)))
+
+class TestMultivariateT(unittest.TestCase):
+    def test_density(self, N=4, D=6, M=5):
+        torch.manual_seed(100)
+        cov = torch.randn(N, M, D, D)
+        cov = (cov @ cov.transpose(-1, -2))
+        mean = torch.arange(D).to(cov)
+        df = torch.arange(3, 3+N)[:, None].to(cov)
+        L = cov.cholesky()
+        L_inv = L.inverse()
+        x = torch.randn(2, *cov.shape[:-1])
+        MVT = prior.distributions.MultivariateT
+
+        half = L_inv @ (x - mean).unsqueeze(-1)
+        maha = (half.transpose(-1, -2) @ half).squeeze(-1).squeeze(-1)
+        half_log_det = L.diagonal(dim1=-2, dim2=-1).log().sum(-1)
+        assert torch.allclose(
+            MVT(df, mean, cov, event_dim=1).log_prob(x),
+            partial_t_log_pdf(D, df, half_log_det, maha))
+
+        maha = maha.sum(-1)
+        half_log_det = half_log_det.sum(-1)
+        df = df.squeeze(-1)
+        assert torch.allclose(
+            MVT(df, mean, cov, event_dim=2).log_prob(x),
+            partial_t_log_pdf(x.size()[-2:].numel(), df, half_log_det, maha))
+
+        maha = maha.sum(-1)
+        half_log_det = half_log_det.sum(-1)
+        assert torch.allclose(
+            MVT(df[0], mean, cov, event_dim=3).log_prob(x),
+            partial_t_log_pdf(x.size()[-3:].numel(), df[0], half_log_det, maha))
+
+        maha = maha.sum(-1)
+        half_log_det = half_log_det*x.size(0)
+        assert torch.allclose(
+            MVT(df[0], mean, cov, event_dim=4).log_prob(x),
+            partial_t_log_pdf(x.numel(), df[0], half_log_det, maha))
+
+
+        # Covariance with a broadcasting batch dimension
+        cov = cov[:, 0, None, :, :]
+        L = L[:, 0, None, :, :]
+        L_inv = L_inv[:, 0, None, :, :]
+
+        half = L_inv @ (x - mean).unsqueeze(-1)
+        maha = (half.transpose(-1, -2) @ half).squeeze(-1).squeeze(-1).sum((-1, -2))
+        half_log_det = L.diagonal(dim1=-2, dim2=-1).log().sum((-1, -2, -3)) * M
+        assert torch.allclose(
+            MVT(df[0], mean, cov, event_dim=3).log_prob(x),
+            partial_t_log_pdf(x.size()[-3:].numel(), df[0], half_log_det, maha))
