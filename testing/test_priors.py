@@ -209,10 +209,25 @@ class PriorTest(unittest.TestCase):
         torch.manual_seed(102)
         _generic_multivariate_test(prior.FixedCovGenNorm, 200000, 0.1, 0.1, beta=0.3)
 
-    @requires_float64
     def test_multivariate_t(self):
-        torch.manual_seed(202)
-        _generic_multivariate_test(prior.MultivariateT, 200000, 0.01, 0.01, df=3, event_dim=2)
+        torch.manual_seed(102)
+        # df=8 is necessary to reduce the variance of the estimated covariance
+        _generic_multivariate_test(prior.MultivariateT, 2000000, 0.01, 0.01, df=8, event_dim=2)
+
+    @requires_float64
+    @torch.no_grad()
+    def test_multivariate_t_cdf_1dim(self, n_samples=100000):
+        torch.manual_seed(102)
+        loc = -0.3
+        scale = 1.2
+        df = 3
+
+        def np_cdf(x):
+            return stats.t.cdf(x, df=df, loc=loc, scale=scale / math.sqrt(df))
+        dist = prior.MultivariateT(torch.Size([n_samples, 1]), loc=loc, cov=scale, df=3, event_dim=1)
+        _, p = stats.ks_1samp(dist().detach().squeeze(-1),
+                              np_cdf, mode='exact')
+        assert p > 0.3
 
 
 def partial_t_log_pdf(dim, df, half_log_det, mahalanobis):
