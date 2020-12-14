@@ -186,6 +186,9 @@ def get_model(x_train, y_train, model, width, depth, weight_prior, weight_loc,
                      prior_b=bias_prior, loc_b=bias_loc, std_b=bias_scale, scaling_fn=scaling_fn,
                      bn=batchnorm, softmax_temp=1., weight_prior_params=weight_prior_params,
                      bias_prior_params=bias_prior_params).to(x_train)
+    elif model == "datadriven_mvt_googleresnet":
+        net = bnn_priors.models.mvt_resnets.DataDrivenMVTGoogleResNet(
+            softmax_temp=1., depth=20, num_classes=10, bn=batchnorm).to(x_train)
     elif model == "correlatedgoogleresnet":
         # TODO: currently doesn't pass a specific prior to the dense layer, so it uses the default (Normal) one
         net = CorrelatedResNet(prior_w=weight_prior, loc_w=weight_loc, std_w=weight_scale, depth=20,

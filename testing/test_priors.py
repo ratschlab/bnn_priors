@@ -211,8 +211,21 @@ class PriorTest(unittest.TestCase):
 
     def test_multivariate_t(self):
         torch.manual_seed(102)
+        N, atol_mean, atol_cov = 2000000, 0.01, 0.01
+
+        loc = torch.tensor([1., 2., 3., 4.])
+        cov = torch.randn(4, 4)
+        cov = cov @ cov.t()
         # df=8 is necessary to reduce the variance of the estimated covariance
-        _generic_multivariate_test(prior.MultivariateT, 2000000, 0.01, 0.01, df=8, event_dim=2)
+        dist = prior.MultivariateT((N, 2, 2), loc=loc, scale_tril=cov.cholesky(), df=8, event_dim=2)
+
+        p = dist().view((-1, 4))
+        mean = p.mean(0)
+        assert torch.allclose(mean, loc.to(p), atol=atol_mean)
+
+        b = p - mean
+        empirical_cov = (b.t() @ b) / len(b)
+        assert torch.allclose(empirical_cov, cov.to(p), atol=atol_cov)
 
     @requires_float64
     @torch.no_grad()
@@ -224,7 +237,8 @@ class PriorTest(unittest.TestCase):
 
         def np_cdf(x):
             return stats.t.cdf(x, df=df, loc=loc, scale=scale / math.sqrt(df))
-        dist = prior.MultivariateT(torch.Size([n_samples, 1]), loc=loc, cov=scale, df=3, event_dim=1)
+        dist = prior.MultivariateT(torch.Size([n_samples, 1]), loc=loc,
+                                   scale_tril=scale, df=3, event_dim=1)
         _, p = stats.ks_1samp(dist().detach().squeeze(-1),
                               np_cdf, mode='exact')
         assert p > 0.3
