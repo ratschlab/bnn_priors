@@ -39,19 +39,34 @@ class ReshapeTransform(td.Transform):
 
 
 class MultivariateT(Prior):
-    def __init__(self, shape, loc, scale_tril, df=3, event_dim=None, permute=None):
+    def __init__(self, shape, loc, scale_tril, df=3, event_dim=None,
+                 permute=None):
         if event_dim is None:
             event_dim = len(shape)
+        assert event_dim >= 1
         event_shape = torch.Size(shape)[len(shape)-event_dim:]
         assert len(event_shape) == event_dim
 
-        if isinstance(scale_tril, Number) or len(scale_tril.shape) == 0:
-            scale_tril = torch.eye(event_shape[-1]) * scale_tril
+        if isinstance(scale_tril, Number) or isinstance(loc, Number):
+            scale_tril = torch.ones([1, 1]) * scale_tril
             loc = torch.zeros([1]) + loc
-        super().__init__(shape=shape, loc=loc, scale_tril=scale_tril, df=df,
-                         event_shape=event_shape, permute=permute)
 
-    def _dist(self, loc, scale_tril, df, event_shape, permute):
+        correlation_len = scale_tril.shape[-1]
+        if event_shape[-1] != 1 and correlation_len == 1:
+            correlation_shape = torch.Size([*event_shape, 1])
+
+
+        
+
+        if correlation_dim == 0:
+            mvt_shape = torch.Size([1])
+        else:
+            mvt_shape = torch.Size([event_shape[-correlation_dim:].numel()])
+
+        super().__init__(shape=shape, loc=loc, scale_tril=scale_tril, df=df,
+                         event_shape=event_shape, mvt_shape=mvt_shape, permute=permute)
+
+    def _dist(self, loc, scale_tril, df, event_shape, mvt_shape, permute):
         return td.TransformedDistribution(
             distributions.MultivariateT(df=df, loc=loc, scale_tril=scale_tril,
                                         event_dim=len(event_shape)),
