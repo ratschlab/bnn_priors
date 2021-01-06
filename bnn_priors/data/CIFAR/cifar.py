@@ -175,8 +175,8 @@ class CIFAR10Augmented:
 class CIFAR10Small(CIFAR10Augmented):
     def __init__(self, dtype='float32', device="cpu", download=False, subset_size=5000):
         super().__init__(dtype=dtype, device=device, download=download)
-        self.norm.train.data = data.norm.train.data[:subset_size]
-        self.norm.train.targets = data.norm.train.targets[:subset_size]
-        self.norm.train_X = data.norm.train_X[:subset_size]
-        self.norm.train_y = data.norm.train_y[:subset_size]
+        self.norm.train.data = self.norm.train.data[:subset_size]
+        self.norm.train.targets = self.norm.train.targets[:subset_size]
+        self.norm.train_X = self.norm.train_X[:subset_size]
+        self.norm.train_y = self.norm.train_y[:subset_size]
         self.num_train_set = subset_size
