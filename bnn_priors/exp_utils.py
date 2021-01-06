@@ -41,6 +41,8 @@ def get_data(data: str, device: t.device):
         dataset = bnn_priors.data.CIFAR10(device=device)
     elif data == "cifar10_augmented":
         dataset = bnn_priors.data.CIFAR10Augmented(device=device)
+    elif data == "cifar10_small":
+        dataset = bnn_priors.data.CIFAR10Small(device=device)
     elif data == "mnist":
         dataset = bnn_priors.data.MNIST(device=device)
     elif data == "rotated_mnist":

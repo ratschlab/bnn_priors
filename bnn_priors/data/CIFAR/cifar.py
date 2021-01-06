@@ -6,7 +6,7 @@ import numpy as np
 from ..base import Dataset, DatasetFromTorch, load_all
 
 
-__all__ = ('CIFAR10','CIFAR10_C', 'SVHN', 'CIFAR10Augmented')
+__all__ = ('CIFAR10','CIFAR10_C', 'SVHN', 'CIFAR10Augmented', 'CIFAR10Small')
 
 
 class CIFAR10:
@@ -170,3 +170,13 @@ class CIFAR10Augmented:
         self.num_train_set = len(data_train)
         self.in_shape = t.Size([3, 32, 32])
         self.out_shape = t.Size([])
+
+
+class CIFAR10Small(CIFAR10Augmented):
+    def __init__(self, dtype='float32', device="cpu", download=False, subset_size=5000):
+        super().__init__(dtype=dtype, device=device, download=download)
+        self.norm.train.data = data.norm.train.data[:subset_size]
+        self.norm.train.targets = data.norm.train.targets[:subset_size]
+        self.norm.train_X = data.norm.train_X[:subset_size]
+        self.norm.train_y = data.norm.train_y[:subset_size]
+        self.num_train_set = subset_size
