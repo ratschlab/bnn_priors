@@ -187,3 +187,12 @@ class HMCRunnerReject(VerletSGLDRunnerReject):
         return mcmc.HMC(
             params=params,
             lr=self.learning_rate, num_data=self.eff_num_data)
+
+class SGLDRunnerReject(VerletSGLDRunnerReject):
+    def _make_optimizer(self, params):
+        assert not self.reject_samples
+
+        return mcmc.SGLD(
+            params=params,
+            lr=self.learning_rate, num_data=self.eff_num_data,
+            momentum=self.momentum, temperature=self.temperature)

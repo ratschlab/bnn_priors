@@ -86,6 +86,14 @@ get_model = ex.capture(exp_utils.get_model)
 
 @ex.capture
 def get_data(data, batch_size, _run):
+    if data == "empty":
+        dataset = exp_utils.get_data("UCI_boston", device())
+        dataset.norm.train = [(None, None)]
+        dataset.norm.test = [(None, None)]
+        dataset.unnorm.train = [(None, None)]
+        dataset.unnorm.test = [(None, None)]
+        return dataset
+
     if data[:9] == "synthetic":
         _, data, prior = data.split(".")
         dataset = get_data(data)
@@ -114,7 +122,7 @@ def main(inference, model, width, n_samples, warmup, init_method,
          burnin, skip, metrics_skip, cycles, temperature, momentum,
          precond_update, lr, batch_size, load_samples, save_samples,
          reject_samples, run_id, log_dir, sampling_decay, progressbar, _run, _log):
-    assert inference in ["SGLD", "HMC", "VerletSGLD", "OurHMC", "HMCReject", "VerletSGLDReject"]
+    assert inference in ["SGLD", "HMC", "VerletSGLD", "OurHMC", "HMCReject", "VerletSGLDReject", "SGLDReject"]
     assert width > 0
     assert n_samples > 0
     assert cycles > 0
@@ -188,6 +196,8 @@ def main(inference, model, width, n_samples, warmup, init_method,
                 runner_class = bnn_priors.inference_reject.VerletSGLDRunnerReject
             elif inference == "HMCReject":
                 runner_class = bnn_priors.inference_reject.HMCRunnerReject
+            elif inference == "SGLDReject":
+                runner_class = bnn_priors.inference_reject.SGLDRunnerReject
 
             assert (n_samples * skip) % cycles == 0
             sample_epochs = n_samples * skip // cycles

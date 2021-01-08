@@ -197,6 +197,8 @@ class SGLDRunner:
             self.model_saver.flush()
 
     def _evaluate_model(self, state_dict, step):
+        if len(self.dataloader_test) == 0:
+            return {}
         self.model.eval()
         state_dict = {k: v.unsqueeze(0) for k, v in state_dict.items()}
         results = evaluate_model(
