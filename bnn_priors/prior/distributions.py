@@ -170,6 +170,7 @@ class MultivariateT(MultivariateNormal):
         # `.view` provide that
         scale = scale.view(scale.size() + torch.Size([1] * len(self._event_shape)))
 
+        # bug: use matrix multiplication
         return self.loc + scale * _batch_mv(self._unbroadcasted_scale_tril, eps)
 
     def log_prob(self, value):

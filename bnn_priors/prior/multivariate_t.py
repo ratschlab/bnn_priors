@@ -54,19 +54,19 @@ class MultivariateT(Prior):
         correlation_len = scale_tril.shape[-1]
         if event_shape[-1] != 1 and correlation_len == 1:
             correlation_shape = torch.Size([*event_shape, 1])
-
-
-        
-
-        if correlation_dim == 0:
-            mvt_shape = torch.Size([1])
         else:
-            mvt_shape = torch.Size([event_shape[-correlation_dim:].numel()])
+            assert event_shape.numel() == loc.size(-1)
+            assert event_shape.numel() == scale_tril.size(-1)
+
+        # if correlation_dim == 0:
+        #     mvt_shape = torch.Size([1])
+        # else:
+        #     mvt_shape = torch.Size([event_shape[-correlation_dim:].numel()])
 
         super().__init__(shape=shape, loc=loc, scale_tril=scale_tril, df=df,
-                         event_shape=event_shape, mvt_shape=mvt_shape, permute=permute)
+                         event_shape=event_shape, permute=permute)
 
-    def _dist(self, loc, scale_tril, df, event_shape, mvt_shape, permute):
+    def _dist(self, loc, scale_tril, df, event_shape, permute):
         return td.TransformedDistribution(
             distributions.MultivariateT(df=df, loc=loc, scale_tril=scale_tril,
                                         event_dim=len(event_shape)),
