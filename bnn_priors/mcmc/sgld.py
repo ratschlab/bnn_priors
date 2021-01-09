@@ -70,9 +70,20 @@ class SGLD(torch.optim.Optimizer):
 
     @torch.no_grad()
     def step(self, closure: Optional[Callable[..., torch.Tensor]]=None,
-             calc_metrics=True):
+             calc_metrics=True, save_state=False):
+        assert save_state is False
         return self._step_internal(self._update_group_fn, self._step_fn,
                                    closure, calc_metrics=calc_metrics)
+    initial_step = step
+
+    @torch.no_grad()
+    def final_step(self, closure: Optional[Callable[..., torch.Tensor]]=None,
+                   calc_metrics=True, save_state=False):
+        assert save_state is False
+        return self._step_internal(self._update_group_fn, self._step_fn,
+                                   closure, calc_metrics=calc_metrics,
+                                   is_final=True)
+
 
     def _step_internal(self, update_group_fn, step_fn, closure, **step_fn_kwargs):
         loss = None
@@ -105,7 +116,8 @@ class SGLD(torch.optim.Optimizer):
         g['h'] = math.sqrt(g['lr'] / g['num_data'])
         g['noise_std'] = math.sqrt(2*(1 - g['momentum']) * g['temperature'])
 
-    def _step_fn(self, group, p, state, calc_metrics=True):
+    def _step_fn(self, group, p, state, calc_metrics=True, is_final=False):
+        """if is_final, do not change parameters or momentum"""
         M_rsqrt = self._preconditioner_default(state, p)
         d = p.numel()
 
@@ -115,27 +127,31 @@ class SGLD(torch.optim.Optimizer):
             if calc_metrics:
                 # NOTE: the momentum is from the previous time step
                 state['est_temperature'] = dot(momentum, momentum) / d
-            momentum.mul_(group['momentum']).add_(p.grad, alpha=-group['hn']*M_rsqrt)
+            if not is_final:
+                momentum.mul_(group['momentum']).add_(p.grad, alpha=-group['hn']*M_rsqrt)
         else:
-            momentum = p.grad.detach().mul(-group['hn']*M_rsqrt)
+            if not is_final:
+                momentum = p.grad.detach().mul(-group['hn']*M_rsqrt)
             if calc_metrics:
                 # TODO: make the momentum be from the previous time step
                 state['est_temperature'] = dot(momentum, momentum) / d
 
-        # Add noise to momentum
-        if group['temperature'] > 0:
-            momentum.add_(torch.randn_like(momentum), alpha=group['noise_std'])
+        if not is_final:
+            # Add noise to momentum
+            if group['temperature'] > 0:
+                momentum.add_(torch.randn_like(momentum), alpha=group['noise_std'])
 
         if calc_metrics:
             # NOTE: p and p.grad are from the same time step
             state['est_config_temp'] = dot(p, p.grad) * (group['num_data']/d)
 
-        # Take the gradient step
-        p.add_(momentum, alpha=group['h']*M_rsqrt)
+        if not is_final:
+            # Take the gradient step
+            p.add_(momentum, alpha=group['h']*M_rsqrt)
 
-        # RMSProp moving average
-        alpha = group['rmsprop_alpha']
-        state['square_avg'].mul_(alpha).addcmul_(p.grad, p.grad, value=1 - alpha)
+            # RMSProp moving average
+            alpha = group['rmsprop_alpha']
+            state['square_avg'].mul_(alpha).addcmul_(p.grad, p.grad, value=1 - alpha)
 
     @torch.no_grad()
     def update_preconditioner(self):

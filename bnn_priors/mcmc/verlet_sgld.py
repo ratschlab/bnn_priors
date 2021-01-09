@@ -192,7 +192,6 @@ class VerletSGLD(SGLD):
         if not is_final:
             p.add_(new_momentum, alpha=group['bh']*M_rsqrt)
 
-        # RMSProp moving average
-        alpha = group['rmsprop_alpha']
-        state['square_avg'].mul_(alpha).addcmul_(p.grad, p.grad, value=1 - alpha)
-
+            # RMSProp moving average
+            alpha = group['rmsprop_alpha']
+            state['square_avg'].mul_(alpha).addcmul_(p.grad, p.grad, value=1 - alpha)
