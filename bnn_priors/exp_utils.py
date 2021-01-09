@@ -240,8 +240,7 @@ def evaluate_model(model: bnn_priors.models.AbstractModel,
                    samples: Dict[str, t.Tensor],
                    likelihood_eval: bool, accuracy_eval: bool, calibration_eval: bool):
     lps = []
-    accs = []
-    probs = []
+    acc_data = []
 
     device = next(iter(model.parameters())).device
 
@@ -249,59 +248,74 @@ def evaluate_model(model: bnn_priors.models.AbstractModel,
         with t.no_grad():
             model.load_state_dict(sample)
             lps_sample = []
-            accs_sample = []
-            probs_sample = []
+            acc_data_sample = []
+
             for batch_x, batch_y in dataloader_test:
                 batch_x = batch_x.to(device)
                 batch_y = batch_y.to(device)
-                _, _, _, accs_batch, preds = model.split_potential_and_acc(batch_x, batch_y, 1)
+                preds = model(batch_x)
                 lps_batch = preds.log_prob(batch_y)
+                if isinstance(preds, t.distributions.Categorical):
+                    acc_data_batch = preds.logits # B,n_classes
+                elif isinstance(preds, t.distributions.Normal):
+                    acc_data_batch = preds.mean  # B,n_latent
+                else:
+                    raise ValueError(f"unknown likelihood {type(preds)}")
+
                 if calibration_eval:
                     if not isinstance(preds, t.distributions.Categorical):
                         raise ValueError("Cannot calculate calibration metrics "
                                          f"for predictions of type {type(preds)}")
-                    probs_batch = preds.probs
-                else:
-                    probs_batch = t.tensor([])
-                lps_sample.extend(list(lps_batch.cpu().numpy()))
-                accs_sample.extend(list(accs_batch.cpu().numpy()))
-                probs_sample.extend(list(probs_batch.cpu().numpy()))
+                lps_sample.extend(list(lps_batch.cpu().detach()))
+                acc_data_sample.extend(list(acc_data_batch.cpu().detach()))
             lps.append(lps_sample)
-            accs.append(accs_sample)
-            probs.append(probs_sample)
-            
-    lps = t.tensor(lps, dtype=t.float64)  # n_samples,len(dataset)
-    lps = lps.logsumexp(1) - math.log(lps.size(1))
-    accs = t.tensor(accs, dtype=t.float64)
-    accs = accs.mean(dim=1)
-    
+            acc_data.append(acc_data_sample)
+
+    # n_samples,len(dataset)
+    lps = t.tensor(lps, dtype=t.float64)
+    E, N = lps.shape
+
+    lps_each_model = lps.logsumexp(1) - math.log(lps.size(1))
+    lp_ensemble = lps_each_model.logsumexp(0) - math.log(lps_each_model.size(0))
+
+    # n_samples,len(dataset), (n_classes or n_outputs)
+    acc_data = t.tensor(acc_data, dtype=t.float64)
+    assert acc_data.size(0) == E
+    assert acc_data.size(1) == N
+
+    labels = dataloader_test.dataset.tensors[1].cpu()
+    assert labels.size(0) == N
+    # Either labels have a last dimension (regression) or they are scalars
+    # (classification)
+    if labels.dim() == 2:
+        assert labels.size(1) == acc_data.size(2)
+    else:
+        assert labels.dim() == 1
+
+    if isinstance(preds, t.distributions.Categorical):
+        ensemble_preds = acc_data.logsumexp(0) - math.log(acc_data.size(0))
+    elif isinstance(preds, t.distributions.Normal):
+        ensemble_preds = acc_data.mean(0)
+    acc_or_mse_ensemble = model.acc_mse(ensemble_preds, labels).mean(0)
+    acc_or_mse_last = model.acc_mse(acc_data[-1], labels).mean(0)
+
     if calibration_eval:
-        labels = dataloader_test.dataset.tensors[1].cpu().numpy()
-        probs_mean = t.tensor(probs).mean(dim=0)
+        probs_mean = ensemble_preds.exp().numpy()
         eces = ece(labels, probs_mean)
         aces = ace(labels, probs_mean)
         rmsces = rmsce(labels, probs_mean)
     
     results = {}
     if likelihood_eval:
-        results["lp_ensemble"] = lps.logsumexp(0).item() - math.log(len(lps))
-        # lps.exp().square().mean(0).sqrt().log() / math.sqrt(len(lps))
-        results["lp_ensemble_std"] = lps.mul(2.).logsumexp(0).div(2.).item()
-        results["lp_ensemble_stderr"] = results["lp_ensemble_std"] / math.sqrt(len(lps))
-        results["lp_mean"] =  lps.mean().item()
-        results["lp_std"] =  lps.std().item()
-        results["lp_stderr"] = lps.std().item() / math.sqrt(len(lps))
-        results["lp_last"] = lps[-1].item()
+        results["lp_ensemble"] = lp_ensemble.item()
+        results["lp_last"] = lps_each_model[-1].item()
     if accuracy_eval:
-        results["acc_mean"] = accs.mean().item()
-        results["acc_std"] =  accs.std().item()
-        results["acc_stderr"] = accs.std().item() / math.sqrt(len(accs))
-        results["acc_last"] = accs[-1].item()
+        results["acc_ensemble] = acc_or_mse_ensemble.item()
+        results["acc_last"] = acc_or_mse_last.item()
     if calibration_eval:
         results["ece"] = eces.mean().item()
         results["ace"] = aces.mean().item()
         results["rmsce"] = rmsces.mean().item()
-
     return results
 
 
