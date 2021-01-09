@@ -310,7 +310,7 @@ def evaluate_model(model: bnn_priors.models.AbstractModel,
         results["lp_ensemble"] = lp_ensemble.item()
         results["lp_last"] = lps_each_model[-1].item()
     if accuracy_eval:
-        results["acc_ensemble] = acc_or_mse_ensemble.item()
+        results["acc_ensemble"] = acc_or_mse_ensemble.item()
         results["acc_last"] = acc_or_mse_last.item()
     if calibration_eval:
         results["ece"] = eces.mean().item()
