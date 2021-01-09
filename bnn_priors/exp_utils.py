@@ -239,26 +239,34 @@ def evaluate_model(model: bnn_priors.models.AbstractModel,
                    dataloader_test: Iterable[Tuple[t.Tensor, t.Tensor]],
                    samples: Dict[str, t.Tensor],
                    likelihood_eval: bool, accuracy_eval: bool, calibration_eval: bool):
-    lps = []
-    acc_data = []
+    labels = dataloader_test.dataset.tensors[1].cpu()
+    N, *possibly_D = labels.shape
+    E = _n_samples_dict(samples)
+
+    if len(possibly_D) == 0:
+        n_classes_or_funs = labels.max().item() + 1
+    else:
+        n_classes_or_funs, = possibly_D
+
+    lps = t.zeros((E, N), dtype=t.float64, device='cpu')
+    acc_data = t.zeros((E, N, n_classes_or_funs), dtype=t.float64, device='cpu')
 
     device = next(iter(model.parameters())).device
 
-    for sample in sample_iter(samples):
+    for sample_i, sample in enumerate(sample_iter(samples)):
         with t.no_grad():
             model.load_state_dict(sample)
-            lps_sample = []
-            acc_data_sample = []
-
+            i = 0
             for batch_x, batch_y in dataloader_test:
                 batch_x = batch_x.to(device)
                 batch_y = batch_y.to(device)
                 preds = model(batch_x)
-                lps_batch = preds.log_prob(batch_y)
                 if isinstance(preds, t.distributions.Categorical):
                     acc_data_batch = preds.logits # B,n_classes
+                    lps_batch = preds.log_prob(batch_y)
                 elif isinstance(preds, t.distributions.Normal):
                     acc_data_batch = preds.mean  # B,n_latent
+                    lps_batch = preds.log_prob(batch_y).sum(-1)
                 else:
                     raise ValueError(f"unknown likelihood {type(preds)}")
 
@@ -266,41 +274,37 @@ def evaluate_model(model: bnn_priors.models.AbstractModel,
                     if not isinstance(preds, t.distributions.Categorical):
                         raise ValueError("Cannot calculate calibration metrics "
                                          f"for predictions of type {type(preds)}")
-                lps_sample.extend(list(lps_batch.cpu().detach()))
-                acc_data_sample.extend(list(acc_data_batch.cpu().detach()))
-            lps.append(lps_sample)
-            acc_data.append(acc_data_sample)
 
-    # n_samples,len(dataset)
-    lps = t.tensor(lps, dtype=t.float64)
-    E, N = lps.shape
+                next_i = i+len(batch_x)
+                lps[sample_i, i:next_i] = lps_batch.detach()
+                acc_data[sample_i, i:next_i, :] = acc_data_batch.detach()
+                i = next_i
 
-    lps_each_model = lps.logsumexp(1) - math.log(lps.size(1))
-    lp_ensemble = lps_each_model.logsumexp(0) - math.log(lps_each_model.size(0))
+    def _log_space_mean(tensor, dim):
+        return tensor.logsumexp(dim) - math.log(tensor.size(dim))
 
-    # n_samples,len(dataset), (n_classes or n_outputs)
-    acc_data = t.tensor(acc_data, dtype=t.float64)
-    assert acc_data.size(0) == E
-    assert acc_data.size(1) == N
+    # lps: n_samples,len(dataset)
+    lps_each_model = lps.mean(1)
+    lp_ensemble = _log_space_mean(lps, 0).mean()
 
-    labels = dataloader_test.dataset.tensors[1].cpu()
-    assert labels.size(0) == N
-    # Either labels have a last dimension (regression) or they are scalars
-    # (classification)
-    if labels.dim() == 2:
-        assert labels.size(1) == acc_data.size(2)
-    else:
-        assert labels.dim() == 1
-
+    # acc_data: n_samples,len(dataset), (n_classes or n_outputs)
     if isinstance(preds, t.distributions.Categorical):
-        ensemble_preds = acc_data.logsumexp(0) - math.log(acc_data.size(0))
+        ensemble_preds = t.distributions.Categorical(logits=_log_space_mean(acc_data, 0))
+        last_preds = t.distributions.Categorical(logits=acc_data[-1])
+
+        assert t.allclose(ensemble_preds.log_prob(labels).mean(0),
+                          lp_ensemble)
+        assert t.allclose(last_preds.log_prob(labels).mean(0), lps_each_model[-1])
+
     elif isinstance(preds, t.distributions.Normal):
-        ensemble_preds = acc_data.mean(0)
+        ensemble_preds = t.distributions.Normal(acc_data.mean(0), t.ones_like(acc_data[0]))
+        last_preds = t.distributions.Normal(acc_data[-1], ensemble_preds.scale)
+
     acc_or_mse_ensemble = model.acc_mse(ensemble_preds, labels).mean(0)
-    acc_or_mse_last = model.acc_mse(acc_data[-1], labels).mean(0)
+    acc_or_mse_last = model.acc_mse(last_preds, labels).mean(0)
 
     if calibration_eval:
-        probs_mean = ensemble_preds.exp().numpy()
+        probs_mean = ensemble_preds.probs.numpy()
         eces = ece(labels, probs_mean)
         aces = ace(labels, probs_mean)
         rmsces = rmsce(labels, probs_mean)
