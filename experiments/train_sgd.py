@@ -150,6 +150,7 @@ samples = load_samples("./samples.pt", idx=slice(args.skip_first, None, None))
 del samples["steps"]
 del samples["timestamps"]
 
+model.eval()
 result = evaluate_model(model, testloader, samples, likelihood_eval=True,
                         accuracy_eval=True, calibration_eval=calibration_eval)
 

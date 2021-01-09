@@ -60,6 +60,7 @@ def config():
     burnin = 2000
     skip = 5
     metrics_skip = 10
+    skip_first = 0  # for evaluating accuracy et al at the end
     cycles =  5
     temperature = 1.0
     sampling_decay = "cosine"
@@ -118,10 +119,10 @@ def evaluate_model(model, dataloader_test, samples):
 
 
 @ex.automain
-def main(inference, model, width, n_samples, warmup, init_method,
-         burnin, skip, metrics_skip, cycles, temperature, momentum,
-         precond_update, lr, batch_size, load_samples, save_samples,
-         reject_samples, run_id, log_dir, sampling_decay, progressbar, _run, _log):
+def main(inference, model, width, n_samples, warmup, init_method, burnin, skip,
+         metrics_skip, cycles, temperature, momentum, precond_update, lr,
+         batch_size, load_samples, save_samples, reject_samples, run_id,
+         log_dir, sampling_decay, progressbar, skip_first, _run, _log):
     assert inference in ["SGLD", "HMC", "VerletSGLD", "OurHMC", "HMCReject", "VerletSGLDReject", "SGLDReject"]
     assert width > 0
     assert n_samples > 0
@@ -216,6 +217,7 @@ def main(inference, model, width, n_samples, warmup, init_method,
 
         mcmc.run(progressbar=progressbar)
     samples = mcmc.get_samples()
+    samples = {k: v[skip_first:] for k, v in samples.items()}
     model.eval()
 
     batch_size = min(batch_size, len(data.norm.test))
