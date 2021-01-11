@@ -41,6 +41,8 @@ def get_data(data: str, device: t.device):
         dataset = bnn_priors.data.CIFAR10(device=device)
     elif data == "cifar10_augmented":
         dataset = bnn_priors.data.CIFAR10Augmented(device=device)
+    elif data == "cifar10_small":
+        dataset = bnn_priors.data.CIFAR10Small(device=device)
     elif data == "mnist":
         dataset = bnn_priors.data.MNIST(device=device)
     elif data == "rotated_mnist":
@@ -239,7 +241,12 @@ def evaluate_model(model: bnn_priors.models.AbstractModel,
                    dataloader_test: Iterable[Tuple[t.Tensor, t.Tensor]],
                    samples: Dict[str, t.Tensor],
                    likelihood_eval: bool, accuracy_eval: bool, calibration_eval: bool):
-    labels = dataloader_test.dataset.tensors[1].cpu()
+    if hasattr(dataloader_test.dataset, "tensors"):
+        labels = dataloader_test.dataset.tensors[1].cpu()
+    elif hasattr(dataloader_test.dataset, "targets"):
+        labels = t.tensor(dataloader_test.dataset.targets).cpu()
+    else:
+        raise ValueError("I cannot find the labels in the dataloader.")
     N, *possibly_D = labels.shape
     E = _n_samples_dict(samples)
 
