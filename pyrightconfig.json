@@ -1,0 +1,8 @@
+{
+    "venvPath": "/Users/adria/venv",
+    "executionEnvironments": [
+    {
+        "venv": "py38"
+    }
+    ]
+}

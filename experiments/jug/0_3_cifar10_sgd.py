@@ -27,3 +27,6 @@ jug.set_jugdir(str(base_dir/"jugdir"))
 for i in range(10):
     log_dir = base_dir/str(i)
     train_sgd(str(log_dir), model="thin_resnet18", data="cifar10")
+
+train_sgd(str(base_dir/"mom1"), model="thin_resnet18", data="cifar10",
+          momentum=1.0)
