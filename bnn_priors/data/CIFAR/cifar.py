@@ -175,6 +175,8 @@ class CIFAR10Augmented:
 class CIFAR10Small(CIFAR10Augmented):
     def __init__(self, dtype='float32', device="cpu", download=False, subset_size=5000):
         super().__init__(dtype=dtype, device=device, download=download)
+        # Dataset in order is not exactly balanced, but close enough.
+        # for subset_size=5000 we have, {6: 519, 9: 498, 4: 519, 1: 460, 2: 519, 7: 486, 8: 520, 3: 486, 5: 488, 0: 505}
         self.norm.train.data = self.norm.train.data[:subset_size]
         self.norm.train.targets = self.norm.train.targets[:subset_size]
         self.norm.train_X = self.norm.train_X[:subset_size]
