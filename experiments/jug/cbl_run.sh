@@ -25,8 +25,8 @@ for host in huygens cartwright poisson vapnik gosset julia fields \
     if [ "$command" = "skip" ]; then
         echo "Skipping..."
     elif [ "$command" = "" ]; then
-        ssh "$host" "tmux new-window -n $1; tmux send-keys \"workon py37\" ENTER \"jug execute $MY_PATH/$1\" ENTER"
+        ssh "$host" "tmux new-window -n $1; tmux send-keys \"workon py37\" ENTER \"jug execute --keep-going $MY_PATH/$1\" ENTER"
     else
-        ssh "$host" "tmux new-window -n $1; tmux send-keys \"export CUDA_VISIBLE_DEVICES=$command\" ENTER \"workon py37\" ENTER \"jug execute $MY_PATH/$1\" ENTER"
+        ssh "$host" "tmux new-window -n $1; tmux send-keys \"export CUDA_VISIBLE_DEVICES=$command\" ENTER \"workon py37\" ENTER \"jug execute --keep-going $MY_PATH/$1\" ENTER"
     fi
 done

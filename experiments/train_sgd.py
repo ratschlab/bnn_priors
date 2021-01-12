@@ -100,9 +100,12 @@ def train(epoch, metrics_saver):
 
     with torch.no_grad():
         train_loss = loss.item()
-        _, predicted = outputs.max(1)
         total = targets.size(0)
-        correct = predicted.eq(targets).sum().item()
+        if isinstance(criterion, nn.CrossEntropyLoss):
+            _, predicted = outputs.max(1)
+            correct = predicted.eq(targets).sum().item()
+        else:
+            correct = -loss * targets.size(0)  # sum of square errors
     metrics_saver.add_scalar("loss", train_loss, epoch)
     metrics_saver.add_scalar("acc", correct/total, epoch)
     print(f"Epoch {epoch}: loss={train_loss/(batch_idx+1)}, acc={correct/total} ({correct}/{total})")

@@ -38,7 +38,7 @@ def train_sgd(log_dir, **config):
             time.sleep(0.1 + random.random()*0.1)
 
     script = experiments_dir / "train_sgd.py"
-    args = [sys.executable,  "-m", "pdb", script,
+    args = [sys.executable, script,
             *[f"--{k}={v}" for k, v in config.items()]]
     print(f"Running in cwd={log_dir} " + " ".join(map(repr, args)))
     complete = subprocess.run(args, cwd=log_dir)
@@ -55,10 +55,9 @@ jug.set_jugdir(str(log_dir/"jugdir"))
 
 prior = "gaussian"
 temps=( 1.0, )
-datasets=("UCI_protein", "UCI_boston")
-model = "densenet"
+datasets=("mnist", "UCI_protein", "UCI_boston")
 learning_rates=(0.01, 0.001, 0.0001, 1e-5)
-batch_sizes=(125, None)
+batch_sizes=(125, 125, None)
 sampling_decay="flat"
 temp=1.0
 
@@ -76,6 +75,7 @@ momenta = [math.exp(-gamma * math.sqrt(lr / 50000)) for lr in learning_rates]
 
 # Also ran the same experiments but with 60 cycles of length 50 each
 for dataset, batch_size in zip(datasets, batch_sizes):
+    model = ("classificationconvnet" if dataset == "mnist" else "densenet")
     if batch_size is None:
         n_epochs = 10000
     else:
