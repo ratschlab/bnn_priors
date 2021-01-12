@@ -131,34 +131,29 @@ class MultivariateT(MultivariateNormal):
     has_rsample = True
 
     def __init__(self,
+                 event_shape: torch.Size,
                  df=3.,
                  loc=0.,
                  covariance_matrix=None,
                  precision_matrix=None,
                  scale_tril=None,
-                 event_dim=1,
                  validate_args=None):
-        assert isinstance(event_dim, int) and event_dim > 0
         super().__init__(loc=loc,
                          covariance_matrix=covariance_matrix,
                          precision_matrix=precision_matrix,
                          scale_tril=scale_tril,
                          validate_args=validate_args)
 
-        assert event_dim >= len(self._event_shape)
+        # self._event_shape is inferred from the mean vector and covariance matrix.
+        assert len(event_shape) >= len(self._event_shape)
+        assert event_shape[-1] == self._event_shape[-1]
+
         total_shape = list(self._batch_shape) + list(self._event_shape)
-        event_shape = total_shape[-event_dim:]
-        batch_shape = total_shape[:-event_dim]
-        if event_dim > len(event_shape):
-            event_shape = [1]*(event_dim - len(event_shape)) + event_shape
-        assert len(event_shape) == event_dim
-        assert len(event_shape) + len(batch_shape) == max(event_dim, len(total_shape))
-        self._batch_shape = torch.Size(batch_shape)
+        self._batch_shape = torch.Size(total_shape[:-len(event_shape)])
         self._event_shape = torch.Size(event_shape)
 
         self.df, _ = broadcast_all(df, torch.ones(self._batch_shape))
         self.gamma = Gamma(concentration=self.df/2., rate=1/2)
-
 
     def rsample(self, sample_shape=torch.Size()):
         shape = self._extended_shape(sample_shape)
@@ -170,7 +165,6 @@ class MultivariateT(MultivariateNormal):
         # `.view` provide that
         scale = scale.view(scale.size() + torch.Size([1] * len(self._event_shape)))
 
-        # bug: use matrix multiplication
         return self.loc + scale * _batch_mv(self._unbroadcasted_scale_tril, eps)
 
     def log_prob(self, value):

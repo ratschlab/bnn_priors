@@ -44,31 +44,42 @@ class MultivariateT(Prior):
         if event_dim is None:
             event_dim = len(shape)
         assert event_dim >= 1
-        event_shape = torch.Size(shape)[len(shape)-event_dim:]
-        assert len(event_shape) == event_dim
+        out_event_shape = torch.Size(shape)[len(shape)-event_dim:]
+        assert len(out_event_shape) == event_dim
 
         if isinstance(scale_tril, Number) or isinstance(loc, Number):
             scale_tril = torch.ones([1, 1]) * scale_tril
             loc = torch.zeros([1]) + loc
 
-        correlation_len = scale_tril.shape[-1]
-        if event_shape[-1] != 1 and correlation_len == 1:
-            correlation_shape = torch.Size([*event_shape, 1])
-        else:
-            assert event_shape.numel() == loc.size(-1)
-            assert event_shape.numel() == scale_tril.size(-1)
+        correlation_size = scale_tril.size(-1)
+        assert loc.size(-1) == correlation_size
 
-        # if correlation_dim == 0:
-        #     mvt_shape = torch.Size([1])
-        # else:
-        #     mvt_shape = torch.Size([event_shape[-correlation_dim:].numel()])
+        if correlation_size == 1:
+            if out_event_shape[-1] == 1:
+                event_shape = out_event_shape
+            else:
+                event_shape = torch.Size([*out_event_shape, 1])
+        else:
+            # put dimensions of out_event_shape together until they are as large
+            # as the covariance matrix / mean.
+            size = 1
+            coincides = False
+            # iterate starting from the end
+            for i, size_i in reversed(list(enumerate(out_event_shape))):
+                size *= size_i
+                if size == correlation_size:
+                    coincides = True
+                    last_idx = i
+                    break
+            assert coincides
+            event_shape = torch.Size([*out_event_shape[:last_idx], correlation_size])
 
         super().__init__(shape=shape, loc=loc, scale_tril=scale_tril, df=df,
-                         event_shape=event_shape, permute=permute)
+                         event_shape=event_shape,
+                         out_event_shape=out_event_shape, permute=permute)
 
-    def _dist(self, loc, scale_tril, df, event_shape, permute):
+    def _dist(self, loc, scale_tril, df, event_shape, out_event_shape, permute):
         return td.TransformedDistribution(
             distributions.MultivariateT(df=df, loc=loc, scale_tril=scale_tril,
-                                        event_dim=len(event_shape)),
-            ReshapeTransform(torch.Size([event_shape.numel()]), event_shape,
-                             permute=permute))
+                                        event_shape=event_shape),
+            ReshapeTransform(event_shape, out_event_shape, permute=permute))

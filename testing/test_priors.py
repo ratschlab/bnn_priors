@@ -267,26 +267,26 @@ class TestMultivariateT(unittest.TestCase):
         maha = (half.transpose(-1, -2) @ half).squeeze(-1).squeeze(-1)
         half_log_det = L.diagonal(dim1=-2, dim2=-1).log().sum(-1)
         assert torch.allclose(
-            MVT(df, mean, cov, event_dim=1).log_prob(x),
+            MVT(torch.Size([D]), df, mean, cov).log_prob(x),
             partial_t_log_pdf(D, df, half_log_det, maha))
 
         maha = maha.sum(-1)
         half_log_det = half_log_det.sum(-1)
         df = df.squeeze(-1)
         assert torch.allclose(
-            MVT(df, mean, cov, event_dim=2).log_prob(x),
+            MVT(torch.Size([M, D]), df, mean, cov).log_prob(x),
             partial_t_log_pdf(x.size()[-2:].numel(), df, half_log_det, maha))
 
         maha = maha.sum(-1)
         half_log_det = half_log_det.sum(-1)
         assert torch.allclose(
-            MVT(df[0], mean, cov, event_dim=3).log_prob(x),
+            MVT(torch.Size([N, M, D]), df[0], mean, cov).log_prob(x),
             partial_t_log_pdf(x.size()[-3:].numel(), df[0], half_log_det, maha))
 
         maha = maha.sum(-1)
         half_log_det = half_log_det*x.size(0)
         assert torch.allclose(
-            MVT(df[0], mean, cov, event_dim=4).log_prob(x),
+            MVT(x.size(), df[0], mean, cov).log_prob(x),
             partial_t_log_pdf(x.numel(), df[0], half_log_det, maha))
 
 
@@ -299,5 +299,5 @@ class TestMultivariateT(unittest.TestCase):
         maha = (half.transpose(-1, -2) @ half).squeeze(-1).squeeze(-1).sum((-1, -2))
         half_log_det = L.diagonal(dim1=-2, dim2=-1).log().sum((-1, -2, -3)) * M
         assert torch.allclose(
-            MVT(df[0], mean, cov, event_dim=3).log_prob(x),
+            MVT(cov.size()[-3:], df[0], mean, cov).log_prob(x),
             partial_t_log_pdf(x.size()[-3:].numel(), df[0], half_log_det, maha))
