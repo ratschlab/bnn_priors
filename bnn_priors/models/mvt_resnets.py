@@ -98,5 +98,5 @@ def DecreasingMVTGoogleResNet(softmax_temp=1., depth=20, num_classes=10,
 
             mod = prior.MultivariateT(shape, loc, scale_tril, df=df,
                                       event_dim=event_dim, permute=permute)
-            named_modules[parent_key].register_module(prior_mod_name, mod)
+            named_modules[parent_key].add_module(prior_mod_name, mod)
     return net

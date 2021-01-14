@@ -9,43 +9,22 @@ from numbers import Number
 
 __all__ = ('MultivariateT',)
 
-class ReshapeTransform(td.Transform):
-    domain = td.constraints.real
-    codomain = td.constraints.real
-    bijective = True
-
-    def __init__(self, in_event_shape, out_event_shape, permute=None, cache_size=0):
-        super().__init__(cache_size=cache_size)
-        self.event_dim = len(out_event_shape)
-        self.out_event_shape = out_event_shape
-        self.in_event_shape = in_event_shape
-        self.permute = permute
-
-    def log_abs_det_jacobian(self, x, y):
-        return torch.zeros((), device=x.device, dtype=x.dtype)
-
-    def _call(self, x):
-        batch_shape = x.size()[:-len(self.in_event_shape)]
-        if self.permute is not None:
-            x = x.permute(*self.permute)
-        return x.view(batch_shape + self.out_event_shape)
-
-    def _inverse(self, y):
-        batch_shape = y.size()[:-len(self.out_event_shape)]
-        y = y.view(batch_shape + self.in_event_shape)
-        if self.permute is not None:
-            y = y.permute(*self.permute)  # permutation-lists are their own inverse
-        return y
-
 
 class MultivariateT(Prior):
     def __init__(self, shape, loc, scale_tril, df=3, event_dim=None,
                  permute=None):
         if event_dim is None:
             event_dim = len(shape)
+        if permute is None:
+            permuted_shape = shape
+            permute = list(range(len(shape)))
+        else:
+            permuted_shape = torch.Size([shape[i] for i in permute])
+
         assert event_dim >= 1
-        out_event_shape = torch.Size(shape)[len(shape)-event_dim:]
+        out_event_shape = torch.Size(permuted_shape)[len(permuted_shape)-event_dim:]
         assert len(out_event_shape) == event_dim
+        batch_shape = torch.Size(permuted_shape)[:len(permuted_shape)-event_dim]
 
         if isinstance(scale_tril, Number) or isinstance(loc, Number):
             scale_tril = torch.ones([1, 1]) * scale_tril
@@ -75,11 +54,23 @@ class MultivariateT(Prior):
             event_shape = torch.Size([*out_event_shape[:last_idx], correlation_size])
 
         super().__init__(shape=shape, loc=loc, scale_tril=scale_tril, df=df,
-                         event_shape=event_shape,
-                         out_event_shape=out_event_shape, permute=permute)
+                         event_shape=event_shape, out_event_shape=out_event_shape,
+                         permute=permute, batch_shape=batch_shape)
 
-    def _dist(self, loc, scale_tril, df, event_shape, out_event_shape, permute):
-        return td.TransformedDistribution(
-            distributions.MultivariateT(df=df, loc=loc, scale_tril=scale_tril,
-                                        event_shape=event_shape),
-            ReshapeTransform(event_shape, out_event_shape, permute=permute))
+    def _dist(self, loc, scale_tril, df, event_shape, **_kwargs):
+        return distributions.MultivariateT(
+            df=df, loc=loc, scale_tril=scale_tril, event_shape=event_shape)
+
+    def _sample_value(self, shape: torch.Size):
+        dist = self._dist_obj()
+        x = dist.sample(sample_shape=self.batch_shape)
+        # Make sure the tensor that goes into the nn.Parameter is contiguous.
+        return x.view(self.batch_shape + self.out_event_shape).permute(*self.permute).contiguous()
+
+    def log_prob(self) -> torch.Tensor:
+        # We do the reshaping here in the Prior class because the pytorch API
+        # for Transforms does not easily allow for an input and output of the
+        # transform with a different number of dimensions, or a different shape.
+        p = self.p.permute(*self.permute).view(self.batch_shape + self.event_shape)
+        # p is not contiguous, but log_prob typically does not care.
+        return self._dist_obj().log_prob(p).sum()

@@ -129,6 +129,7 @@ class MultivariateT(MultivariateNormal):
                        'scale_tril': constraints.lower_cholesky}
     support = constraints.real
     has_rsample = True
+    expand = NotImplemented
 
     def __init__(self,
                  event_shape: torch.Size,
@@ -145,7 +146,8 @@ class MultivariateT(MultivariateNormal):
                          validate_args=validate_args)
 
         # self._event_shape is inferred from the mean vector and covariance matrix.
-        assert len(event_shape) >= len(self._event_shape)
+        if not len(event_shape) >= len(self._event_shape):
+            raise NotImplementedError("non-elliptical MVT not in this class")
         assert event_shape[-1] == self._event_shape[-1]
 
         total_shape = list(self._batch_shape) + list(self._event_shape)
