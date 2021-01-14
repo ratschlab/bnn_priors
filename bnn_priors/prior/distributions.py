@@ -146,10 +146,14 @@ class MultivariateT(MultivariateNormal):
                          validate_args=validate_args)
 
         # self._event_shape is inferred from the mean vector and covariance matrix.
-        if not len(event_shape) >= len(self._event_shape):
+        old_event_shape = self._event_shape
+        if not len(event_shape) >= len(old_event_shape):
             raise NotImplementedError("non-elliptical MVT not in this class")
-        assert event_shape[-1] == self._event_shape[-1]
+        assert len(event_shape) >= 1
+        assert event_shape[-len(old_event_shape):] == old_event_shape
 
+        # Cut dimensions from the end of `batch_shape` so the `total_shape` is
+        # the same
         total_shape = list(self._batch_shape) + list(self._event_shape)
         self._batch_shape = torch.Size(total_shape[:-len(event_shape)])
         self._event_shape = torch.Size(event_shape)

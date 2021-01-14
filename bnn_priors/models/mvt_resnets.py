@@ -5,7 +5,6 @@ import torch.nn.functional as F
 from .google_resnet import ResNet
 from .. import prior
 
-import pandas as pd
 import numpy as np
 from pathlib import Path
 
@@ -14,7 +13,7 @@ def DataDrivenMVTGoogleResNet(softmax_temp=1., depth=20, num_classes=10,
                               bn=True):
     assert depth == 20, "We only have data for depth=20"
 
-    mvt = pd.read_pickle(Path(__file__).parent/"cifar10_opt_mvt.pkl.gz")
+    mvt = torch.load(Path(__file__).parent/"cifar10_opt_mvt.pkl")
     net = ResNet(softmax_temp=softmax_temp, depth=depth,
                  num_classes=num_classes, bn=bn)
     named_modules = dict(net.named_modules())
@@ -30,7 +29,7 @@ def DataDrivenMVTGoogleResNet(softmax_temp=1., depth=20, num_classes=10,
         is_conv = (len(shape) == 4)
         if is_conv and params["event_dim"] == "t":
             permute = (1, 0, 2, 3)
-            event_dim = 2
+            event_dim = 3
         else:
             permute = None
             try:
@@ -39,6 +38,10 @@ def DataDrivenMVTGoogleResNet(softmax_temp=1., depth=20, num_classes=10,
                 raise ValueError(f"`event_dim` for key `{key}` raised {e}")
         df = F.softplus(params["df"]).item()
 
+        # the network still knows how to calculate forward passes after
+        # replacing its Prior modules, because Prior modules are usually leaves,
+        # and only contain information on how to calculate a parameter, not the
+        # forward pass itself.
         named_modules[parent].add_module(
             prior_mod_name,
             prior.MultivariateT(shape, params["loc"], params["scale_tril"],
@@ -71,7 +74,7 @@ def DecreasingMVTGoogleResNet(softmax_temp=1., depth=20, num_classes=10,
         is_conv = (len(shape) == 4)
         if is_conv:
             permute = (1, 0, 2, 3)
-            event_dim = 2
+            event_dim = 3
         else:
             permute = None
             event_dim = len(shape)
@@ -99,5 +102,9 @@ def DecreasingMVTGoogleResNet(softmax_temp=1., depth=20, num_classes=10,
 
             mod = prior.MultivariateT(shape, loc, scale_tril, df=df,
                                       event_dim=event_dim, permute=permute)
+            # the network still knows how to calculate forward passes after
+            # replacing its Prior modules, because Prior modules are usually leaves,
+            # and only contain information on how to calculate a parameter, not the
+            # forward pass itself.
             named_modules[parent_key].add_module(prior_mod_name, mod)
     return net

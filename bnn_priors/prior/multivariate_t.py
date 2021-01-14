@@ -30,8 +30,8 @@ class MultivariateT(Prior):
             scale_tril = torch.ones([1, 1]) * scale_tril
             loc = torch.zeros([1]) + loc
 
-        correlation_size = scale_tril.size(-1)
-        assert loc.size(-1) == correlation_size
+        # broadcast loc and scale_tril, check size of last dimension
+        correlation_size = td.MultivariateNormal(loc, scale_tril=scale_tril).event_shape[-1]
 
         if correlation_size == 1:
             if out_event_shape[-1] == 1:
@@ -40,7 +40,7 @@ class MultivariateT(Prior):
                 event_shape = torch.Size([*out_event_shape, 1])
         else:
             # put dimensions of out_event_shape together until they are as large
-            # as the covariance matrix / mean.
+            # as the covariance matrix / mean, i.e. `correlation_size`
             size = 1
             coincides = False
             # iterate starting from the end
