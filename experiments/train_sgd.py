@@ -7,11 +7,19 @@ import torch.nn as nn
 import torch.optim as optim
 import torch.backends.cudnn as cudnn
 import json
+import math
+import atexit
 
 import argparse
 
-from bnn_priors.exp_utils import HDF5Metrics, HDF5ModelSaver, get_data, get_model, he_uniform_initialize, evaluate_model
+from bnn_priors.exp_utils import (HDF5Metrics, HDF5ModelSaver, get_data,
+                                  get_model, he_uniform_initialize,
+                                  evaluate_model, load_samples)
 
+def optional_int(s):
+    if s == "None":
+        return None
+    return int(s)
 
 parser = argparse.ArgumentParser(description='PyTorch CIFAR10 Training')
 parser.add_argument('--lr', default=0.05, type=float, help='learning rate')
@@ -20,9 +28,11 @@ parser.add_argument('--weight_decay', default=0.0, type=float, help='weight deca
 parser.add_argument('--model', default="thin_resnet18", type=str, help='name of model')
 parser.add_argument('--data', default="cifar10_augmented", type=str, help='name of data set')
 parser.add_argument('--width', default=64, type=int, help='width of nn architecture')
-parser.add_argument('--batch_size', default=128, type=int, help='train batch size')
+parser.add_argument('--batch_size', default=128, type=optional_int, help='train batch size')
 parser.add_argument('--sampling_decay', default="stairs", type=str, help='schedule of learning rate')
 parser.add_argument('--n_epochs', default=150*3, type=int, help='number of epochs to train for')
+parser.add_argument('--epochs_per_sample', default=50, type=int, help='number of epochs to skip between samples')
+parser.add_argument('--skip_first', default=3, type=int, help='number of epochs to skip between samples')
 args = parser.parse_args()
 
 with open("./config.json", "w") as f:
@@ -32,9 +42,14 @@ with open("./config.json", "w") as f:
 with open("./run.json", "w") as f:
     json.dump({"status": "RUNNING"}, f)
 
+@atexit.register
+def _error_exit():
+    with open("./run.json", "w") as f:
+        f.write('{"status": "FAILED"}\n')
+
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-best_acc = 0  # best test accuracy
+best_acc = -math.inf  # best test accuracy
 start_epoch = 0  # start from epoch 0 or last checkpoint epoch
 
 print('==> Preparing data..')
@@ -56,11 +71,15 @@ if device == torch.device('cuda'):
 
 he_uniform_initialize(model)  # We destroyed He init by using priors, bring it back
 
-criterion = nn.CrossEntropyLoss()
+if args.data.startswith("UCI"):
+    criterion = nn.MSELoss()
+else:
+    criterion = nn.CrossEntropyLoss()
+
 optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
 if args.sampling_decay == "stairs":
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, 150, 0.1)  # Decrease to 1/10 every 150 epochs
-if args.sampling_decay == "stairs2":
+elif args.sampling_decay == "stairs2":
     scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, [80, 120, 160, 180], 0.1)
 elif args.sampling_decay == "flat":
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, 2**30, 1.0)
@@ -81,9 +100,12 @@ def train(epoch, metrics_saver):
 
     with torch.no_grad():
         train_loss = loss.item()
-        _, predicted = outputs.max(1)
         total = targets.size(0)
-        correct = predicted.eq(targets).sum().item()
+        if isinstance(criterion, nn.CrossEntropyLoss):
+            _, predicted = outputs.max(1)
+            correct = predicted.eq(targets).sum().item()
+        else:
+            correct = -loss * targets.size(0)  # sum of square errors
     metrics_saver.add_scalar("loss", train_loss, epoch)
     metrics_saver.add_scalar("acc", correct/total, epoch)
     print(f"Epoch {epoch}: loss={train_loss/(batch_idx+1)}, acc={correct/total} ({correct}/{total})")
@@ -100,23 +122,24 @@ def test(epoch, metrics_saver, model_saver):
         for batch_idx, (inputs, targets) in enumerate(testloader):
             inputs, targets = inputs.to(device), targets.to(device)
             outputs = model.net(inputs)
-            loss = criterion(outputs, targets)
+            loss = criterion(outputs, targets).item()
 
-            test_loss += loss.item()
-            _, predicted = outputs.max(1)
+            test_loss += loss
             total += targets.size(0)
-            correct += predicted.eq(targets).sum().item()
+            if isinstance(criterion, nn.CrossEntropyLoss):
+                _, predicted = outputs.max(1)
+                correct += predicted.eq(targets).sum().item()
+            else:
+                correct -= loss * targets.size(0)  # sum of square errors
 
     metrics_saver.add_scalar("test/loss", test_loss/(batch_idx+1), epoch)
     metrics_saver.add_scalar("test/acc", correct/total, epoch)
     print(f"Epoch {epoch}: test_loss={test_loss/(batch_idx+1)}, test_acc={correct/total} ({correct}/{total})")
 
     # Save checkpoint.
-    acc = 100.*correct/total
-    if acc > best_acc or (epoch+1)%50 == 0:
+    if (epoch+1) % args.epochs_per_sample == 0:
         model_saver.add_state_dict(model.state_dict(), epoch)
         model_saver.flush()
-        best_acc = acc
 
 
 with HDF5Metrics("./metrics.h5", "w") as metrics_saver,\
@@ -125,9 +148,16 @@ with HDF5Metrics("./metrics.h5", "w") as metrics_saver,\
         train(epoch, metrics_saver)
         test(epoch, metrics_saver, model_saver)
 
-samples = {k: v.unsqueeze(0) for k, v in model.state_dict()}
-result = evaluate_model(model, testloader, samples)
+calibration_eval = (args.data[:7] == "cifar10" or args.data[-5:] == "mnist")
+samples = load_samples("./samples.pt", idx=slice(args.skip_first, None, None))
+del samples["steps"]
+del samples["timestamps"]
 
+model.eval()
+result = evaluate_model(model, testloader, samples, likelihood_eval=True,
+                        accuracy_eval=True, calibration_eval=calibration_eval)
+
+atexit.unregister(_error_exit)
 with open("./run.json", "w") as f:
     json.dump({"status": "COMPLETED",
                "result": result}, f)
