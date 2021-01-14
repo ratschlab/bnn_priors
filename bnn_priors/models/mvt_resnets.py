@@ -12,7 +12,7 @@ from pathlib import Path
 
 def DataDrivenMVTGoogleResNet(softmax_temp=1., depth=20, num_classes=10,
                               bn=True):
-    assert depth == 20, "That's what we have data"
+    assert depth == 20, "We only have data for depth=20"
 
     mvt = pd.read_pickle(Path(__file__).parent/"cifar10_opt_mvt.pkl.gz")
     net = ResNet(softmax_temp=softmax_temp, depth=depth,
@@ -51,7 +51,7 @@ def DecreasingMVTGoogleResNet(softmax_temp=1., depth=20, num_classes=10,
            prior_b=prior.Normal, loc_b=0., std_b=1.,
            scaling_fn=None, bn=True, weight_prior_params={}, bias_prior_params={},
            dense_prior_w=prior.Normal):
-    assert depth == 20, "That's what we have data"
+    assert depth == 20, "We only have data for depth=20"
 
     net = ResNet(
         softmax_temp=softmax_temp, depth=depth, num_classes=num_classes,
@@ -92,6 +92,7 @@ def DecreasingMVTGoogleResNet(softmax_temp=1., depth=20, num_classes=10,
                 p = np.mgrid[:shape[-2], :shape[-1]].reshape(2, -1).T
                 # computes the matrix of Euclidean distances between all the points in p
                 distance_matrix = np.sum((p[:, None, :] - p[None, :, :]) ** 2.0, 2) ** 0.5
+                distance_matrix = torch.tensor(distance_matrix).to(loc)
                 kernel = torch.exp(- distance_matrix / lengthscale)
 
                 scale_tril = kernel.cholesky() * scale_tril
