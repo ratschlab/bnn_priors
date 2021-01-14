@@ -39,7 +39,7 @@ def DataDrivenMVTGoogleResNet(softmax_temp=1., depth=20, num_classes=10,
                 raise ValueError(f"`event_dim` for key `{key}` raised {e}")
         df = F.softplus(params["df"]).item()
 
-        named_modules[parent].register_module(
+        named_modules[parent].add_module(
             prior_mod_name,
             prior.MultivariateT(shape, params["loc"], params["scale_tril"],
                                 df=df, event_dim=event_dim, permute=permute))
