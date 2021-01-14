@@ -79,7 +79,7 @@ else:
 optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
 if args.sampling_decay == "stairs":
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, 150, 0.1)  # Decrease to 1/10 every 150 epochs
-if args.sampling_decay == "stairs2":
+elif args.sampling_decay == "stairs2":
     scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, [80, 120, 160, 180], 0.1)
 elif args.sampling_decay == "flat":
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, 2**30, 1.0)
