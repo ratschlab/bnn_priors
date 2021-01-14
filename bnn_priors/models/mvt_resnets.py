@@ -22,7 +22,6 @@ def DataDrivenMVTGoogleResNet(softmax_temp=1., depth=20, num_classes=10,
     for key, (_lik, params) in mvt.items():
         *parent, prior_mod_name, _p = key.split(".")
         parent = list(parent)
-        parent.remove("module")
         parent = ".".join(parent)
 
         shape = named_parameters[key].shape
