@@ -22,10 +22,13 @@ def Conv2dPrior(in_channels, out_channels, kernel_size=3, stride=1,
     if scaling_fn is None:
         def scaling_fn(std, dim):
             return std/dim**0.5
+
+    in_dim = in_channels * kernel_size**2
     kernel_size = nn.modules.utils._pair(kernel_size)
     bias_prior = prior_b((out_channels,), 0., std_b, **bias_prior_params) if prior_b is not None else None
     return Conv2d(weight_prior=prior_w((out_channels, in_channels//groups, kernel_size[0], kernel_size[1]),
-                                       loc_w, scaling_fn(std_w, in_channels), **weight_prior_params),
+                                       loc_w, scaling_fn(std_w, in_channels),  # TODO: use `in_dim` here to prevent the variance from blowing up
+                                       **weight_prior_params),
                   bias_prior=bias_prior,
                  stride=stride, padding=padding, dilation=dilation,
                   groups=groups, padding_mode=padding_mode)

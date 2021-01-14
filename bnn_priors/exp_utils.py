@@ -41,6 +41,8 @@ def get_data(data: str, device: t.device):
         dataset = bnn_priors.data.CIFAR10(device=device)
     elif data == "cifar10_augmented":
         dataset = bnn_priors.data.CIFAR10Augmented(device=device)
+    elif data == "cifar10_small":
+        dataset = bnn_priors.data.CIFAR10Small(device=device)
     elif data == "mnist":
         dataset = bnn_priors.data.MNIST(device=device)
     elif data == "rotated_mnist":
@@ -186,6 +188,16 @@ def get_model(x_train, y_train, model, width, depth, weight_prior, weight_loc,
                      prior_b=bias_prior, loc_b=bias_loc, std_b=bias_scale, scaling_fn=scaling_fn,
                      bn=batchnorm, softmax_temp=1., weight_prior_params=weight_prior_params,
                      bias_prior_params=bias_prior_params).to(x_train)
+    elif model == "datadriven_mvt_googleresnet":
+        net = bnn_priors.models.DataDrivenMVTGoogleResNet(
+            softmax_temp=1., depth=20, num_classes=10, bn=batchnorm).to(x_train)
+    elif model == "decreasing_mvt_googleresnet":
+        net = bnn_priors.models.DecreasingMVTGoogleResNet(
+            prior_w=weight_prior, loc_w=weight_loc, std_w=weight_scale,
+            depth=20, prior_b=bias_prior, loc_b=bias_loc, std_b=bias_scale,
+            scaling_fn=scaling_fn, bn=batchnorm, softmax_temp=1.,
+            weight_prior_params=weight_prior_params,
+            bias_prior_params=bias_prior_params).to(x_train)
     elif model == "correlatedgoogleresnet":
         # TODO: currently doesn't pass a specific prior to the dense layer, so it uses the default (Normal) one
         net = CorrelatedResNet(prior_w=weight_prior, loc_w=weight_loc, std_w=weight_scale, depth=20,
@@ -239,7 +251,12 @@ def evaluate_model(model: bnn_priors.models.AbstractModel,
                    dataloader_test: Iterable[Tuple[t.Tensor, t.Tensor]],
                    samples: Dict[str, t.Tensor],
                    likelihood_eval: bool, accuracy_eval: bool, calibration_eval: bool):
-    labels = dataloader_test.dataset.tensors[1].cpu()
+    if hasattr(dataloader_test.dataset, "tensors"):
+        labels = dataloader_test.dataset.tensors[1].cpu()
+    elif hasattr(dataloader_test.dataset, "targets"):
+        labels = t.tensor(dataloader_test.dataset.targets).cpu()
+    else:
+        raise ValueError("I cannot find the labels in the dataloader.")
     N, *possibly_D = labels.shape
     E = _n_samples_dict(samples)
 

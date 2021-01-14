@@ -1,13 +1,14 @@
 from numbers import Number
 import torch
-from torch.distributions import constraints, Gamma
+from torch.distributions import constraints, Gamma, MultivariateNormal
+from torch.distributions.multivariate_normal import _batch_mv, _batch_mahalanobis
 from torch.distributions.distribution import Distribution
-from torch.distributions.utils import broadcast_all
+from torch.distributions.utils import broadcast_all, _standard_normal
 from scipy import stats
 import math
 
 
-__all__ = ('GeneralizedNormal', 'DoubleGamma')
+__all__ = ('GeneralizedNormal', 'DoubleGamma', 'MultivariateT')
 
 
 class GeneralizedNormal(Distribution):
@@ -109,3 +110,90 @@ class DoubleGamma(Gamma):
 
     entropy = NotImplemented
     _log_normalizer = NotImplemented
+
+
+class MultivariateT(MultivariateNormal):
+    """
+    Multivariate Student-t distribution, using hierarchical Gamma sampling.
+    (see https://arxiv.org/abs/1402.4306)
+    We only allow degrees of freedom > 2 for now,
+    because otherwise the covariance is undefined.
+
+    Uses the parameterization from Shah et al. 2014, which makes it covariance
+    equal to the covariance matrix.
+    """
+    arg_constraints = {'df': constraints.positive,
+                       'loc': constraints.real_vector,
+                       'covariance_matrix': constraints.positive_definite,
+                       'precision_matrix': constraints.positive_definite,
+                       'scale_tril': constraints.lower_cholesky}
+    support = constraints.real
+    has_rsample = True
+    expand = NotImplemented
+
+    def __init__(self,
+                 event_shape: torch.Size,
+                 df=3.,
+                 loc=0.,
+                 covariance_matrix=None,
+                 precision_matrix=None,
+                 scale_tril=None,
+                 validate_args=None):
+        super().__init__(loc=loc,
+                         covariance_matrix=covariance_matrix,
+                         precision_matrix=precision_matrix,
+                         scale_tril=scale_tril,
+                         validate_args=validate_args)
+
+        # self._event_shape is inferred from the mean vector and covariance matrix.
+        old_event_shape = self._event_shape
+        if not len(event_shape) >= len(old_event_shape):
+            raise NotImplementedError("non-elliptical MVT not in this class")
+        assert len(event_shape) >= 1
+        assert event_shape[-len(old_event_shape):] == old_event_shape
+
+        # Cut dimensions from the end of `batch_shape` so the `total_shape` is
+        # the same
+        total_shape = list(self._batch_shape) + list(self._event_shape)
+        self._batch_shape = torch.Size(total_shape[:-len(event_shape)])
+        self._event_shape = torch.Size(event_shape)
+
+        self.df, _ = broadcast_all(df, torch.ones(self._batch_shape))
+        self.gamma = Gamma(concentration=self.df/2., rate=1/2)
+
+    def rsample(self, sample_shape=torch.Size()):
+        shape = self._extended_shape(sample_shape)
+        eps = _standard_normal(shape, dtype=self.loc.dtype, device=self.loc.device)
+
+        r_inv = self.gamma.rsample(sample_shape=sample_shape)
+        scale = ((self.df-2) / r_inv).sqrt()
+        # We want 1 gamma for every `event` only. The size of self.df and this
+        # `.view` provide that
+        scale = scale.view(scale.size() + torch.Size([1] * len(self._event_shape)))
+
+        return self.loc + scale * _batch_mv(self._unbroadcasted_scale_tril, eps)
+
+    def log_prob(self, value):
+        if self._validate_args:
+            self._validate_sample(value)
+        diff = value - self.loc
+        M = _batch_mahalanobis(self._unbroadcasted_scale_tril, diff)
+        n_dim = len(self._event_shape)
+        p = diff.size()[-n_dim:].numel()
+        if n_dim > 1:
+            M = M.sum(tuple(range(-n_dim+1, 0)))
+
+        log_diag = self._unbroadcasted_scale_tril.diagonal(dim1=-2, dim2=-1).log()
+        if n_dim > log_diag.dim():
+            half_log_det = log_diag.sum() * (p / log_diag.numel())
+        else:
+            half_log_det = log_diag.sum(tuple(range(-n_dim, 0))) * (
+                p / log_diag.size()[-n_dim:].numel())
+
+        lambda_ = self.df - 2.
+        lp = torch.lgamma((p+self.df)/2.) \
+                - ((p/2.) * torch.log(math.pi * lambda_)) \
+                - torch.lgamma(self.df / 2.) \
+                - half_log_det \
+                - ((self.df+p)/2.) * torch.log(1 + M/lambda_)
+        return lp

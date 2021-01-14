@@ -2,6 +2,7 @@ import unittest
 import torch
 import numpy as np
 import torch.distributions as td
+import math
 
 from bnn_priors import prior
 from scipy import stats
@@ -207,3 +208,96 @@ class PriorTest(unittest.TestCase):
         # TODO: increase precision of atol (distribution samples incorrectly)
         torch.manual_seed(102)
         _generic_multivariate_test(prior.FixedCovGenNorm, 200000, 0.1, 0.1, beta=0.3)
+
+    def test_multivariate_t(self):
+        torch.manual_seed(102)
+        N, atol_mean, atol_cov = 2000000, 0.01, 0.01
+
+        loc = torch.tensor([1., 2., 3., 4.])
+        cov = torch.randn(4, 4)
+        cov = cov @ cov.t()
+        # df=8 is necessary to reduce the variance of the estimated covariance
+        dist = prior.MultivariateT((N, 2, 2), loc=loc, scale_tril=cov.cholesky(), df=8, event_dim=2)
+
+        p = dist().view((-1, 4))
+        mean = p.mean(0)
+        assert torch.allclose(mean, loc.to(p), atol=atol_mean)
+
+        b = p - mean
+        empirical_cov = (b.t() @ b) / len(b)
+        assert torch.allclose(empirical_cov, cov.to(p), atol=atol_cov)
+
+    @requires_float64
+    @torch.no_grad()
+    def test_multivariate_t_cdf_1dim(self, n_samples=100000):
+        torch.manual_seed(102)
+        loc = -0.3
+        scale = 1.2
+        df = 3
+
+        def np_cdf(x):
+            return stats.t.cdf(x, df=df, loc=loc, scale=scale / math.sqrt(df))
+        dist = prior.MultivariateT(torch.Size([n_samples, 1]), loc=loc,
+                                   scale_tril=scale, df=3, event_dim=1)
+        _, p = stats.ks_1samp(dist().detach().squeeze(-1),
+                              np_cdf, mode='exact')
+        assert p > 0.3
+
+
+def partial_t_log_pdf(dim, df, half_log_det, mahalanobis):
+    return (torch.lgamma((df + dim)/2)
+            - torch.lgamma(df/2)
+            - dim/2 * torch.log(math.pi*(df-2))
+            - half_log_det
+            -(dim+df)/2 * torch.log(1 + mahalanobis/(df-2)))
+
+class TestMultivariateT(unittest.TestCase):
+    def test_density(self, N=4, D=6, M=5):
+        torch.manual_seed(100)
+        cov = torch.randn(N, M, D, D)
+        cov = (cov @ cov.transpose(-1, -2))
+        mean = torch.arange(D).to(cov)
+        df = torch.arange(3, 3+N)[:, None].to(cov)
+        L = cov.cholesky()
+        L_inv = L.inverse()
+        x = torch.randn(2, *cov.shape[:-1])
+        MVT = prior.distributions.MultivariateT
+
+        half = L_inv @ (x - mean).unsqueeze(-1)
+        maha = (half.transpose(-1, -2) @ half).squeeze(-1).squeeze(-1)
+        half_log_det = L.diagonal(dim1=-2, dim2=-1).log().sum(-1)
+        assert torch.allclose(
+            MVT(torch.Size([D]), df, mean, cov).log_prob(x),
+            partial_t_log_pdf(D, df, half_log_det, maha))
+
+        maha = maha.sum(-1)
+        half_log_det = half_log_det.sum(-1)
+        df = df.squeeze(-1)
+        assert torch.allclose(
+            MVT(torch.Size([M, D]), df, mean, cov).log_prob(x),
+            partial_t_log_pdf(x.size()[-2:].numel(), df, half_log_det, maha))
+
+        maha = maha.sum(-1)
+        half_log_det = half_log_det.sum(-1)
+        assert torch.allclose(
+            MVT(torch.Size([N, M, D]), df[0], mean, cov).log_prob(x),
+            partial_t_log_pdf(x.size()[-3:].numel(), df[0], half_log_det, maha))
+
+        maha = maha.sum(-1)
+        half_log_det = half_log_det*x.size(0)
+        assert torch.allclose(
+            MVT(x.size(), df[0], mean, cov).log_prob(x),
+            partial_t_log_pdf(x.numel(), df[0], half_log_det, maha))
+
+
+        # Covariance with a broadcasting batch dimension
+        cov = cov[:, 0, None, :, :]
+        L = L[:, 0, None, :, :]
+        L_inv = L_inv[:, 0, None, :, :]
+
+        half = L_inv @ (x - mean).unsqueeze(-1)
+        maha = (half.transpose(-1, -2) @ half).squeeze(-1).squeeze(-1).sum((-1, -2))
+        half_log_det = L.diagonal(dim1=-2, dim2=-1).log().sum((-1, -2, -3)) * M
+        assert torch.allclose(
+            MVT(cov.size()[-3:], df[0], mean, cov).log_prob(x),
+            partial_t_log_pdf(x.size()[-3:].numel(), df[0], half_log_det, maha))
