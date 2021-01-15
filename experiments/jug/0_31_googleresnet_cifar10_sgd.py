@@ -38,3 +38,32 @@ for i in range(10):
     train_sgd(i, base_dir, model="googleresnet", data="cifar10_augmented",
               lr=0.05, momentum=0.9, batch_size=128, sampling_decay="stairs",
               n_epochs=150*4)
+    train_sgd(i, base_dir, model="googleresnet", data="cifar10_augmented",
+              lr=0.1, momentum=0.9, batch_size=128, sampling_decay="stairs2",
+              n_epochs=200)
+    train_sgd(i, base_dir, model="googleresnet", data="cifar10_augmented",
+              lr=0.1, momentum=0.9, batch_size=128, sampling_decay="stairs2",
+              n_epochs=200, weight_decay=0.002)
+
+    # unaugmented CIFAR10
+    train_sgd(i, base_dir, model="googleresnet", data="cifar10",
+              lr=0.05, momentum=0.9, batch_size=128, sampling_decay="stairs",
+              n_epochs=150*4)
+
+    # classificationconvnet
+    train_sgd(i, base_dir, model="classificationconvnet", data="mnist",
+              lr=0.05, momentum=0.9, batch_size=128, sampling_decay="stairs",
+              n_epochs=150*4)
+
+    train_sgd(i, base_dir, model="classificationconvnet", data="fashion_mnist",
+              lr=0.05, momentum=0.9, batch_size=128, sampling_decay="stairs",
+              n_epochs=150*4)
+
+    # classificationdensenet
+    train_sgd(i, base_dir, model="classificationdensenet", data="mnist",
+              lr=0.05, momentum=0.9, batch_size=128, sampling_decay="stairs",
+              n_epochs=150*4)
+
+    train_sgd(i, base_dir, model="classificationdensenet", data="fashion_mnist",
+              lr=0.05, momentum=0.9, batch_size=128, sampling_decay="stairs",
+              n_epochs=150*4)
