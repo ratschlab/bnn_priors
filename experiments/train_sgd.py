@@ -37,9 +37,13 @@ parser.add_argument('--skip_first', default=3, type=int, help='number of epochs 
 args = parser.parse_args()
 
 with open("./config.json", "w") as f:
-    json.dump(dict( lr=args.lr, momentum=args.momentum, model=args.model,
-                    data=args.data, width=args.width, temperature=0.0, weight_decay=args.weight_decay,
-                    sampling_decay=args.sampling_decay, n_epochs=args.n_epochs), f)
+    json.dump(dict(lr=args.lr, momentum=args.momentum,
+                   weight_decay=args.weight_decay, model=args.model,
+                   optimizer=args.optimizer, data=args.data, width=args.width,
+                   batch_size=args.batch_size, temperature=0.0,
+                   sampling_decay=args.sampling_decay, n_epochs=args.n_epochs,
+                   epochs_per_sample=args.epochs_per_sample,
+                   skip_first=args.skip_first), f)
 with open("./run.json", "w") as f:
     json.dump({"status": "RUNNING"}, f)
 

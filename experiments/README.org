@@ -1,0 +1,25 @@
+#+TITLE: Experiments guide
+
+* Which notebooks create which figures?
+- Histograms of weights are in ~3.4.5_exp_Analyse_empirical_weight_distributions.ipynb~
+- CIFAR10 googleresnet covariances, and fittings of lengthscale and dfs, in ~4.1_googleresnet_csv.ipynb~
+- MNIST coveriance matrices in ~3.4.1_Fit_empirical_weight_distributions.ipynb~
+    \subfigure[FCNN, cols]{
+    \centering
+    \includegraphics[width=0.19\linewidth]{201110_mnist_classificationdensenet_layer2_offdiag_input_reduced.pdf}}%
+    \hfill
+    \subfigure[FCNN, rows]{
+    \centering
+    \includegraphics[width=0.19\linewidth]{201110_mnist_classificationdensenet_layer2_offdiag_output_reduced.pdf}}%
+    \hfill
+    \subfigure[CNN, cols]{
+    \centering
+    \includegraphics[width=0.19\linewidth]{201110_mnist_classificationconvnet_layer2_offdiag_input_reduced.pdf}}%
+    \hfill
+    \subfigure[CNN, rows]{
+    \centering
+    \includegraphics[width=0.19\linewidth]{201110_mnist_classificationconvnet_layer2_offdiag_output_reduced.pdf}}%
+    \hfill
+    \subfigure[CNN, spatial]{
+    \centering
+    \includegraphics[width=0.19\linewidth]{201110_mnist_classificationconvnet_layer2_offdiag_spatial_reduced.pdf}}%

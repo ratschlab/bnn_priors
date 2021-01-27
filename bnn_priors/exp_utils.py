@@ -341,18 +341,19 @@ def evaluate_model(model: bnn_priors.models.AbstractModel,
 
 
 def evaluate_ood(model, dataloader_train, dataloader_test, samples):
-
     loaders = {"train": dataloader_train, "eval": dataloader_test}
     probs = {"train": [], "eval": []}
     aurocs = []
     auprcs = []
+    device = next(iter(model.parameters())).device
 
     for sample in sample_iter(samples):
         with t.no_grad():
             model.load_state_dict(sample)
             for dataset in ["train", "eval"]:
                 probs_sample = []
-                for batch_x, batch_y in loaders[dataset]:
+                for batch_x, _ in loaders[dataset]:
+                    batch_x = batch_x.to(device)
                     pred = model(batch_x)
                     # shape: len(batch) x n_classes
                     probs_sample.append(pred.probs.cpu().numpy())
@@ -562,11 +563,11 @@ def sneaky_artifact(_run, name):
 
 
 def reject_samples_(samples, metrics_file):
-    is_sample = (metrics_file["acceptance/is_sample"][:] == 1)
     try:
         rejected_arr = metrics_file["acceptance/rejected"][is_sample]
     except KeyError:
         return samples
+    is_sample = (metrics_file["acceptance/is_sample"][:] == 1)
     assert np.all((rejected_arr == 0) | (rejected_arr == 1))
     metrics_steps = metrics_file["steps"][is_sample]
     rejected = {int(s): bool(r) for (s, r) in zip(metrics_steps, rejected_arr)}
