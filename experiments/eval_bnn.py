@@ -35,14 +35,19 @@ ex.captured_out_filter = apply_backspaces_and_linefeeds
 
 @ex.config
 def config():
+    # path of the config.json file of the training run
     config_file = None
+    # evaluation dataset to use, if it differs from the training data
     eval_data = None
-    eval_samples = None
+    # whether the likelihood should be evaluated
     likelihood_eval = True
+    # whether the accuracy should be evaluated
     accuracy_eval = True
+    # whether the uncertainty calibration should be evaluated
     calibration_eval = False
+    # whether the OOD detection should be evaluated
     ood_eval = False
-    marglik_eval = False
+    # number of first samples from the Markov chain to discard
     skip_first = 0
 
     assert config_file is not None, "No config_file provided"
@@ -60,7 +65,6 @@ evaluate_marglik = ex.capture(exp_utils.evaluate_marglik)
 
 @ex.capture
 def get_eval_data(data, eval_data):
-    # TODO load synthetic data if present
     if eval_data is not None:
         return exp_utils.get_data(eval_data, device())
     else:
@@ -73,7 +77,7 @@ def get_train_data(data):
 
 
 @ex.automain
-def main(config_file, batch_size, n_samples, run_dir, eval_data, data, skip_first, eval_samples,
+def main(config_file, batch_size, n_samples, run_dir, eval_data, data, skip_first,
         likelihood_eval, accuracy_eval, calibration_eval, ood_eval, marglik_eval):
     assert skip_first < n_samples, "We don't have that many samples to skip"
     run_dir = Path(run_dir)
@@ -128,15 +132,5 @@ def main(config_file, batch_size, n_samples, run_dir, eval_data, data, skip_firs
                                    samples=samples)
         results = {**results, **ood_results}
 
-    if marglik_eval:
-        if eval_samples is None:
-            eval_samples = samples
-        else:
-            eval_samples = exp_utils.load_samples(eval_samples, idx=np.s_[skip_first:])
-            del eval_samples["steps"]
-            del eval_samples["timestamps"]
-        marglik_results = evaluate_marglik(model=model, train_samples=samples,
-                                           eval_samples=eval_samples)
-        results = {**results, **marglik_results}
 
     return results

@@ -37,45 +37,79 @@ ex.captured_out_filter = apply_backspaces_and_linefeeds
 
 @ex.config
 def config():
-    data = "UCI_boston"
-    inference = "SGLD"
-    model = "densenet"
+    # the dataset to be trained on, e.g., "mnist", "cifar10", "UCI_boston"
+    data = "mnist"
+    # the inference method to be used, defaults to GGMC from https://arxiv.org/abs/2102.01691
+    inference = "VerletSGLDReject"
+    # model to be used, e.g., "classificationdensenet", "classificationconvnet", "googleresnet"
+    model = "classificationconvnet"
+    # width of the model (might not have an effect in some models)
     width = 50
+    # depth of the model (might not have an effect in some models)
     depth = 3
+    # weight prior, e.g., "gaussian", "laplace", "student-t"
     weight_prior = "gaussian"
+    # bias prior, same as above
     bias_prior = "gaussian"
+    # location parameter for the weight prior
     weight_loc = 0.
+    # scale parameter for the weight prior
     weight_scale = 2.**0.5
+    # location parameter for the bias prior
     bias_loc = 0.
+    # scale parameter for the bias prior
     bias_scale = 1.
+    # additional keyword arguments for the weight prior
     weight_prior_params = {}
+    # additional keyword arguments for the bias prior
     bias_prior_params = {}
     if not isinstance(weight_prior_params, dict):
-        print(weight_prior_params)
         weight_prior_params = json.loads(weight_prior_params)
     if not isinstance(bias_prior_params, dict):
         bias_prior_params = json.loads(bias_prior_params)
-    n_samples = 1000
-    warmup = 2000
-    burnin = 2000
-    skip = 5
+    # total number of samples to be drawn from the posterior
+    n_samples = 300
+    # number of learning rate cycles for the Markov chain (see https://arxiv.org/abs/1902.03932)
+    cycles =  60
+    # number of epochs per cycle without added Langevin noise
+    burnin = 0
+    # number of epochs per cycle with added noise, but without sampling
+    warmup = 45
+    # number of epochs to skip between taking samples (1 means no skipping)
+    skip = 1
+    # number of epochs to skip between computing metrics
     metrics_skip = 10
-    skip_first = 0  # for evaluating accuracy et al at the end
-    cycles =  5
+    # number of first samples to discard when evaluating them
+    skip_first = 50  # for evaluating accuracy et al at the end
+    # temperature of the sampler
     temperature = 1.0
+    # learning rate schedule during sampling
     sampling_decay = "cosine"
-    momentum = 0.9
+    # momentum for the sampler
+    momentum = 0.994
+    # update factor for the preconditioner
     precond_update = 1
+    # learning rate
     lr = 5e-4
+    # initialization method for the network weights
     init_method = "he"
+    # previous samples to be loaded to initialize the chain
     load_samples = None
+    # batch size for the training
     batch_size = None
+    # whether to use Metropolis-Hastings rejection steps (works only with some integrators)
     reject_samples = False
+    # whether to use batch normalization
     batchnorm = True
+    # device to use, "cpu", "cuda:0", "try_cuda"
     device = "try_cuda"
+    # whether the samples should be saved
     save_samples = True
+    # whether a progressbar should be plotted to stdout during the training
     progressbar = True
+    # a random unique ID for the run
     run_id = uuid.uuid4().hex
+    # directory where the results will be stored
     log_dir = str(Path(__file__).resolve().parent.parent/"logs")
     if log_dir is not None:
         os.makedirs(log_dir, exist_ok=True)
@@ -180,7 +214,6 @@ def main(inference, model, width, n_samples, warmup, init_method, burnin, skip,
             exp_utils.sneaky_artifact(_run, "metrics.h5"), "w") as metrics_saver,\
          model_saver_fn() as model_saver:
         if inference == "HMC":
-            # `model.get_potential` returns a function, no need to use a lambda.
             _potential_fn = model.get_potential(x_train, y_train, eff_num_data=len(x_train))
             kernel = HMC(potential_fn=_potential_fn,
                          adapt_step_size=False, adapt_mass_matrix=False,
