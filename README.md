@@ -1,4 +1,5 @@
-# projects2020_BNN-priors
+# Bayesian Neural Network Priors Revisited
+
 Benchmark suite for different Bayesian neural network priors
 
 
