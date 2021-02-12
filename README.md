@@ -3,8 +3,16 @@
 Benchmark suite for different Bayesian neural network priors
 
 
+## Installation
 
-## Using sacred
+After cloning the repository, the package can be installed from inside the main directory with
+
+```sh
+pip install .
+```
+
+
+## Running experiments
 
 We are using `sacred` (https://github.com/IDSIA/sacred) to manage the experiments.
 
