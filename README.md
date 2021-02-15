@@ -1,7 +1,7 @@
 # Bayesian Neural Network Priors Revisited
 
-Benchmark suite for different Bayesian neural network priors. Includes MCMC
-inference algorithms for NNs.
+This repository contains the code for the paper [Bayesian Neural Network Priors Revisited](https://arxiv.org/abs/2102.06571).
+It allows to perform SG-MCMC inference in BNNs with different architectures and priors on a range of tasks.
 
 
 ## Installation
@@ -140,3 +140,20 @@ py.test testing/test_models.py::TestRaoBDenseNet
 # single test
 py.test testing/test_models.py::TestRaoBDenseNet::test_likelihood
 ```
+
+
+## Cite this work
+
+If you want to cite this work, please cite it as
+
+```
+@misc{fortuin2021bayesian,
+      title={Bayesian Neural Network Priors Revisited}, 
+      author={Vincent Fortuin and Adrià Garriga-Alonso and Florian Wenzel and Gunnar Rätsch and Richard Turner and Mark van der Wilk and Laurence Aitchison},
+      year={2021},
+      eprint={2102.06571},
+      archivePrefix={arXiv},
+      primaryClass={stat.ML}
+}
+```
+
