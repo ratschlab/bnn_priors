@@ -22,16 +22,23 @@ this directory, after they have been downloaded.
 
 ## `mcmc/`
 The core MCMC algorithms are implemented as subclasses of `torch.Optimizer`,
-though their interface is slightly different. Most of the time, you want to use
-one of the higher-level classes in `inference.py` or `inference_reject.py`
+though their interface is slightly different. **Most of the time, you want to use
+one of the higher-level classes in `inference.py` or `inference_reject.py`**
 
 ### Naming: "SGLD" is not SGLD
 In this project, "SGLD" (stochastic gradient Langevin dynamics) refers to an
 algorithm that simulates (*underdamped*) Langevin dynamics using stochastic
 gradients. That is commonly known in the deep learning literature as SGHMC.
 
-The algorithm by Welling and Teh (2011) simulates *overdamped* Langevin
-dynamics, also commonly known as Brownian motion.
+The algorithm by [Welling and Teh
+(2011)](https://dl.acm.org/doi/10.5555/3104482.3104568) simulates *overdamped*
+Langevin dynamics, also commonly known as Brownian motion.
+
+
+### Available algorithms
+- `SGLD`: implements Stochastic gradient Hamiltonian Monte Carlo [(Chen et al., 2014)](https://www.arxiv.org/abs/1402.4102), That is, Langevin dynamics with the symplectic Euler integrator. Its acceptance probability is always 0.
+- `VerletSGLD`: implements Gradient-guided Monte Carlo [(GGMC; Garriga-Alonso and Fortuin, 2021)](https://arxiv.org/abs/2102.01691). That is, Langevin dynamics with the symmetrised OBABO integrator by [Leimkuhler and Matthews, 2012](https://doi.org/10.1093/amrx/abs010).
+- `HMC`: Hamiltonian Monte Carlo. Basically GGMC with zero noise.
 
 ## `inference.py` and `inference_reject.py`
 Higher-level wrappers over the algorithms in `mcmc/`. They automatically handle
