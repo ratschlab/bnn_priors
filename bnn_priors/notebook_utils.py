@@ -73,3 +73,11 @@ def unique_cols(df, blacklist=set([
         except TypeError:
             pass
     return different_cols
+
+def json_load(path):
+    with open(path, "r") as f:
+        return json.load(f)
+
+def json_dump(obj, path):
+    with open(path, "w") as f:
+        return json.dump(obj, f)

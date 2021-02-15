@@ -1,6 +1,7 @@
 # Bayesian Neural Network Priors Revisited
 
-Benchmark suite for different Bayesian neural network priors
+Benchmark suite for different Bayesian neural network priors. Includes MCMC
+inference algorithms for NNs.
 
 
 ## Installation
@@ -8,8 +9,14 @@ Benchmark suite for different Bayesian neural network priors
 After cloning the repository, the package can be installed from inside the main directory with
 
 ```sh
-pip install .
+pip install -e .
 ```
+
+The `-e` makes the installation be in "development mode", so any changes you
+make to the code in the repository will be reflected in the `bnn_priors` package
+you can import.
+
+The code has run at some point with Python 3.6, 3.7 and 3.8.
 
 
 ## Running experiments
