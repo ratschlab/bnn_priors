@@ -4,6 +4,7 @@ import jug
 import subprocess
 from pathlib import Path
 import sys
+from bnn_priors.notebook_utils import collect_runs
 import os
 import time
 import random
@@ -11,20 +12,11 @@ import random
 experiments_dir = Path(__file__).resolve().parent.parent
 
 @jug.TaskGenerator
-def train_sgd(j, log_dir, **config):
-    for i in range(10000):
-        path = log_dir/str(i)
-        try:
-            os.mkdir(path)
-            log_dir = path
-            break
-        except FileExistsError:
-            time.sleep(0.1 + random.random()*0.1)
-
-    script = experiments_dir / "train_sgd.py"
+def eval_bnn(log_dir, **config):
+    script = experiments_dir / "eval_bnn.py"
     args = [sys.executable, script,
             *[f"--{k}={v}" for k, v in config.items()]]
-    print(f"Running in cwd={log_dir} " + " ".join(map(repr, args)))
+    print(f"Running cwd={log_dir} " + " ".join(map(repr, args)))
     complete = subprocess.run(args, cwd=log_dir)
     if complete.returncode != 0:
         raise SystemError(f"Process returned with code {complete.returncode}")
@@ -33,6 +25,9 @@ def train_sgd(j, log_dir, **config):
 name = Path(__file__).name[:-3]
 base_dir = experiments_dir.parent/"logs"/name
 jug.set_jugdir(str(base_dir/"jugdir"))
+
+runs_df = collect_runs(base_dir.parent/"0_31_googleresnet_cifar10_sgd")
+runs_df = runs_df[runs_df["n_epochs"] == 600]
 
 for i in range(10):
     train_sgd(i, base_dir, model="googleresnet", data="cifar10_augmented",

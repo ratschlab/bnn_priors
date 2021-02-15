@@ -26,6 +26,7 @@ parser.add_argument('--lr', default=0.05, type=float, help='learning rate')
 parser.add_argument('--momentum', default=0.9, type=float, help='momentum')
 parser.add_argument('--weight_decay', default=0.0, type=float, help='weight decay')
 parser.add_argument('--model', default="thin_resnet18", type=str, help='name of model')
+parser.add_argument('--optimizer', default="SGD", type=str, help='name of optimizer')
 parser.add_argument('--data', default="cifar10_augmented", type=str, help='name of data set')
 parser.add_argument('--width', default=64, type=int, help='width of nn architecture')
 parser.add_argument('--batch_size', default=128, type=optional_int, help='train batch size')
@@ -36,9 +37,13 @@ parser.add_argument('--skip_first', default=3, type=int, help='number of epochs 
 args = parser.parse_args()
 
 with open("./config.json", "w") as f:
-    json.dump(dict( lr=args.lr, momentum=args.momentum, model=args.model,
-                    data=args.data, width=args.width, temperature=0.0, weight_decay=args.weight_decay,
-                    sampling_decay=args.sampling_decay, n_epochs=args.n_epochs), f)
+    json.dump(dict(lr=args.lr, momentum=args.momentum,
+                   weight_decay=args.weight_decay, model=args.model,
+                   optimizer=args.optimizer, data=args.data, width=args.width,
+                   batch_size=args.batch_size, temperature=0.0,
+                   sampling_decay=args.sampling_decay, n_epochs=args.n_epochs,
+                   epochs_per_sample=args.epochs_per_sample,
+                   skip_first=args.skip_first), f)
 with open("./run.json", "w") as f:
     json.dump({"status": "RUNNING"}, f)
 
@@ -76,11 +81,18 @@ if args.data.startswith("UCI"):
 else:
     criterion = nn.CrossEntropyLoss()
 
-optimizer = optim.SGD(model.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
+optim_class = getattr(optim, args.optimizer)
+optimizer = optim_class(model.parameters(), lr=args.lr, momentum=args.momentum, weight_decay=args.weight_decay)
+
 if args.sampling_decay == "stairs":
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, 150, 0.1)  # Decrease to 1/10 every 150 epochs
 elif args.sampling_decay == "stairs2":
-    scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, [80, 120, 160, 180], 0.1)
+    def _schedule(t):
+        for epoch, mult in reversed([(80, 0.1), (120, 0.01), (160, 0.001), (180, 0.0005)]):
+            if t >= epoch:
+                return mult
+        return 1.
+    scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, _schedule)
 elif args.sampling_decay == "flat":
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, 2**30, 1.0)
 else:

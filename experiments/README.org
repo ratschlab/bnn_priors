@@ -1,0 +1,6 @@
+#+TITLE: Experiments guide
+
+* Which notebooks create which figures?
+- Histograms of weights are in ~3.4.5_exp_Analyse_empirical_weight_distributions.ipynb~
+- CIFAR10 googleresnet covariances, and fittings of lengthscale and dfs, in ~4.1_googleresnet_csv.ipynb~
+- MNIST coveriance matrices in ~3.4.1_Fit_empirical_weight_distributions.ipynb~

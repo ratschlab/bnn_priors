@@ -3,30 +3,21 @@ Evaluation script for the BNN experiments with different data sets and priors.
 """
 
 import os
-import math
 import json
 import h5py
 
 import numpy as np
-import torch as t
+import torch
 from pathlib import Path
-from pyro.infer.mcmc import NUTS, HMC
-from pyro.infer.mcmc.api import MCMC
 from sacred import Experiment
 from sacred.utils import apply_backspaces_and_linefeeds
 from sacred.observers import FileStorageObserver
 
-from bnn_priors.data import UCI, CIFAR10
-from bnn_priors.models import RaoBDenseNet, DenseNet, PreActResNet18, PreActResNet34
-from bnn_priors.prior import LogNormal
-from bnn_priors import prior
-from bnn_priors.inference import SGLDRunner
 from bnn_priors import exp_utils
-from bnn_priors.exp_utils import get_prior
 
 # Makes CUDA faster
-if t.cuda.is_available():
-    t.backends.cudnn.benchmark = True
+if torch.cuda.is_available():
+    torch.backends.cudnn.benchmark = True
 
 TMPDIR = "/tmp"
 
@@ -50,6 +41,15 @@ def config():
     # number of first samples from the Markov chain to discard
     skip_first = 0
 
+    # Whether the run to be evaluated is an SGD run (and thus lacks the Sacred
+    # run.json file, etc)
+    is_run_sgd = False
+
+    # Batch size during evaluation. Reduce if you run out of GPU memory.
+    batch_size = 128
+    # Device to use: cuda, cpu, or try_cuda
+    device = 'try_cuda'
+
     assert config_file is not None, "No config_file provided"
     ex.add_config(config_file)  # Adds config entries from the previous script
     run_dir = os.path.dirname(config_file)
@@ -66,9 +66,9 @@ evaluate_marglik = ex.capture(exp_utils.evaluate_marglik)
 @ex.capture
 def get_eval_data(data, eval_data):
     if eval_data is not None:
-        return exp_utils.get_data(eval_data, device())
+        return exp_utils.get_data(eval_data, "cpu")
     else:
-        return exp_utils.get_data(data, device())
+        return exp_utils.get_data(data, "cpu")
 
 
 @ex.capture
@@ -77,14 +77,12 @@ def get_train_data(data):
 
 
 @ex.automain
-def main(config_file, batch_size, n_samples, run_dir, eval_data, data, skip_first,
-        likelihood_eval, accuracy_eval, calibration_eval, ood_eval, marglik_eval):
-    assert skip_first < n_samples, "We don't have that many samples to skip"
+def main(config_file, batch_size, run_dir, eval_data, data, skip_first, model,
+         width, eval_samples, calibration_eval, ood_eval, marglik_eval,
+         is_run_sgd):
     run_dir = Path(run_dir)
     with open(run_dir/"run.json") as infile:
         run_data = json.load(infile)
-
-    assert "samples.pt" in run_data["artifacts"], "No samples found"
 
     samples = exp_utils.load_samples(run_dir/"samples.pt",
                                      idx=np.s_[skip_first:])
@@ -92,6 +90,8 @@ def main(config_file, batch_size, n_samples, run_dir, eval_data, data, skip_firs
         exp_utils.reject_samples_(samples, metrics_file)
     del samples["steps"]
     del samples["timestamps"]
+    for s in samples.items ():
+        assert len(s)>0, f"we have less than {skip_first} samples"
 
     if eval_data is None:
         eval_data = data
@@ -100,19 +100,22 @@ def main(config_file, batch_size, n_samples, run_dir, eval_data, data, skip_firs
 
     x_train = data.norm.train_X
     y_train = data.norm.train_y
-
-    x_test = data.norm.test_X
-    y_test = data.norm.test_y
-
-    model = get_model(x_train=x_train, y_train=y_train)
-
+    if is_run_sgd:
+        model = get_model(x_train=x_train, y_train=y_train, model=model,
+                          width=width, depth=3, weight_prior="improper",
+                          weight_loc=0., weight_scale=1., bias_prior="improper",
+                          bias_loc=0., bias_scale=1., batchnorm=True,
+                          weight_prior_params={}, bias_prior_params={})
+    else:
+        model = get_model(x_train=x_train, y_train=y_train)
+    model = model.to(device())
     model.eval()
 
     if batch_size is None:
         batch_size = len(data.norm.test)
     else:
         batch_size = min(batch_size, len(data.norm.test))
-    dataloader_test = t.utils.data.DataLoader(data.norm.test, batch_size=batch_size)
+    dataloader_test = torch.utils.data.DataLoader(data.norm.test, batch_size=batch_size)
 
     if calibration_eval and not (eval_data[:7] == "cifar10" or eval_data[-5:] == "mnist"):
         raise NotImplementedError("The calibration is not defined for this type of data.")
@@ -125,7 +128,7 @@ def main(config_file, batch_size, n_samples, run_dir, eval_data, data, skip_firs
 
     if ood_eval:
         train_data = get_train_data()
-        dataloader_train = t.utils.data.DataLoader(train_data.norm.test, batch_size=batch_size)
+        dataloader_train = torch.utils.data.DataLoader(train_data.norm.test, batch_size=batch_size)
         ood_results = evaluate_ood(model=model,
                                    dataloader_train=dataloader_train,
                                    dataloader_test=dataloader_test,
