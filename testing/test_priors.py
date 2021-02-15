@@ -257,7 +257,7 @@ class TestMultivariateT(unittest.TestCase):
         cov = torch.randn(N, M, D, D)
         cov = (cov @ cov.transpose(-1, -2))
         mean = torch.arange(D).to(cov)
-        df = torch.arange(3, 3+N)[:, None].to(cov)
+        df = torch.arange(3, 3 + N)[:, None].to(cov)
         L = cov.cholesky()
         L_inv = L.inverse()
         x = torch.randn(2, *cov.shape[:-1])
