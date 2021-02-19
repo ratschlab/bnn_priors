@@ -96,7 +96,7 @@ def config():
     # previous samples to be loaded to initialize the chain
     load_samples = None
     # batch size for the training
-    batch_size = None
+    batch_size = 128
     # whether to use Metropolis-Hastings rejection steps (works only with some integrators)
     reject_samples = False
     # whether to use batch normalization
