@@ -509,7 +509,7 @@ class HDF5Metrics(HDF5ModelSaver):
 
         elif step < self._step:
             raise ValueError(f"step went backwards ({self._step} -> {step})")
-        self._append(name, value, type(value))
+        self._append(name, value, np.float64)
 
     def _scrub_cache(self):
         for v in self._cache.values():
