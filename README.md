@@ -1,6 +1,6 @@
 # Bayesian Neural Network Priors Revisited
 
-This repository contains the code for the paper [Bayesian Neural Network Priors Revisited](https://arxiv.org/abs/2102.06571).
+This repository contains the code for the paper [Bayesian Neural Network Priors Revisited](https://arxiv.org/abs/2102.06571), as described in the accompanying paper [BNNpriors: A library for Bayesian neural network inference with different prior distributions](https://www.sciencedirect.com/science/article/pii/S2665963821000270).
 It allows to perform SG-MCMC inference in BNNs with different architectures and priors on a range of tasks.
 
 
@@ -144,16 +144,38 @@ py.test testing/test_models.py::TestRaoBDenseNet::test_likelihood
 
 ## Cite this work
 
-If you want to cite this work, please cite it as
+If you are using this codebase in your work, please cite it as
 
 ```
-@misc{fortuin2021bayesian,
-      title={Bayesian Neural Network Priors Revisited}, 
-      author={Vincent Fortuin and Adrià Garriga-Alonso and Florian Wenzel and Gunnar Rätsch and Richard Turner and Mark van der Wilk and Laurence Aitchison},
-      year={2021},
-      eprint={2102.06571},
-      archivePrefix={arXiv},
-      primaryClass={stat.ML}
+@article{fortuin2021bnnpriors,
+  title={{BNNpriors}: A library for {B}ayesian neural network inference with different prior distributions},
+  author={Fortuin, Vincent and Garriga-Alonso, Adri{\`a} and van der Wilk, Mark and Aitchison, Laurence},
+  journal={Software Impacts},
+  volume={9},
+  pages={100079},
+  year={2021},
+  publisher={Elsevier}
 }
 ```
 
+If you would also like to cite our results regarding different BNN priors, please cite
+
+```
+@article{fortuin2021bayesian,
+  title={{B}ayesian neural network priors revisited},
+  author={Fortuin, Vincent and Garriga-Alonso, Adri{\`a} and Wenzel, Florian and R{\"a}tsch, Gunnar and Turner, Richard and van der Wilk, Mark and Aitchison, Laurence},
+  journal={arXiv preprint arXiv:2102.06571},
+  year={2021}
+}
+```
+
+Finally, if you would like to cite the GG-MC inference algorithm used in this package, please cite
+
+```
+@article{garriga2021exact,
+  title={Exact langevin dynamics with stochastic gradients},
+  author={Garriga-Alonso, Adri{\`a} and Fortuin, Vincent},
+  journal={arXiv preprint arXiv:2102.01691},
+  year={2021}
+}
+```
